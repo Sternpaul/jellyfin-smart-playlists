@@ -62,36 +62,67 @@ namespace Jellyfin.Plugin.AIRecommender.Services.AI
                 ? "https://openrouter.ai/api/v1/chat/completions"
                 : Config.CustomEndpoint;
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, url);
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", Config.ApiKey);
-            // Optional: Identify application to OpenRouter
-            request.Headers.Add("HTTP-Referer", "https://github.com/jellyfin/jellyfin"); 
-            request.Headers.Add("X-Title", "Jellyfin AI Recommender");
+            // Retry with backoff on rate-limit (429). OpenRouter's free models are capped
+            // (20 req/min, 50 req/day unfunded / 1000/day after a one-time $10 credit).
+            // Without this, hitting the cap would throw and the caller would silently skip
+            // the rest of a long library-classification run.
+            const int maxAttempts = 5;
+            HttpResponseMessage response = null;
 
-            var requestBody = new
+            for (int attempt = 1; attempt <= maxAttempts; attempt++)
             {
-                model = model,
-                messages = new[]
+                using var request = new HttpRequestMessage(HttpMethod.Post, url);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", Config.ApiKey);
+                // Optional: Identify application to OpenRouter
+                request.Headers.Add("HTTP-Referer", "https://github.com/jellyfin/jellyfin");
+                request.Headers.Add("X-Title", "Jellyfin AI Recommender");
+
+                var requestBody = new
                 {
-                    new { role = "user", content = prompt }
-                },
-                response_format = forceJson ? new { type = "json_object" } : null
-            };
+                    model = model,
+                    messages = new[]
+                    {
+                        new { role = "user", content = prompt }
+                    },
+                    response_format = forceJson ? new { type = "json_object" } : null
+                };
 
-            var jsonBody = JsonSerializer.Serialize(requestBody, new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
-            request.Content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
+                var jsonBody = JsonSerializer.Serialize(requestBody, new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
+                request.Content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
 
-            var response = await _httpClient.SendAsync(request, cancellationToken);
-            
-            if (!response.IsSuccessStatusCode)
+                var attemptResponse = await _httpClient.SendAsync(request, cancellationToken);
+
+                if (attemptResponse.IsSuccessStatusCode)
+                {
+                    response = attemptResponse;
+                    break;
+                }
+
+                var errorBody = await attemptResponse.Content.ReadAsStringAsync(cancellationToken);
+
+                if ((int)attemptResponse.StatusCode == 429)
+                {
+                    var delay = GetRetryDelay(attemptResponse, attempt, maxAttempts);
+                    _logger.LogWarning("OpenRouter rate limited (429). Attempt {Attempt}/{Max}. Waiting {Delay}s before retry.", attempt, maxAttempts, delay);
+                    attemptResponse.Dispose();
+                    if (attempt == maxAttempts) break;
+                    await Task.Delay(TimeSpan.FromSeconds(delay), cancellationToken);
+                    continue;
+                }
+
+                _logger.LogError("OpenRouter API failed with status {Status}: {ErrorBody}", attemptResponse.StatusCode, errorBody);
+                attemptResponse.EnsureSuccessStatusCode();
+            }
+
+            if (response == null || !response.IsSuccessStatusCode)
             {
-                var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-                _logger.LogError("OpenRouter API failed with status {Status}: {ErrorBody}", response.StatusCode, errorBody);
-                response.EnsureSuccessStatusCode();
+                response?.EnsureSuccessStatusCode();
+                throw new InvalidOperationException("OpenRouter request failed after retrying (rate limit or API error).");
             }
 
             var jsonResponse = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);
-            
+            response.Dispose();
+
             try
             {
                 return jsonResponse.GetProperty("choices")[0]
@@ -104,6 +135,20 @@ namespace Jellyfin.Plugin.AIRecommender.Services.AI
                 _logger.LogError(ex, "Unexpected response format from OpenRouter. Raw JSON: {Json}", jsonResponse.GetRawText());
                 throw new Exception("Unexpected response format from OpenRouter.");
             }
+        }
+
+        private static int GetRetryDelay(HttpResponseMessage response, int attempt, int maxAttempts)
+        {
+            // Prefer the Retry-After header (delta seconds, or an http-date).
+            if (response.Headers.RetryAfter?.Delta is { } delta)
+                return (int)Math.Max(1, Math.Min(delta.TotalSeconds, 60));
+            if (response.Headers.RetryAfter?.Date is { } date)
+            {
+                var secs = (date - DateTimeOffset.UtcNow).TotalSeconds;
+                if (secs > 0) return (int)Math.Max(1, Math.Min(secs, 300));
+            }
+            // Fallback: exponential backoff, 5s..60s.
+            return (int)Math.Max(5, Math.Min(60, Math.Pow(2, attempt) * 5));
         }
 
         private string BuildClassificationPrompt(List<MovieMetadata> movies)

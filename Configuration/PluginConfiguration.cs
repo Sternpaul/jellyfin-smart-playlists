@@ -13,10 +13,10 @@ namespace Jellyfin.Plugin.AIRecommender.Configuration
     public class PluginConfiguration : BasePluginConfiguration
     {
         // AI Provider Settings
-        public AIProviderType AIProvider { get; set; } = AIProviderType.GoogleAI;
+        public AIProviderType AIProvider { get; set; } = AIProviderType.OpenRouter;
         public string ApiKey { get; set; } = string.Empty;
-        public string ClassificationModel { get; set; } = "gemma-4-31b-it";
-        public string ChatModel { get; set; } = "gemma-4-31b-it";
+        public string ClassificationModel { get; set; } = "poolside/laguna-s-2.1:free";
+        public string ChatModel { get; set; } = "poolside/laguna-s-2.1:free";
         public string CustomEndpoint { get; set; } = string.Empty;
 
         // Playlist Settings
