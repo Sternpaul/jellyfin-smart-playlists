@@ -297,7 +297,9 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 Recursive = true
             }).OfType<Playlist>().ToList();
 
-            var existingPlaylist = allPlaylists.FirstOrDefault(p => p.Name == name);
+            // Find this user's own playlist by name (scoped per-user so refreshes
+            // for different users don't delete each other's recommendation playlists).
+            var existingPlaylist = allPlaylists.FirstOrDefault(p => p.Name == name && p.OwnerUserId == userId);
             if (existingPlaylist != null)
             {
                 _libraryManager.DeleteItem(existingPlaylist, new MediaBrowser.Controller.Library.DeleteOptions { DeleteFileLocation = true });
