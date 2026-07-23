@@ -11,8 +11,7 @@ namespace Jellyfin.Plugin.AIRecommender
     {
         public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
         {
-            // Register Plugin Configuration lazily, because Plugin.Instance might be null during service registration phase
-            serviceCollection.AddSingleton(s => Plugin.Instance!.Configuration);
+            // Plugin Configuration is accessed dynamically via Plugin.Instance.Configuration to support hot-reloading
 
             // Register Data Access
             serviceCollection.AddSingleton<MovieStore>();

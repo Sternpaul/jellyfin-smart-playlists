@@ -22,7 +22,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         private readonly MovieStore _movieStore;
         private readonly WatchHistoryService _watchHistoryService;
         private readonly SimilarityEngine _similarityEngine;
-        private readonly PluginConfiguration _config;
+        private PluginConfiguration _config => Plugin.Instance!.Configuration;
         private readonly ILogger<PlaylistEngine> _logger;
 
         public PlaylistEngine(
@@ -31,7 +31,6 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             MovieStore movieStore,
             WatchHistoryService watchHistoryService,
             SimilarityEngine similarityEngine,
-            PluginConfiguration config,
             ILogger<PlaylistEngine> logger)
         {
             _playlistManager = playlistManager;
@@ -39,7 +38,6 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             _movieStore = movieStore;
             _watchHistoryService = watchHistoryService;
             _similarityEngine = similarityEngine;
-            _config = config;
             _logger = logger;
             
             _watchHistoryService.WatchEventEmitted += OnMovieWatched;

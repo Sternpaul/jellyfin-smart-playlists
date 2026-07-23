@@ -9,3 +9,6 @@ obj/
 .vs/
 *.sqlite
 *.db
+.gemini/
+scratch/
+test_api.ps1

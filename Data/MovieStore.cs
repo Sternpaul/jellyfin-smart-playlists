@@ -39,7 +39,7 @@ namespace Jellyfin.Plugin.AIRecommender.Data
         public async Task<List<MovieMetadata>> GetUnclassifiedMoviesAsync(CancellationToken cancellationToken = default)
         {
             using var db = GetContext();
-            return await db.Movies.Where(m => !m.IsClassified).ToListAsync(cancellationToken);
+            return await db.Movies.Where(m => !m.IsClassified || m.Subcategories == "[]" || string.IsNullOrEmpty(m.Subcategories)).ToListAsync(cancellationToken);
         }
 
         public async Task SaveMoviesAsync(IEnumerable<MovieMetadata> movies, CancellationToken cancellationToken = default)

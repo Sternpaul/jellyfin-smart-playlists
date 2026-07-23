@@ -16,23 +16,23 @@ namespace Jellyfin.Plugin.AIRecommender.Services.AI
     public class OpenAIProvider : IAIProvider
     {
         private readonly HttpClient _httpClient;
-        private readonly PluginConfiguration _config;
         private readonly ILogger<OpenAIProvider> _logger;
 
         public string Name => "OpenAI";
 
-        public OpenAIProvider(HttpClient httpClient, PluginConfiguration config, ILogger<OpenAIProvider> logger)
+        public OpenAIProvider(HttpClient httpClient, ILogger<OpenAIProvider> logger)
         {
             _httpClient = httpClient;
-            _config = config;
             _logger = logger;
         }
+
+        private PluginConfiguration Config => Plugin.Instance!.Configuration;
 
         public async Task<bool> ValidateConnectionAsync(CancellationToken cancellationToken = default)
         {
             try
             {
-                var response = await CallApiAsync(_config.ClassificationModel, "Ping. Reply with 'Pong' in JSON.", true, cancellationToken);
+                var response = await CallApiAsync(Config.ClassificationModel, "Ping. Reply with 'Pong' in JSON.", true, cancellationToken);
                 return !string.IsNullOrWhiteSpace(response);
             }
             catch
@@ -44,26 +44,26 @@ namespace Jellyfin.Plugin.AIRecommender.Services.AI
         public async Task<string> ClassifyMoviesAsync(List<MovieMetadata> movies, CancellationToken cancellationToken = default)
         {
             var prompt = BuildClassificationPrompt(movies);
-            return await CallApiAsync(_config.ClassificationModel, prompt, true, cancellationToken);
+            return await CallApiAsync(Config.ClassificationModel, prompt, true, cancellationToken);
         }
 
         public async Task<string> ChatAsync(string userQuery, string systemPrompt, CancellationToken cancellationToken = default)
         {
             var prompt = $"{systemPrompt}\n\nUser: {userQuery}";
-            return await CallApiAsync(_config.ChatModel, prompt, false, cancellationToken);
+            return await CallApiAsync(Config.ChatModel, prompt, false, cancellationToken);
         }
 
         private async Task<string> CallApiAsync(string model, string prompt, bool forceJson, CancellationToken cancellationToken)
         {
-            if (string.IsNullOrWhiteSpace(_config.ApiKey))
+            if (string.IsNullOrWhiteSpace(Config.ApiKey))
                 throw new InvalidOperationException("OpenAI API Key is missing.");
 
-            var url = string.IsNullOrWhiteSpace(_config.CustomEndpoint)
+            var url = string.IsNullOrWhiteSpace(Config.CustomEndpoint)
                 ? "https://api.openai.com/v1/chat/completions"
-                : _config.CustomEndpoint;
+                : Config.CustomEndpoint;
 
             using var request = new HttpRequestMessage(HttpMethod.Post, url);
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _config.ApiKey);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", Config.ApiKey);
 
             var requestBody = new
             {
@@ -144,11 +144,30 @@ namespace Jellyfin.Plugin.AIRecommender.Services.AI
         private string BuildClassificationPrompt(List<MovieMetadata> movies)
         {
             var moviesJson = JsonSerializer.Serialize(movies.Select(m => new { m.ItemId, m.Title, m.ReleaseYear, m.Plot }));
-            return $@"You are a movie classification expert. I will give you a list of movies.
-Analyze the plot of each and output data according to the json schema.
-CriticalAcclaimScore must be 1-10 based on general reputation.
-Here are the movies:
-{moviesJson}";
+            return $@"Convert the following movies into a JSON array.
+
+Example Input:
+[{{ ""ItemId"": ""00000000-0000-0000-0000-000000000000"", ""Title"": ""The Matrix"", ""ReleaseYear"": 1999, ""Plot"": ""A hacker learns the truth."" }}]
+
+Example Output:
+[
+  {{
+    ""ItemId"": ""00000000-0000-0000-0000-000000000000"",
+    ""Subcategories"": [""Sci-Fi"", ""Action""],
+    ""Moods"": [""cerebral"", ""tense""],
+    ""Themes"": [""simulation"", ""rebellion""],
+    ""NarrativeStyle"": ""hero-journey"",
+    ""Accessibility"": ""mainstream"",
+    ""Intensity"": ""high"",
+    ""CriticalAcclaimScore"": 9
+  }}
+]
+
+Now do it for the following movies. Output ONLY the JSON array. Do not include markdown formatting.
+Input:
+{moviesJson}
+
+Output:";
         }
     }
 }

@@ -8,27 +8,28 @@ namespace Jellyfin.Plugin.AIRecommender.Services.AI
     public class AIProviderFactory
     {
         private readonly IHttpClientFactory _httpClientFactory;
-        private readonly PluginConfiguration _config;
         private readonly ILoggerFactory _loggerFactory;
 
-        public AIProviderFactory(IHttpClientFactory httpClientFactory, PluginConfiguration config, ILoggerFactory loggerFactory)
+        public AIProviderFactory(IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory)
         {
             _httpClientFactory = httpClientFactory;
-            _config = config;
             _loggerFactory = loggerFactory;
         }
+
+        private PluginConfiguration Config => Plugin.Instance!.Configuration;
 
         public IAIProvider GetProvider()
         {
             var httpClient = _httpClientFactory.CreateClient();
+            httpClient.Timeout = TimeSpan.FromMinutes(5);
 
-            return _config.AIProvider switch
+            return Config.AIProvider switch
             {
-                AIProviderType.GoogleAI => new GoogleAIProvider(httpClient, _config, _loggerFactory.CreateLogger<GoogleAIProvider>()),
-                AIProviderType.OpenRouter => new OpenRouterProvider(httpClient, _config, _loggerFactory.CreateLogger<OpenRouterProvider>()),
-                AIProviderType.OpenAI => new OpenAIProvider(httpClient, _config, _loggerFactory.CreateLogger<OpenAIProvider>()),
-                AIProviderType.Anthropic => new AnthropicProvider(httpClient, _config, _loggerFactory.CreateLogger<AnthropicProvider>()),
-                _ => throw new NotImplementedException($"AI Provider {_config.AIProvider} is not implemented.")
+                AIProviderType.GoogleAI => new GoogleAIProvider(httpClient, _loggerFactory.CreateLogger<GoogleAIProvider>()),
+                AIProviderType.OpenRouter => new OpenRouterProvider(httpClient, _loggerFactory.CreateLogger<OpenRouterProvider>()),
+                AIProviderType.OpenAI => new OpenAIProvider(httpClient, _loggerFactory.CreateLogger<OpenAIProvider>()),
+                AIProviderType.Anthropic => new AnthropicProvider(httpClient, _loggerFactory.CreateLogger<AnthropicProvider>()),
+                _ => throw new NotImplementedException($"AI Provider {Config.AIProvider} is not implemented.")
             };
         }
     }
