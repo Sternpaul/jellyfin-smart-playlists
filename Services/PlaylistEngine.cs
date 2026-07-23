@@ -140,10 +140,11 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         private async Task CreateOrUpdateJellyfinPlaylistAsync(Guid userId, string name, List<Guid> itemIds, CancellationToken cancellationToken)
         {
             // Look for existing private playlist owned by this user
-            var existingPlaylists = _libraryManager.GetItemList(new InternalItemsQuery
+            var allPlaylists = _libraryManager.GetItemList(new InternalItemsQuery
             {
-                IncludeItemTypes = new[] { nameof(Playlist) },
-                Name = name
+                IncludeItemTypes = new[] { Jellyfin.Data.Enums.BaseItemKind.Playlist },
+                IsVirtualItem = false,
+                Recursive = true
             }).OfType<Playlist>().ToList();
 
             // Note: Jellyfin native Playlist API is a bit complex for private per-user creation via ILibraryManager.

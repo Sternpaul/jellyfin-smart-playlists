@@ -28,7 +28,7 @@ namespace Jellyfin.Plugin.AIRecommender.Tasks
         {
             return new[]
             {
-                new TaskTriggerInfo { Type = TaskTriggerInfo.TriggerDaily, TimeOfDayTicks = TimeSpan.FromHours(2).Ticks }
+                new TaskTriggerInfo { Type = "DailyTrigger", TimeOfDayTicks = TimeSpan.FromHours(2).Ticks }
             };
         }
 

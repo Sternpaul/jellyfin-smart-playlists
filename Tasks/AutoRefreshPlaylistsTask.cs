@@ -28,13 +28,13 @@ namespace Jellyfin.Plugin.AIRecommender.Tasks
         {
             return new[]
             {
-                new TaskTriggerInfo { Type = TaskTriggerInfo.TriggerInterval, IntervalTicks = TimeSpan.FromHours(12).Ticks }
+                new TaskTriggerInfo { Type = "IntervalTrigger", IntervalTicks = TimeSpan.FromHours(12).Ticks }
             };
         }
 
         public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
         {
-            var users = _userManager.Users;
+            var users = System.Linq.Enumerable.ToArray(_userManager.Users);
             int total = users.Length;
             int current = 0;
 

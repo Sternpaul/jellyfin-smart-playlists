@@ -16,6 +16,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
     {
         private readonly IUserDataManager _userDataManager;
         private readonly ILibraryManager _libraryManager;
+        private readonly IUserManager _userManager;
         private readonly MovieStore _movieStore;
         private readonly TasteProfiler _tasteProfiler;
         private readonly ILogger<WatchHistoryService> _logger;
@@ -23,12 +24,14 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         public WatchHistoryService(
             IUserDataManager userDataManager,
             ILibraryManager libraryManager,
+            IUserManager userManager,
             MovieStore movieStore,
             TasteProfiler tasteProfiler,
             ILogger<WatchHistoryService> logger)
         {
             _userDataManager = userDataManager;
             _libraryManager = libraryManager;
+            _userManager = userManager;
             _movieStore = movieStore;
             _tasteProfiler = tasteProfiler;
             _logger = logger;
@@ -40,15 +43,18 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         {
             var allMovies = _libraryManager.GetItemList(new InternalItemsQuery
             {
-                IncludeItemTypes = new[] { nameof(Movie) },
+                IncludeItemTypes = new[] { Jellyfin.Data.Enums.BaseItemKind.Movie },
                 IsVirtualItem = false,
                 Recursive = true
             }).OfType<Movie>().ToList();
 
+            var user = _userManager.GetUserById(userId);
+            if (user == null) return new List<MovieMetadata>();
+
             var watchedItemIds = new HashSet<Guid>();
             foreach (var movie in allMovies)
             {
-                var userData = _userDataManager.GetUserData(userId, movie);
+                var userData = _userDataManager.GetUserData(user, movie);
                 if (userData != null && userData.Played)
                 {
                     watchedItemIds.Add(movie.Id);

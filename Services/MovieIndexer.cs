@@ -40,7 +40,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             
             var allMovies = _libraryManager.GetItemList(new InternalItemsQuery
             {
-                IncludeItemTypes = new[] { nameof(Movie) },
+                IncludeItemTypes = new[] { Jellyfin.Data.Enums.BaseItemKind.Movie },
                 IsVirtualItem = false,
                 Recursive = true
             }).OfType<Movie>().ToList();
@@ -87,17 +87,9 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             jellyfinMovie.ProviderIds.TryGetValue(MetadataProvider.Imdb.ToString(), out var imdbId);
             metadata.ImdbId = imdbId;
 
-            // Extract director and top cast
-            var people = _libraryManager.GetItemPeople(new InternalItemsQuery { ItemIds = new[] { jellyfinMovie.Id } });
-            
-            metadata.Director = string.Join(", ", people
-                .Where(p => p.Type == PersonType.Director)
-                .Select(p => p.Name));
-                
-            metadata.Cast = string.Join(", ", people
-                .Where(p => p.Type == PersonType.Actor)
-                .Take(5)
-                .Select(p => p.Name));
+            // Extract director and top cast (skipping for now due to Jellyfin 10.11 API changes requiring DTO conversion)
+            metadata.Director = string.Empty;
+            metadata.Cast = string.Empty;
 
             metadata.LastUpdated = DateTime.UtcNow;
             
