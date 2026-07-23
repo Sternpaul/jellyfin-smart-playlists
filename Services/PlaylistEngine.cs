@@ -244,10 +244,29 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 Recursive = true
             }).OfType<Playlist>().ToList();
 
-            // Note: Jellyfin native Playlist API is a bit complex for private per-user creation via ILibraryManager.
-            // Normally we'd use _playlistManager.CreatePlaylist(new PlaylistCreationRequest { Name = name, UserId = userId });
-            
-            _logger.LogInformation("Created playlist '{Name}' for user {UserId} with {Count} items.", name, userId, itemIds.Count);
+            var existingPlaylist = allPlaylists.FirstOrDefault(p => p.Name == name);
+            if (existingPlaylist != null)
+            {
+                _libraryManager.DeleteItem(existingPlaylist, new MediaBrowser.Controller.Library.DeleteOptions { DeleteFileLocation = true });
+            }
+
+            if (itemIds.Any())
+            {
+                var req = new MediaBrowser.Model.Playlists.PlaylistCreationRequest
+                {
+                    Name = name,
+                    UserId = userId,
+                    ItemIdList = itemIds,
+                    Public = false
+                };
+                
+                var result = _playlistManager.CreatePlaylist(req);
+                _logger.LogInformation("Created playlist '{Name}' for user {UserId} with {Count} items (Result Id: {ResultId}).", name, userId, itemIds.Count, result.Id);
+            }
+            else
+            {
+                _logger.LogInformation("Skipped creating playlist '{Name}' because there were no items.", name);
+            }
         }
     }
 }
