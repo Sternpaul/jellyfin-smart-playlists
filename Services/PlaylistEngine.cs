@@ -137,20 +137,40 @@ namespace Jellyfin.Plugin.AIRecommender.Services
 
         private async Task GenerateBecauseYouWatchedPlaylistAsync(Guid userId, List<MovieMetadata> unwatched, CancellationToken cancellationToken)
         {
-            var watched = await _watchHistoryService.GetWatchedMoviesAsync(userId, cancellationToken);
-            var recentWatched = watched.OrderByDescending(m => m.DateAdded).FirstOrDefault(); // simplified logic
-            
-            if (recentWatched == null) return;
+            // Seed on the user's 5 most recently *watched* movies (by LastPlayedDate,
+            // falling back to DateAdded when the played date is unknown), not just the
+            // single most-recently-indexed one. Recommendations are ranked by the best
+            // similarity across all 5 seeds so the playlist reflects recent taste.
+            var watchedWithDates = await _watchHistoryService.GetWatchedMoviesWithDatesAsync(userId, cancellationToken);
+            if (!watchedWithDates.Any()) return;
 
-            // Rank unwatched movies by similarity to the most recently watched movie.
-            var picks = unwatched
-                .Select(m => new { Movie = m, Sim = _similarityEngine.CalculateSimilarity(recentWatched, m) })
-                .OrderByDescending(x => x.Sim)
-                .Take(10)
-                .Select(x => x.Movie.ItemId)
+            var recentSeeds = watchedWithDates
+                .OrderByDescending(w => w.WatchedAt ?? w.Movie.DateAdded)
+                .Take(5)
+                .Select(w => w.Movie)
                 .ToList();
 
-            await CreateOrUpdateJellyfinPlaylistAsync(userId, $"Because You Watched {recentWatched.Title}", picks, cancellationToken);
+            var mostRecent = recentSeeds.First();
+
+            // Best similarity per unwatched movie across the 5 recent seeds.
+            var bestSim = new Dictionary<Guid, double>();
+            foreach (var seed in recentSeeds)
+            {
+                foreach (var m in unwatched)
+                {
+                    var sim = _similarityEngine.CalculateSimilarity(seed, m);
+                    if (!bestSim.TryGetValue(m.ItemId, out double current) || sim > current)
+                        bestSim[m.ItemId] = sim;
+                }
+            }
+
+            var picks = bestSim
+                .OrderByDescending(kv => kv.Value)
+                .Take(10)
+                .Select(kv => kv.Key)
+                .ToList();
+
+            await CreateOrUpdateJellyfinPlaylistAsync(userId, $"Because You Watched {mostRecent.Title}", picks, cancellationToken);
         }
         
         private async Task GenerateHiddenGemsPlaylistAsync(Guid userId, List<MovieMetadata> unwatched, CancellationToken cancellationToken)
