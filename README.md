@@ -341,13 +341,13 @@ After initial classification, smart playlists run at **zero cost**.
 
 ## 🗺️ Roadmap
 
-- [ ] Plugin scaffolding and configuration
-- [ ] AI provider abstraction (Google AI, OpenRouter, OpenAI, Anthropic)
-- [ ] Movie indexer (batch + incremental)
-- [ ] AI movie classifier (batch classification + critical acclaim scoring)
-- [ ] Similarity engine (AI-assigned tags)
-- [ ] Watch history export and real-time tracking
-- [ ] Taste profiler
+- [x] Plugin scaffolding and configuration
+- [x] AI provider abstraction (Google AI, OpenRouter, OpenAI, Anthropic)
+- [x] Movie indexer (batch + incremental)
+- [x] AI movie classifier (batch classification + critical acclaim scoring)
+- [x] Similarity engine (AI-assigned tags)
+- [x] Watch history export and real-time tracking
+- [x] Taste profiler
 - [x] Playlist engine with punishment mechanic
 - [x] Scheduled tasks and auto-refresh
 - [x] Letterboxd watchlist import (CSV + scraping) + watchlist playlist
