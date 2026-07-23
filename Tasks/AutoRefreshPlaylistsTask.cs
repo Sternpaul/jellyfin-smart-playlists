@@ -28,7 +28,7 @@ namespace Jellyfin.Plugin.AIRecommender.Tasks
         {
             return new[]
             {
-                new TaskTriggerInfo { Type = "IntervalTrigger", IntervalTicks = TimeSpan.FromHours(12).Ticks }
+                new TaskTriggerInfo { Type = TaskTriggerInfoType.Interval, IntervalTicks = TimeSpan.FromHours(12).Ticks }
             };
         }
 
