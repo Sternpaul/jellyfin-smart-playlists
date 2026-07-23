@@ -26,7 +26,10 @@
                     
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="ApiKey">API Key:</label>
-                        <input type="password" id="ApiKey" name="ApiKey" is="emby-input" required="required" />
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <input type="password" id="ApiKey" name="ApiKey" is="emby-input" required="required" style="flex: 1;" />
+                            <button is="emby-button" type="button" id="btnTestConnection" class="raised emby-button">Test Connection</button>
+                        </div>
                         <div class="fieldDescription">Your API key for the selected provider.</div>
                     </div>
                     
@@ -39,7 +42,7 @@
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="ChatModel">Chat Model:</label>
                         <input type="text" id="ChatModel" name="ChatModel" is="emby-input" />
-                        <div class="fieldDescription">Model to use for the user chat interface.</div>
+                        <div class="fieldDescription">Model to use for the user chat interface. <br/><i>ⓘ Used for classifying your library and AI chat.</i></div>
                     </div>
                     
                     <div class="sectionTitleContainer"><h2 class="sectionTitle">🔀 Playlist Behavior</h2></div>
@@ -47,6 +50,23 @@
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="PlaylistRefreshHours">Playlist Refresh Interval (Hours):</label>
                         <input type="number" id="PlaylistRefreshHours" name="PlaylistRefreshHours" is="emby-input" min="1" max="168" />
+                    </div>
+                    
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="MaxMoviesPerPlaylist">Movies per playlist:</label>
+                        <input type="number" id="MaxMoviesPerPlaylist" name="MaxMoviesPerPlaylist" is="emby-input" min="5" max="100" />
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="PlaylistRotationPercent">Rotation % (each refresh):</label>
+                        <input type="range" id="PlaylistRotationPercent" name="PlaylistRotationPercent" min="10" max="100" step="5" is="emby-input" />
+                        <div class="fieldDescription"><i>ⓘ How aggressively playlists rotate content.</i></div>
+                    </div>
+                    
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="CoolingPeriodCycles">Cooling period (refresh cycles):</label>
+                        <input type="number" id="CoolingPeriodCycles" name="CoolingPeriodCycles" is="emby-input" min="1" max="10" />
+                        <div class="fieldDescription">How many refresh cycles a rejected movie stays hidden before returning.</div>
                     </div>
                     
                     <div class="inputContainer">
@@ -75,10 +95,67 @@
                         <input type="checkbox" is="emby-checkbox" id="EnableHiddenGems" name="EnableHiddenGems" />
                         <span>Hidden Gems</span>
                     </label>
+                    <label class="checkboxContainer">
+                        <input type="checkbox" is="emby-checkbox" id="EnableRecentlyAdded" name="EnableRecentlyAdded" />
+                        <span>Recently Added</span>
+                    </label>
+                    <label class="checkboxContainer">
+                        <input type="checkbox" is="emby-checkbox" id="EnableSubcategory" name="EnableSubcategory" />
+                        <span>Subcategory (For You)</span>
+                    </label>
+                    <label class="checkboxContainer">
+                        <input type="checkbox" is="emby-checkbox" id="EnableDiscover" name="EnableDiscover" />
+                        <span>Discover (Unfamiliar)</span>
+                    </label>
+                    <label class="checkboxContainer">
+                        <input type="checkbox" is="emby-checkbox" id="EnableWildCard" name="EnableWildCard" />
+                        <span>Wild Card</span>
+                    </label>
                     
-                    <div>
+                    <div class="sectionTitleContainer"><h2 class="sectionTitle">⚙️ Actions</h2></div>
+                    
+                    <div style="display: flex; gap: 15px; margin-bottom: 20px;">
+                        <button is="emby-button" type="button" id="btnClassifyLibrary" class="raised emby-button">
+                            <span>Classify Library</span>
+                        </button>
+                        <button is="emby-button" type="button" id="btnRefreshPlaylists" class="raised emby-button">
+                            <span>Refresh All Playlists</span>
+                        </button>
+                    </div>
+                    <div class="fieldDescription" style="margin-bottom: 30px;">
+                        Status: Check Dashboard -> Scheduled Tasks for detailed progress.
+                    </div>
+                    
+                    <div class="sectionTitleContainer"><h2 class="sectionTitle">📋 Per-User Watchlist Settings</h2></div>
+                    <div class="fieldDescription">These settings are isolated per user. Select a user to edit their Letterboxd Watchlist config.</div>
+                    
+                    <div class="selectContainer">
+                        <label class="selectLabel" for="WatchlistUser">Select User:</label>
+                        <select is="emby-select" id="WatchlistUser" name="WatchlistUser" class="emby-select-withcolor">
+                            <option value="">(Select a user)</option>
+                        </select>
+                    </div>
+                    
+                    <div id="UserWatchlistSettingsBlock" style="display: none; padding-left: 20px; border-left: 2px solid #52B54B; margin-bottom: 20px;">
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="WatchlistJsonUrl">Watchlist JSON URL:</label>
+                            <input type="text" id="WatchlistJsonUrl" name="WatchlistJsonUrl" is="emby-input" />
+                            <div class="fieldDescription">URL to a JSON array with {title, imdb_id, release_year}. Auto-synced during playlist refresh.</div>
+                        </div>
+                        
+                        <label class="checkboxContainer">
+                            <input type="checkbox" is="emby-checkbox" id="EnableWatchlistPlaylist" name="EnableWatchlistPlaylist" />
+                            <span>Enable "From Your Watchlist" playlist for this user</span>
+                        </label>
+                        
+                        <button is="emby-button" type="button" id="btnSaveUserConfig" class="raised emby-button">
+                            <span>Save User Config</span>
+                        </button>
+                    </div>
+
+                    <div style="margin-top: 40px;">
                         <button is="emby-button" type="submit" class="raised button-submit block emby-button">
-                            <span>Save Settings</span>
+                            <span>Save Global Settings</span>
                         </button>
                     </div>
                 </form>
@@ -93,20 +170,139 @@
             document.querySelector('#aiRecommenderConfigPage').addEventListener('pageshow', function () {
                 Dashboard.showLoadingMsg();
 
+                // Load Users for the dropdown
+                ApiClient.getUsers().then(function (users) {
+                    var userSelect = document.querySelector('#WatchlistUser');
+                    userSelect.innerHTML = '<option value="">(Select a user)</option>';
+                    users.forEach(function(u) {
+                        var opt = document.createElement('option');
+                        opt.value = u.Id;
+                        opt.textContent = u.Name;
+                        userSelect.appendChild(opt);
+                    });
+                });
+
                 ApiClient.getPluginConfiguration(AIRecommenderConfig.pluginUniqueId).then(function (config) {
-                    document.querySelector('#AIProvider').value = config.AIProvider;
-                    document.querySelector('#ApiKey').value = config.ApiKey;
-                    document.querySelector('#ClassificationModel').value = config.ClassificationModel;
-                    document.querySelector('#ChatModel').value = config.ChatModel;
-                    document.querySelector('#PlaylistRefreshHours').value = config.PlaylistRefreshHours;
-                    document.querySelector('#DiversityWeight').value = config.DiversityWeight;
-                    document.querySelector('#ReviewNudgingWeight').value = config.ReviewNudgingWeight;
+                    document.querySelector('#AIProvider').value = config.AIProvider || "GoogleAI";
+                    document.querySelector('#ApiKey').value = config.ApiKey || "";
+                    document.querySelector('#ClassificationModel').value = config.ClassificationModel || "gemma-4-31b-it";
+                    document.querySelector('#ChatModel').value = config.ChatModel || "gemma-4-31b-it";
                     
-                    document.querySelector('#EnableForYou').checked = config.EnableForYou;
-                    document.querySelector('#EnableBecauseYouWatched').checked = config.EnableBecauseYouWatched;
-                    document.querySelector('#EnableHiddenGems').checked = config.EnableHiddenGems;
+                    document.querySelector('#PlaylistRefreshHours').value = config.PlaylistRefreshHours || 12;
+                    document.querySelector('#MaxMoviesPerPlaylist').value = config.MaxMoviesPerPlaylist || 20;
+                    document.querySelector('#PlaylistRotationPercent').value = config.PlaylistRotationPercent || 30;
+                    document.querySelector('#CoolingPeriodCycles').value = config.CoolingPeriodCycles || 2;
+                    
+                    document.querySelector('#DiversityWeight').value = config.DiversityWeight || 25;
+                    document.querySelector('#ReviewNudgingWeight').value = config.ReviewNudgingWeight || 0;
+                    
+                    document.querySelector('#EnableForYou').checked = config.EnableForYou !== false;
+                    document.querySelector('#EnableBecauseYouWatched').checked = config.EnableBecauseYouWatched !== false;
+                    document.querySelector('#EnableHiddenGems').checked = config.EnableHiddenGems !== false;
+                    document.querySelector('#EnableRecentlyAdded').checked = config.EnableRecentlyAdded !== false;
+                    document.querySelector('#EnableSubcategory').checked = config.EnableSubcategory !== false;
+                    document.querySelector('#EnableDiscover').checked = config.EnableDiscover !== false;
+                    document.querySelector('#EnableWildCard').checked = config.EnableWildCard !== false;
 
                     Dashboard.hideLoadingMsg();
+                });
+            });
+
+            document.querySelector('#btnTestConnection').addEventListener('click', function() {
+                var apiKey = document.querySelector('#ApiKey').value;
+                var provider = document.querySelector('#AIProvider').value;
+                if (!apiKey) {
+                    Dashboard.alert("Please enter an API Key first.");
+                    return;
+                }
+                
+                Dashboard.showLoadingMsg();
+                ApiClient.getJSON(ApiClient.getUrl('AIRecommender/TestConnection', { provider: provider, apiKey: apiKey }))
+                    .then(function(res) {
+                        Dashboard.hideLoadingMsg();
+                        if (res.Success) {
+                            Dashboard.alert("Connection Successful!");
+                        } else {
+                            Dashboard.alert("Connection Failed: " + res.Message);
+                        }
+                    })
+                    .catch(function(err) {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert("Error connecting to server.");
+                    });
+            });
+            
+            document.querySelector('#btnClassifyLibrary').addEventListener('click', function() {
+                Dashboard.showLoadingMsg();
+                ApiClient.ajax({
+                    type: "POST",
+                    url: ApiClient.getUrl('AIRecommender/ClassifyLibrary')
+                }).then(function() {
+                    Dashboard.hideLoadingMsg();
+                    Dashboard.alert("Classification Task Started! Check Scheduled Tasks for progress.");
+                }).catch(function() {
+                    Dashboard.hideLoadingMsg();
+                    Dashboard.alert("Error starting Classification task.");
+                });
+            });
+            
+            document.querySelector('#btnRefreshPlaylists').addEventListener('click', function() {
+                Dashboard.showLoadingMsg();
+                ApiClient.ajax({
+                    type: "POST",
+                    url: ApiClient.getUrl('AIRecommender/RefreshPlaylists')
+                }).then(function() {
+                    Dashboard.hideLoadingMsg();
+                    Dashboard.alert("Playlist Refresh Task Started! Check Scheduled Tasks for progress.");
+                }).catch(function() {
+                    Dashboard.hideLoadingMsg();
+                    Dashboard.alert("Error starting Playlist Refresh task.");
+                });
+            });
+            
+            document.querySelector('#WatchlistUser').addEventListener('change', function(e) {
+                var userId = e.target.value;
+                var settingsBlock = document.querySelector('#UserWatchlistSettingsBlock');
+                if (!userId) {
+                    settingsBlock.style.display = 'none';
+                    return;
+                }
+                
+                Dashboard.showLoadingMsg();
+                ApiClient.getJSON(ApiClient.getUrl('AIRecommender/UserWatchlistConfig', { userId: userId }))
+                    .then(function(res) {
+                        document.querySelector('#WatchlistJsonUrl').value = res.JsonUrl || "";
+                        document.querySelector('#EnableWatchlistPlaylist').checked = res.EnableWatchlistPlaylist;
+                        settingsBlock.style.display = 'block';
+                        Dashboard.hideLoadingMsg();
+                    })
+                    .catch(function() {
+                        document.querySelector('#WatchlistJsonUrl').value = "";
+                        document.querySelector('#EnableWatchlistPlaylist').checked = false;
+                        settingsBlock.style.display = 'block';
+                        Dashboard.hideLoadingMsg();
+                    });
+            });
+            
+            document.querySelector('#btnSaveUserConfig').addEventListener('click', function() {
+                var userId = document.querySelector('#WatchlistUser').value;
+                if (!userId) return;
+                
+                var data = {
+                    UserId: userId,
+                    JsonUrl: document.querySelector('#WatchlistJsonUrl').value,
+                    EnableWatchlistPlaylist: document.querySelector('#EnableWatchlistPlaylist').checked
+                };
+                
+                Dashboard.showLoadingMsg();
+                ApiClient.ajax({
+                    type: "POST",
+                    url: ApiClient.getUrl('AIRecommender/UserWatchlistConfig'),
+                    data: JSON.stringify(data),
+                    contentType: "application/json"
+                }).then(function() {
+                    Dashboard.hideLoadingMsg();
+                    Dashboard.alert("User config saved successfully.");
                 });
             });
 
@@ -119,13 +315,22 @@
                     config.ApiKey = document.querySelector('#ApiKey').value;
                     config.ClassificationModel = document.querySelector('#ClassificationModel').value;
                     config.ChatModel = document.querySelector('#ChatModel').value;
+                    
                     config.PlaylistRefreshHours = parseInt(document.querySelector('#PlaylistRefreshHours').value, 10);
+                    config.MaxMoviesPerPlaylist = parseInt(document.querySelector('#MaxMoviesPerPlaylist').value, 10);
+                    config.PlaylistRotationPercent = parseInt(document.querySelector('#PlaylistRotationPercent').value, 10);
+                    config.CoolingPeriodCycles = parseInt(document.querySelector('#CoolingPeriodCycles').value, 10);
+                    
                     config.DiversityWeight = parseInt(document.querySelector('#DiversityWeight').value, 10);
                     config.ReviewNudgingWeight = parseInt(document.querySelector('#ReviewNudgingWeight').value, 10);
                     
                     config.EnableForYou = document.querySelector('#EnableForYou').checked;
                     config.EnableBecauseYouWatched = document.querySelector('#EnableBecauseYouWatched').checked;
                     config.EnableHiddenGems = document.querySelector('#EnableHiddenGems').checked;
+                    config.EnableRecentlyAdded = document.querySelector('#EnableRecentlyAdded').checked;
+                    config.EnableSubcategory = document.querySelector('#EnableSubcategory').checked;
+                    config.EnableDiscover = document.querySelector('#EnableDiscover').checked;
+                    config.EnableWildCard = document.querySelector('#EnableWildCard').checked;
 
                     ApiClient.updatePluginConfiguration(AIRecommenderConfig.pluginUniqueId, config).then(function (result) {
                         Dashboard.processPluginConfigurationUpdateResult(result);

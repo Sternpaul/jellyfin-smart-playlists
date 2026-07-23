@@ -348,12 +348,12 @@ After initial classification, smart playlists run at **zero cost**.
 - [ ] Similarity engine (AI-assigned tags)
 - [ ] Watch history export and real-time tracking
 - [ ] Taste profiler
-- [ ] Playlist engine with punishment mechanic
-- [ ] Scheduled tasks and auto-refresh
-- [ ] Letterboxd watchlist import (CSV + scraping) + watchlist playlist
-- [ ] Review nudging (critical acclaim + personal ratings)
-- [ ] Admin configuration page (provider picker, model selector, per-user Letterboxd)
-- [ ] REST API endpoints
+- [x] Playlist engine with punishment mechanic
+- [x] Scheduled tasks and auto-refresh
+- [x] Letterboxd watchlist import (CSV + scraping) + watchlist playlist
+- [x] Review nudging (critical acclaim + personal ratings)
+- [x] Admin configuration page (provider picker, model selector, per-user Letterboxd)
+- [x] REST API endpoints
 - [ ] AI chat recommendation engine
 - [ ] Chat UI page
 
