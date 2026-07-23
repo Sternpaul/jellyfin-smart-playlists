@@ -15,8 +15,8 @@ namespace Jellyfin.Plugin.AIRecommender.Configuration
         // AI Provider Settings
         public AIProviderType AIProvider { get; set; } = AIProviderType.OpenRouter;
         public string ApiKey { get; set; } = string.Empty;
-        public string ClassificationModel { get; set; } = "poolside/laguna-s-2.1:free";
-        public string ChatModel { get; set; } = "poolside/laguna-s-2.1:free";
+        public string ClassificationModel { get; set; } = "nvidia/nemotron-3-super-120b-a12b:free";
+        public string ChatModel { get; set; } = "nvidia/nemotron-3-super-120b-a12b:free";
         public string CustomEndpoint { get; set; } = string.Empty;
 
         // Playlist Settings

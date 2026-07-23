@@ -183,10 +183,10 @@
                 });
 
                 ApiClient.getPluginConfiguration(AIRecommenderConfig.pluginUniqueId).then(function (config) {
-                    document.querySelector('#AIProvider').value = config.AIProvider || "GoogleAI";
+                    document.querySelector('#AIProvider').value = config.AIProvider || "OpenRouter";
                     document.querySelector('#ApiKey').value = config.ApiKey || "";
-                    document.querySelector('#ClassificationModel').value = config.ClassificationModel || "gemma-4-31b-it";
-                    document.querySelector('#ChatModel').value = config.ChatModel || "gemma-4-31b-it";
+                    document.querySelector('#ClassificationModel').value = config.ClassificationModel || "nvidia/nemotron-3-super-120b-a12b:free";
+                    document.querySelector('#ChatModel').value = config.ChatModel || "nvidia/nemotron-3-super-120b-a12b:free";
                     
                     document.querySelector('#PlaylistRefreshHours').value = config.PlaylistRefreshHours || 12;
                     document.querySelector('#MaxMoviesPerPlaylist').value = config.MaxMoviesPerPlaylist || 20;
