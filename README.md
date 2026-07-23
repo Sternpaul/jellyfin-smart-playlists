@@ -185,13 +185,14 @@ Every N hours (configurable, default: 12):
 1. Download the latest `.dll` from [Releases](../../releases)
 2. Place it in your Jellyfin plugin directory:
    ```
-   # Docker (typical path)
+   # Docker (Depends on your mount, usually one of these)
    /config/plugins/AIRecommender/Jellyfin.Plugin.AIRecommender.dll
+   /config/data/plugins/AIRecommender/Jellyfin.Plugin.AIRecommender.dll
 
    # Windows
    C:\Users\{you}\AppData\Local\jellyfin\plugins\AIRecommender\Jellyfin.Plugin.AIRecommender.dll
 
-   # Linux
+   # Linux (Native install)
    /var/lib/jellyfin/plugins/AIRecommender/Jellyfin.Plugin.AIRecommender.dll
    ```
 3. Restart Jellyfin
