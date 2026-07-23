@@ -132,7 +132,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             
             var finalPicks = tastePicks.Concat(explorePicks).ToList();
             
-            await CreateOrUpdateJellyfinPlaylistAsync(userId, "🎯 For You", finalPicks, cancellationToken);
+            await CreateOrUpdateJellyfinPlaylistAsync(userId, "For You", finalPicks, cancellationToken);
         }
 
         private async Task GenerateBecauseYouWatchedPlaylistAsync(Guid userId, List<MovieMetadata> unwatched, CancellationToken cancellationToken)
@@ -150,7 +150,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 .Select(x => x.Movie.ItemId)
                 .ToList();
 
-            await CreateOrUpdateJellyfinPlaylistAsync(userId, $"🔥 Because You Watched {recentWatched.Title}", picks, cancellationToken);
+            await CreateOrUpdateJellyfinPlaylistAsync(userId, $"Because You Watched {recentWatched.Title}", picks, cancellationToken);
         }
         
         private async Task GenerateHiddenGemsPlaylistAsync(Guid userId, List<MovieMetadata> unwatched, CancellationToken cancellationToken)
@@ -163,7 +163,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 .Select(m => m.ItemId)
                 .ToList();
                 
-            await CreateOrUpdateJellyfinPlaylistAsync(userId, "💎 Hidden Gems", gems, cancellationToken);
+            await CreateOrUpdateJellyfinPlaylistAsync(userId, "Hidden Gems", gems, cancellationToken);
         }
 
         private async Task GenerateRecentlyAddedPlaylistAsync(Guid userId, List<MovieMetadata> unwatched, CancellationToken cancellationToken)
@@ -174,7 +174,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 .Select(m => m.ItemId)
                 .ToList();
                 
-            await CreateOrUpdateJellyfinPlaylistAsync(userId, "🆕 Recently Added", recent, cancellationToken);
+            await CreateOrUpdateJellyfinPlaylistAsync(userId, "Recently Added", recent, cancellationToken);
         }
 
         private async Task GenerateSubcategoryPlaylistsAsync(Guid userId, TasteProfile profile, List<MovieMetadata> unwatched, CancellationToken cancellationToken)
@@ -191,21 +191,21 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     .ToList();
                     
                 if (familiarPicks.Any())
-                    await CreateOrUpdateJellyfinPlaylistAsync(userId, $"🎭 {topSubcategory} For You", familiarPicks, cancellationToken);
+                    await CreateOrUpdateJellyfinPlaylistAsync(userId, $"{topSubcategory} For You", familiarPicks, cancellationToken);
             }
             
             if (_config.EnableDiscover)
             {
                 // Mock discovering an unfamiliar subcategory
                 var discoverPicks = unwatched.OrderBy(m => Guid.NewGuid()).Take(8).Select(m => m.ItemId).ToList();
-                await CreateOrUpdateJellyfinPlaylistAsync(userId, "🔍 Discover: Hidden World", discoverPicks, cancellationToken);
+                await CreateOrUpdateJellyfinPlaylistAsync(userId, "Discover: Hidden World", discoverPicks, cancellationToken);
             }
         }
         
         private async Task GenerateWildCardPlaylistAsync(Guid userId, List<MovieMetadata> unwatched, CancellationToken cancellationToken)
         {
             var wildPicks = unwatched.OrderBy(m => Guid.NewGuid()).Take(10).Select(m => m.ItemId).ToList();
-            await CreateOrUpdateJellyfinPlaylistAsync(userId, "🎲 Wild Card", wildPicks, cancellationToken);
+            await CreateOrUpdateJellyfinPlaylistAsync(userId, "Wild Card", wildPicks, cancellationToken);
         }
         
         private async Task GenerateWatchlistPlaylistAsync(Guid userId, List<MovieMetadata> unwatched, CancellationToken cancellationToken)
