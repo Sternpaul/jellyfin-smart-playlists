@@ -63,7 +63,8 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to classify batch. Skipping.");
+                    _logger.LogError(ex, "Failed to classify batch. Aborting the current classification run to prevent rate-limit spam.");
+                    break;
                 }
             }
             
