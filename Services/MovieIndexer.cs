@@ -87,9 +87,26 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             jellyfinMovie.ProviderIds.TryGetValue(MetadataProvider.Imdb.ToString(), out var imdbId);
             metadata.ImdbId = imdbId;
 
-            // Extract director and top cast (skipping for now due to Jellyfin 10.11 API changes requiring DTO conversion)
-            metadata.Director = string.Empty;
-            metadata.Cast = string.Empty;
+            // Extract director and top-billed cast from the Jellyfin item's People.
+            // movie.People is a List<PersonInfo> with Name + Type (e.g. "Director", "Actor").
+            // The SimilarityEngine splits these on ',' so we join multiple with commas.
+            var directors = new List<string>();
+            var cast = new List<string>();
+            if (jellyfinMovie.People != null)
+            {
+                foreach (var person in jellyfinMovie.People)
+                {
+                    if (person == null) continue;
+                    var type = (person.Type ?? string.Empty).ToLowerInvariant();
+                    if (type == "director" && !string.IsNullOrWhiteSpace(person.Name))
+                        directors.Add(person.Name.Trim());
+                    else if (type == "actor" && !string.IsNullOrWhiteSpace(person.Name))
+                        cast.Add(person.Name.Trim());
+                }
+            }
+            // Cap cast to the top 12 billed names to keep the field compact.
+            metadata.Director = directors.Count > 0 ? string.Join(", ", directors) : string.Empty;
+            metadata.Cast = cast.Count > 0 ? string.Join(", ", cast.Take(12)) : string.Empty;
 
             metadata.LastUpdated = DateTime.UtcNow;
             
