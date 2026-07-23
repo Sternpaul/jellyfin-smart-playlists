@@ -65,10 +65,41 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             return allMetadata.Where(m => watchedItemIds.Contains(m.ItemId)).ToList();
         }
 
+        // Same as GetWatchedMoviesAsync but also returns the last-played date so the
+        // taste profiler can apply time-decay. Kept separate to avoid changing the
+        // signature relied on by the "Because You Watched" playlist.
+        public async Task<List<(MovieMetadata Movie, DateTime? WatchedAt)>> GetWatchedMoviesWithDatesAsync(Guid userId, CancellationToken cancellationToken = default)
+        {
+            var allMovies = _libraryManager.GetItemList(new InternalItemsQuery
+            {
+                IncludeItemTypes = new[] { Jellyfin.Data.Enums.BaseItemKind.Movie },
+                IsVirtualItem = false,
+                Recursive = true
+            }).OfType<Movie>().ToList();
+
+            var user = _userManager.GetUserById(userId);
+            if (user == null) return new List<(MovieMetadata, DateTime?)>();
+
+            var watchedMeta = await _movieStore.GetAllMoviesAsync(cancellationToken);
+            var watchedMetaById = watchedMeta.ToDictionary(m => m.ItemId);
+
+            var result = new List<(MovieMetadata, DateTime?)>();
+            foreach (var movie in allMovies)
+            {
+                var userData = _userDataManager.GetUserData(user, movie);
+                if (userData != null && userData.Played && watchedMetaById.TryGetValue(movie.Id, out var meta))
+                {
+                    result.Add((meta, userData.LastPlayedDate));
+                }
+            }
+            return result;
+        }
+
         public async Task<TasteProfile> GetUserTasteProfileAsync(Guid userId, CancellationToken cancellationToken = default)
         {
-            var watched = await GetWatchedMoviesAsync(userId, cancellationToken);
-            return _tasteProfiler.CalculateProfile(userId, watched);
+            var watched = await GetWatchedMoviesWithDatesAsync(userId, cancellationToken);
+            double halfLife = Plugin.Instance!.Configuration.TasteDecayHalfLifeDays;
+            return _tasteProfiler.CalculateProfile(userId, watched, halfLife);
         }
 
         private void OnUserDataSaved(object? sender, UserDataSaveEventArgs e)

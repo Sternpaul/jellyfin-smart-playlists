@@ -35,7 +35,8 @@ namespace Jellyfin.Plugin.AIRecommender.Configuration
         public bool EnableDiscover { get; set; } = true;
         public bool EnableWildCard { get; set; } = true;
         
-        // Feature Settings
+        // Taste Profile Settings
+        public int TasteDecayHalfLifeDays { get; set; } = 120; // days; exponential decay of older watches in the taste profile
         public int ReviewNudgingWeight { get; set; } = 0; // percentage, 0-15
     }
 }

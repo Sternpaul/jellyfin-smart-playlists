@@ -80,6 +80,12 @@
                         <input type="range" id="ReviewNudgingWeight" name="ReviewNudgingWeight" min="0" max="15" step="1" is="emby-input" />
                         <div class="fieldDescription">How much critical acclaim boosts a movie's score (0% to disable).</div>
                     </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="TasteDecayHalfLifeDays">Taste Decay Half-Life (days):</label>
+                        <input type="number" id="TasteDecayHalfLifeDays" name="TasteDecayHalfLifeDays" is="emby-input" min="7" max="730" />
+                        <div class="fieldDescription">How quickly older watches lose influence on your taste profile. A movie watched this many days ago counts half as much as one watched today. Higher = slower change (more stable taste). Default 120 (gentle).</div>
+                    </div>
                     
                     <div class="sectionTitleContainer"><h2 class="sectionTitle">✅ Enabled Playlists</h2></div>
                     
@@ -195,6 +201,7 @@
                     
                     document.querySelector('#DiversityWeight').value = config.DiversityWeight || 25;
                     document.querySelector('#ReviewNudgingWeight').value = config.ReviewNudgingWeight || 0;
+                    document.querySelector('#TasteDecayHalfLifeDays').value = config.TasteDecayHalfLifeDays || 120;
                     
                     document.querySelector('#EnableForYou').checked = config.EnableForYou !== false;
                     document.querySelector('#EnableBecauseYouWatched').checked = config.EnableBecauseYouWatched !== false;
@@ -323,6 +330,7 @@
                     
                     config.DiversityWeight = parseInt(document.querySelector('#DiversityWeight').value, 10);
                     config.ReviewNudgingWeight = parseInt(document.querySelector('#ReviewNudgingWeight').value, 10);
+                    config.TasteDecayHalfLifeDays = parseInt(document.querySelector('#TasteDecayHalfLifeDays').value, 10) || 120;
                     
                     config.EnableForYou = document.querySelector('#EnableForYou').checked;
                     config.EnableBecauseYouWatched = document.querySelector('#EnableBecauseYouWatched').checked;
