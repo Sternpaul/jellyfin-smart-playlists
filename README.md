@@ -216,8 +216,8 @@ To compile the plugin yourself, you must first install the **.NET 9.0 SDK**.
 Once the SDK is installed:
 
 ```bash
-git clone https://github.com/your-username/jellyfin-plugin-airecommender.git
-cd jellyfin-plugin-airecommender
+git clone https://github.com/Sternpaul/jellyfin-smart-playlists.git
+cd jellyfin-smart-playlists
 dotnet build --configuration Release
 ```
 
