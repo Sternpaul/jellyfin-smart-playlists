@@ -1,6 +1,7 @@
 using System;
 using System.Net.Http;
 using Jellyfin.Plugin.AIRecommender.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.AIRecommender.Services.AI
 {
