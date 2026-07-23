@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>AI Recommender Settings</title>
+</head>
+<body>
+    <div id="aiRecommenderConfigPage" data-role="page" class="page type-interior pluginConfigurationPage aiRecommenderConfigPage">
+        <div data-role="content">
+            <div class="content-primary">
+                <h1>AI Recommender</h1>
+                <form id="aiRecommenderConfigForm">
+                    
+                    <div class="sectionTitleContainer"><h2 class="sectionTitle">🤖 AI Provider Settings</h2></div>
+                    
+                    <div class="selectContainer">
+                        <label class="selectLabel" for="AIProvider">AI Provider:</label>
+                        <select is="emby-select" id="AIProvider" name="AIProvider" class="emby-select-withcolor">
+                            <option value="GoogleAI">Google Gemini</option>
+                            <option value="OpenRouter">OpenRouter</option>
+                            <option value="OpenAI">OpenAI</option>
+                            <option value="Anthropic">Anthropic Claude</option>
+                        </select>
+                        <div class="fieldDescription">Select the AI service to use for classification and chat.</div>
+                    </div>
+                    
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="ApiKey">API Key:</label>
+                        <input type="password" id="ApiKey" name="ApiKey" is="emby-input" required="required" />
+                        <div class="fieldDescription">Your API key for the selected provider.</div>
+                    </div>
+                    
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="ClassificationModel">Classification Model:</label>
+                        <input type="text" id="ClassificationModel" name="ClassificationModel" is="emby-input" />
+                        <div class="fieldDescription">Model to use for background library classification (e.g. gemma-4-31b-it).</div>
+                    </div>
+                    
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="ChatModel">Chat Model:</label>
+                        <input type="text" id="ChatModel" name="ChatModel" is="emby-input" />
+                        <div class="fieldDescription">Model to use for the user chat interface.</div>
+                    </div>
+                    
+                    <div class="sectionTitleContainer"><h2 class="sectionTitle">🔀 Playlist Behavior</h2></div>
+                    
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="PlaylistRefreshHours">Playlist Refresh Interval (Hours):</label>
+                        <input type="number" id="PlaylistRefreshHours" name="PlaylistRefreshHours" is="emby-input" min="1" max="168" />
+                    </div>
+                    
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="DiversityWeight">Diversity Weight (%):</label>
+                        <input type="range" id="DiversityWeight" name="DiversityWeight" min="10" max="50" step="1" is="emby-input" />
+                        <div class="fieldDescription">Higher means more exploratory/wildcard movies in taste-matched playlists.</div>
+                    </div>
+                    
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="ReviewNudgingWeight">Review Nudging Weight (%):</label>
+                        <input type="range" id="ReviewNudgingWeight" name="ReviewNudgingWeight" min="0" max="15" step="1" is="emby-input" />
+                        <div class="fieldDescription">How much critical acclaim boosts a movie's score (0% to disable).</div>
+                    </div>
+                    
+                    <div class="sectionTitleContainer"><h2 class="sectionTitle">✅ Enabled Playlists</h2></div>
+                    
+                    <label class="checkboxContainer">
+                        <input type="checkbox" is="emby-checkbox" id="EnableForYou" name="EnableForYou" />
+                        <span>For You</span>
+                    </label>
+                    <label class="checkboxContainer">
+                        <input type="checkbox" is="emby-checkbox" id="EnableBecauseYouWatched" name="EnableBecauseYouWatched" />
+                        <span>Because You Watched</span>
+                    </label>
+                    <label class="checkboxContainer">
+                        <input type="checkbox" is="emby-checkbox" id="EnableHiddenGems" name="EnableHiddenGems" />
+                        <span>Hidden Gems</span>
+                    </label>
+                    
+                    <div>
+                        <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                            <span>Save Settings</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <script type="text/javascript">
+            var AIRecommenderConfig = {
+                pluginUniqueId: '3D3D8BE7-67AB-4F65-9F31-3EAE8764BBA3'
+            };
+
+            document.querySelector('#aiRecommenderConfigPage').addEventListener('pageshow', function () {
+                Dashboard.showLoadingMsg();
+
+                ApiClient.getPluginConfiguration(AIRecommenderConfig.pluginUniqueId).then(function (config) {
+                    document.querySelector('#AIProvider').value = config.AIProvider;
+                    document.querySelector('#ApiKey').value = config.ApiKey;
+                    document.querySelector('#ClassificationModel').value = config.ClassificationModel;
+                    document.querySelector('#ChatModel').value = config.ChatModel;
+                    document.querySelector('#PlaylistRefreshHours').value = config.PlaylistRefreshHours;
+                    document.querySelector('#DiversityWeight').value = config.DiversityWeight;
+                    document.querySelector('#ReviewNudgingWeight').value = config.ReviewNudgingWeight;
+                    
+                    document.querySelector('#EnableForYou').checked = config.EnableForYou;
+                    document.querySelector('#EnableBecauseYouWatched').checked = config.EnableBecauseYouWatched;
+                    document.querySelector('#EnableHiddenGems').checked = config.EnableHiddenGems;
+
+                    Dashboard.hideLoadingMsg();
+                });
+            });
+
+            document.querySelector('#aiRecommenderConfigForm').addEventListener('submit', function (e) {
+                e.preventDefault();
+                Dashboard.showLoadingMsg();
+
+                ApiClient.getPluginConfiguration(AIRecommenderConfig.pluginUniqueId).then(function (config) {
+                    config.AIProvider = document.querySelector('#AIProvider').value;
+                    config.ApiKey = document.querySelector('#ApiKey').value;
+                    config.ClassificationModel = document.querySelector('#ClassificationModel').value;
+                    config.ChatModel = document.querySelector('#ChatModel').value;
+                    config.PlaylistRefreshHours = parseInt(document.querySelector('#PlaylistRefreshHours').value, 10);
+                    config.DiversityWeight = parseInt(document.querySelector('#DiversityWeight').value, 10);
+                    config.ReviewNudgingWeight = parseInt(document.querySelector('#ReviewNudgingWeight').value, 10);
+                    
+                    config.EnableForYou = document.querySelector('#EnableForYou').checked;
+                    config.EnableBecauseYouWatched = document.querySelector('#EnableBecauseYouWatched').checked;
+                    config.EnableHiddenGems = document.querySelector('#EnableHiddenGems').checked;
+
+                    ApiClient.updatePluginConfiguration(AIRecommenderConfig.pluginUniqueId, config).then(function (result) {
+                        Dashboard.processPluginConfigurationUpdateResult(result);
+                    });
+                });
+            });
+        </script>
+    </div>
+</body>
+</html>
