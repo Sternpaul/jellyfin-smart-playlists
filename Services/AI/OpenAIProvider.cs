@@ -144,26 +144,28 @@ namespace Jellyfin.Plugin.AIRecommender.Services.AI
         private string BuildClassificationPrompt(List<MovieMetadata> movies)
         {
             var moviesJson = JsonSerializer.Serialize(movies.Select(m => new { m.ItemId, m.Title, m.ReleaseYear, m.Plot }));
-            return $@"Convert the following movies into a JSON array.
+            return $@"Convert the following movies into a JSON object containing a 'movies' array.
 
 Example Input:
 [{{ ""ItemId"": ""00000000-0000-0000-0000-000000000000"", ""Title"": ""The Matrix"", ""ReleaseYear"": 1999, ""Plot"": ""A hacker learns the truth."" }}]
 
 Example Output:
-[
-  {{
-    ""ItemId"": ""00000000-0000-0000-0000-000000000000"",
-    ""Subcategories"": [""Sci-Fi"", ""Action""],
-    ""Moods"": [""cerebral"", ""tense""],
-    ""Themes"": [""simulation"", ""rebellion""],
-    ""NarrativeStyle"": ""hero-journey"",
-    ""Accessibility"": ""mainstream"",
-    ""Intensity"": ""high"",
-    ""CriticalAcclaimScore"": 9
-  }}
-]
+{{
+  ""movies"": [
+    {{
+      ""ItemId"": ""00000000-0000-0000-0000-000000000000"",
+      ""Subcategories"": [""Sci-Fi"", ""Action""],
+      ""Moods"": [""cerebral"", ""tense""],
+      ""Themes"": [""simulation"", ""rebellion""],
+      ""NarrativeStyle"": ""hero-journey"",
+      ""Accessibility"": ""mainstream"",
+      ""Intensity"": ""high"",
+      ""CriticalAcclaimScore"": 9
+    }}
+  ]
+}}
 
-Now do it for the following movies. Output ONLY the JSON array. Do not include markdown formatting.
+Now do it for the following movies. Output ONLY the JSON object. Do not include markdown formatting.
 Input:
 {moviesJson}
 

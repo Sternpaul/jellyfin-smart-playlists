@@ -21,7 +21,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services.AI
         public IAIProvider GetProvider()
         {
             var httpClient = _httpClientFactory.CreateClient();
-            httpClient.Timeout = TimeSpan.FromMinutes(5);
+            httpClient.Timeout = TimeSpan.FromMinutes(15);
 
             return Config.AIProvider switch
             {

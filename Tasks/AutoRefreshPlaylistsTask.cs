@@ -34,7 +34,7 @@ namespace Jellyfin.Plugin.AIRecommender.Tasks
 
         public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
         {
-            var users = System.Linq.Enumerable.ToArray(_userManager.Users);
+            var users = System.Linq.Enumerable.ToArray(_userManager.GetUsers());
             int total = users.Length;
             int current = 0;
 
@@ -42,7 +42,8 @@ namespace Jellyfin.Plugin.AIRecommender.Tasks
             {
                 if (cancellationToken.IsCancellationRequested) break;
                 
-                await _playlistEngine.RefreshUserPlaylistsAsync(user.Id, cancellationToken);
+                var userId = (Guid)user.GetType().GetProperty("Id").GetValue(user);
+                await _playlistEngine.RefreshUserPlaylistsAsync(userId, cancellationToken);
                 
                 current++;
                 progress.Report((double)current / total * 100);
