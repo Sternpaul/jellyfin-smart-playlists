@@ -112,12 +112,16 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             int exploreSize = (int)(totalSize * (_config.DiversityWeight / 100.0));
             int tasteSize = totalSize - exploreSize;
 
-            // Score movies based on taste profile + review nudging
+            // Score movies based on taste profile + review nudging.
+            // If the user has no watch history yet, the taste profile is empty, so
+            // fall back to critical acclaim so "For You" still surfaces quality picks.
+            bool hasTaste = profile.SubcategoryPreferences.Any() || profile.MoodPreferences.Any();
             var scoredMovies = unwatched.Select(m => new
             {
                 Movie = m,
-                Score = ScoreMovieAgainstProfile(m, profile) + CalculateReviewNudge(m)
-                // We would also apply punishment decay penalties here
+                Score = (hasTaste ? ScoreMovieAgainstProfile(m, profile) : 0.0)
+                        + CalculateReviewNudge(m)
+                        + (hasTaste ? 0.0 : m.CriticalAcclaimScore / 10.0)
             }).OrderByDescending(x => x.Score).ToList();
 
             var tastePicks = scoredMovies.Take(tasteSize).Select(x => x.Movie.ItemId).ToList();
@@ -136,9 +140,15 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             var recentWatched = watched.OrderByDescending(m => m.DateAdded).FirstOrDefault(); // simplified logic
             
             if (recentWatched == null) return;
-            
-            // In a real app we'd use _similarityEngine here to find 10 similar unwatched movies
-            var picks = unwatched.Take(10).Select(m => m.ItemId).ToList();
+
+            // Rank unwatched movies by similarity to the most recently watched movie.
+            var picks = unwatched
+                .Select(m => new { Movie = m, Sim = _similarityEngine.CalculateSimilarity(recentWatched, m) })
+                .OrderByDescending(x => x.Sim)
+                .Take(10)
+                .Select(x => x.Movie.ItemId)
+                .ToList();
+
             await CreateOrUpdateJellyfinPlaylistAsync(userId, $"🔥 Because You Watched {recentWatched.Title}", picks, cancellationToken);
         }
         
@@ -207,9 +217,51 @@ namespace Jellyfin.Plugin.AIRecommender.Services
 
         private double ScoreMovieAgainstProfile(MovieMetadata movie, TasteProfile profile)
         {
-            double score = 0.0;
-            // Simplified scoring...
-            return score;
+            // Taste-matched scoring: how well this movie's tags align with the
+            // user's learned preferences (weighted subcategory + mood affinity).
+            double subScore = 0.0;
+            if (!string.IsNullOrWhiteSpace(movie.Subcategories) && profile.SubcategoryPreferences.Any())
+            {
+                try
+                {
+                    var subs = JsonSerializer.Deserialize<List<string>>(movie.Subcategories);
+                    if (subs != null && subs.Count > 0)
+                    {
+                        double matched = 0.0;
+                        foreach (var s in subs)
+                        {
+                            if (profile.SubcategoryPreferences.TryGetValue(s, out double w))
+                                matched += w;
+                        }
+                        // Average affinity across the movie's subcategories, capped at 1.0
+                        subScore = Math.Min(1.0, matched / subs.Count);
+                    }
+                }
+                catch { /* ignore parse errors */ }
+            }
+
+            double moodScore = 0.0;
+            if (!string.IsNullOrWhiteSpace(movie.Moods) && profile.MoodPreferences.Any())
+            {
+                try
+                {
+                    var moods = JsonSerializer.Deserialize<List<string>>(movie.Moods);
+                    if (moods != null && moods.Count > 0)
+                    {
+                        double matched = 0.0;
+                        foreach (var m in moods)
+                        {
+                            if (profile.MoodPreferences.TryGetValue(m, out double w))
+                                matched += w;
+                        }
+                        moodScore = Math.Min(1.0, matched / moods.Count);
+                    }
+                }
+                catch { /* ignore parse errors */ }
+            }
+
+            // Subcategories are the strongest taste signal; moods refine it.
+            return 0.7 * subScore + 0.3 * moodScore;
         }
         
         private double CalculateReviewNudge(MovieMetadata movie)
