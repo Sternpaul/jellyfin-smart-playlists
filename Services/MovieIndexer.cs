@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.AIRecommender.Data;
 using Jellyfin.Plugin.AIRecommender.Data.Models;
-using MediaBrowser.Controller.Dto;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Library;
@@ -89,12 +89,12 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             metadata.ImdbId = imdbId;
 
             // Extract director and top-billed cast from the Jellyfin item's People.
-            // In Jellyfin 10.11, People is retrieved via GetPeople() (DTO conversion
-            // required) and PersonInfo.Type is the PersonKind enum.
+            // In Jellyfin 10.11, People is read via ILibraryManager.GetPeople(BaseItem)
+            // (returns IReadOnlyList<PersonInfo>); PersonInfo.Type is the PersonKind enum.
             // The SimilarityEngine splits these on ',' so we join multiple with commas.
             var directors = new List<string>();
             var cast = new List<string>();
-            var people = jellyfinMovie.GetPeople(_libraryManager, new DtoOptions());
+            var people = _libraryManager.GetPeople(jellyfinMovie);
             if (people != null)
             {
                 foreach (var person in people)
