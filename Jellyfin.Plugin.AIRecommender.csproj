@@ -4,7 +4,7 @@
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Version>1.0.4.0</Version>
+    <Version>1.0.7.0</Version>
     <Authors>Sternpaul</Authors>
     <RepositoryUrl>https://github.com/Sternpaul/jellyfin-smart-playlists</RepositoryUrl>
     <Description>AI-powered smart playlists and recommendations for Jellyfin.</Description>
