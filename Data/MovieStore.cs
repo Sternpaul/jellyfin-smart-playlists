@@ -13,9 +13,9 @@ namespace Jellyfin.Plugin.AIRecommender.Data
     {
         private readonly string _dbPath;
 
-        public MovieStore(string dataFolderPath)
+        public MovieStore(MediaBrowser.Common.Configuration.IApplicationPaths applicationPaths)
         {
-            _dbPath = Path.Combine(dataFolderPath, "airecommender.db");
+            _dbPath = Path.Combine(applicationPaths.PluginConfigurationsPath, "airecommender.db");
             InitializeDatabase();
         }
 

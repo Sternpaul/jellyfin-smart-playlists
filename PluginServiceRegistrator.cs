@@ -12,7 +12,6 @@ namespace Jellyfin.Plugin.AIRecommender
         public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
         {
             // Register Data Access
-            serviceCollection.AddTransient<AiDbContext>();
             serviceCollection.AddSingleton<MovieStore>();
 
             // Register AI Providers
