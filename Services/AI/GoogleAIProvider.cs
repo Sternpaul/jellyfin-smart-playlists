@@ -112,14 +112,29 @@ namespace Jellyfin.Plugin.AIRecommender.Services.AI
             }
 
             var jsonResponse = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);
-            
+
             try
             {
-                return jsonResponse.GetProperty("candidates")[0]
+                var sb = new System.Text.StringBuilder();
+                var partsElement = jsonResponse
+                    .GetProperty("candidates")[0]
                     .GetProperty("content")
-                    .GetProperty("parts")[0]
-                    .GetProperty("text")
-                    .GetString() ?? string.Empty;
+                    .GetProperty("parts");
+
+                // Gemma / Gemini "thinking" models can emit a `thought` part (internal
+                // chain-of-thought, flagged with "thought": true) BEFORE the actual answer.
+                // Reading parts[0].text blindly returns that reasoning instead of the
+                // user-facing text (or the valid JSON we asked for). Skip thought parts and
+                // concatenate only the real answer parts.
+                foreach (var part in partsElement.EnumerateArray())
+                {
+                    if (part.ValueKind != JsonValueKind.Object) continue;
+                    if (part.TryGetProperty("thought", out var thought) && thought.ValueKind == JsonValueKind.True) continue;
+                    if (!part.TryGetProperty("text", out var text)) continue;
+                    sb.Append(text.GetString());
+                }
+
+                return sb.ToString();
             }
             catch (KeyNotFoundException ex)
             {

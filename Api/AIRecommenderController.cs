@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AIRecommender.Data;
 using Jellyfin.Plugin.AIRecommender.Data.Models;
+using Jellyfin.Plugin.AIRecommender.Configuration;
 using Jellyfin.Plugin.AIRecommender.Services;
 using Jellyfin.Plugin.AIRecommender.Services.AI;
 using MediaBrowser.Controller.Library;
@@ -69,14 +70,48 @@ namespace Jellyfin.Plugin.AIRecommender.Api
         }
 
         [HttpGet("TestConnection")]
-        public async Task<ActionResult> TestConnection([FromQuery] string provider, [FromQuery] string apiKey)
+        public async Task<ActionResult> TestConnection([FromQuery] string provider, [FromQuery] string apiKey, CancellationToken cancellationToken)
         {
             try
             {
-                // In a real scenario we'd use a temporary factory or pass the key to the provider directly.
-                // Since this is just a mockup check, we assume it's successful if apiKey is provided.
-                await Task.CompletedTask;
-                return Ok(new { Success = true, Message = "Connection Successful!" });
+                if (string.IsNullOrWhiteSpace(apiKey))
+                    return Ok(new { Success = false, Message = "Please enter an API Key first." });
+
+                if (!Enum.TryParse<AIProviderType>(provider, out var providerType))
+                    return Ok(new { Success = false, Message = $"Unknown provider: {provider}" });
+
+                // The providers read the key/model from Plugin.Instance.Configuration.
+                // The user may not have saved yet, so temporarily override with what they
+                // just typed, then restore in finally. (Test Connection runs rarely; this
+                // in-memory swap is safe against the rest of the app.)
+                var config = Plugin.Instance!.Configuration;
+                var originalProvider = config.AIProvider;
+                var originalKey = config.ApiKey;
+
+                config.AIProvider = providerType;
+                config.ApiKey = apiKey;
+
+                try
+                {
+                    using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    cts.CancelAfter(TimeSpan.FromSeconds(90));
+
+                    var aiProvider = _aiProviderFactory.GetProvider();
+                    var success = await aiProvider.ValidateConnectionAsync(cts.Token);
+
+                    return Ok(new
+                    {
+                        Success = success,
+                        Message = success
+                            ? "Connection Successful!"
+                            : "Connection failed. Check the API key and that the model name is valid for this provider."
+                    });
+                }
+                finally
+                {
+                    config.AIProvider = originalProvider;
+                    config.ApiKey = originalKey;
+                }
             }
             catch (Exception ex)
             {
