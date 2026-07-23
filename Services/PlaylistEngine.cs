@@ -23,6 +23,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         private readonly MovieStore _movieStore;
         private readonly WatchHistoryService _watchHistoryService;
         private readonly SimilarityEngine _similarityEngine;
+        private readonly LetterboxdService _letterboxdService;
         private PluginConfiguration _config => Plugin.Instance!.Configuration;
         private readonly ILogger<PlaylistEngine> _logger;
 
@@ -32,6 +33,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             MovieStore movieStore,
             WatchHistoryService watchHistoryService,
             SimilarityEngine similarityEngine,
+            LetterboxdService letterboxdService,
             ILogger<PlaylistEngine> logger)
         {
             _playlistManager = playlistManager;
@@ -39,6 +41,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             _movieStore = movieStore;
             _watchHistoryService = watchHistoryService;
             _similarityEngine = similarityEngine;
+            _letterboxdService = letterboxdService;
             _logger = logger;
             
             _watchHistoryService.WatchEventEmitted += OnMovieWatched;
@@ -230,10 +233,35 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         
         private async Task GenerateWatchlistPlaylistAsync(Guid userId, List<MovieMetadata> unwatched, CancellationToken cancellationToken)
         {
-            // We would usually query LetterboxdService here for the matched library IDs
-            // For now, we mock pulling from the user's unwatched library
-            var watchlistPicks = unwatched.Take(10).Select(m => m.ItemId).ToList();
-            await CreateOrUpdateJellyfinPlaylistAsync(userId, "📋 From Your Watchlist", watchlistPicks, cancellationToken);
+            // Sync the user's watchlist (from the JSON URL or CSV they provided in
+            // config) into matched library ItemIds, then build the playlist from those.
+            await _letterboxdService.SyncWatchlistAsync(userId, cancellationToken);
+
+            var userConfig = await _movieStore.GetUserWatchlistConfigAsync(userId, cancellationToken);
+            if (userConfig == null || string.IsNullOrWhiteSpace(userConfig.MatchedItemIds))
+            {
+                _logger.LogInformation("No matched watchlist items for user {UserId}; skipping 'From Your Watchlist'.", userId);
+                return;
+            }
+
+            List<Guid> matchedIds;
+            try
+            {
+                matchedIds = JsonSerializer.Deserialize<List<Guid>>(userConfig.MatchedItemIds) ?? new List<Guid>();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to parse MatchedItemIds for user {UserId}", userId);
+                return;
+            }
+
+            if (!matchedIds.Any())
+            {
+                _logger.LogInformation("Watchlist for user {UserId} matched 0 library items; skipping.", userId);
+                return;
+            }
+
+            await CreateOrUpdateJellyfinPlaylistAsync(userId, "From Your Watchlist", matchedIds, cancellationToken);
         }
 
         private double ScoreMovieAgainstProfile(MovieMetadata movie, TasteProfile profile)
