@@ -2,6 +2,9 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.5.2
+- **No cross-playlist duplicates:** a movie now appears in at most one of a user's discovery playlists (For You, Hidden Gems, Discover, Wild Card, Subcategory). Once placed, it's excluded from the others so the same film never shows up twice. "Because You Watched" is exempt (it's an intentional similarity list) but still excludes already-watched movies; Recently Added and the Watchlist playlist are their own sources.
+
 ## v1.5.1
 - **Completion-weighted learning:** a watch only counts as a real signal (sibling penalty + similar-movie reward) if playback reached `Min Watch % to Learn` (default 50%). A quick glance or test below the threshold is ignored — no penalty, no reward. Manual "mark played" without position info is treated as 0% and ignored. 0 = any "played" counts (old behaviour); 100 = must finish.
 

@@ -72,6 +72,8 @@ Dynamic, per-user playlists that update automatically. These appear as regular p
 
 All playlists are **private per user** — each user gets their own set, invisible to other users.
 
+A movie appears in **at most one** of a user's discovery playlists (For You, Hidden Gems, Discover, Wild Card, Subcategory) — once it's placed somewhere, it's excluded from the others so the same film never shows up twice. "Because You Watched" is exempt (it's an intentional similarity list) but still excludes already-watched movies.
+
 ### 🚫 The Punishment Mechanic (real, as of v1.3.0)
 
 When you **pick a movie from a playlist**, the plugin learns from that single action:
