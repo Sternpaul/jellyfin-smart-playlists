@@ -2,6 +2,9 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.5.15
+- **Config page overhaul for readability.** Reorganised into clear sections (AI Provider, Playlist Behavior, Scoring & Weighting, Learning from Watches, Freshness Nudges, Enabled Playlists, Per-User Watchlist & Ratings) with consistent label + input + plain-English description (and the default value shown on every field). Added a short "How a movie's score is built" explainer at the top of the weighting section so the numbers stop being mysterious. Every weight now says "0 = off". Also surfaced three controls that existed in config but were missing from the UI: **Letterboxd Ratings Weight**, **TMDB Keyword Weight**, and **Custom Endpoint**.
+
 ## v1.5.14
 - **TMDB keywords as a precision signal.** Curated, objective tags (e.g. `serial killer`, `neo-noir`, `self-fulfilling prophecy`) are fetched per movie (TMDB id resolved from the already-stored IMDB id; cached in `tmdb_keywords_cache.json`) and added as a configurable overlap term in **For You** taste-matching (`KeywordWeight`, default 0.10) and the **Because You Watched** similarity engine. More reliable than the LLM's subjective themes, and fetched at refresh time — no re-classification needed. Add a TMDB v3 API key in the plugin config to enable; blank disables it.
 
