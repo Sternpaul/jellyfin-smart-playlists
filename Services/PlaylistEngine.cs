@@ -322,7 +322,6 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                         continue;
                     }
                 }
-                }
                 result.Add(id);
                 if (sub != null) counts[sub] = counts.TryGetValue(sub, out int cc) ? cc + 1 : 1;
             }
