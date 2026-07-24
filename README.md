@@ -23,7 +23,7 @@ A Jellyfin plugin that solves "what should I watch" for massive libraries. It **
 |---|---|
 | **For You** | Top personalized picks. 75% taste-matched + 25% exploration (configurable). **Letterboxd ratings are weighted heavily** when set. |
 | **Because You Watched [X]** | Movies similar to what you recently watched (regenerates after each watch). Seeded on your 5 most-recent watches, named after the one the picks are actually about. |
-| **Hidden Gems** | High-acclaim films outside the genres you watch most, with famous blockbusters pushed down (TMDB popularity) so genuinely obscure-acclaimed films surface. Tune with the "Fame Penalty" knob. |
+| **Hidden Gems** | High-acclaim films that are BOTH outside the subcategories you usually watch AND genuinely obscure (low TMDB popularity). The fame penalty pushes well-known films down so true hidden gems rise. Tune with the "Fame Penalty" knob. |
 | **Recently Added** | Unwatched movies, newest first. |
 | **[Subcategory] For You** | Deep dive into a subcategory you love (e.g. "Psychological Thrillers For You"). |
 | **Discover: Hidden World** | Gateway into your least-explored subcategories, bridged to your taste. |
