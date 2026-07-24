@@ -31,7 +31,6 @@ jobs:
     - name: Extract changelog section for this version
       run: |
         python3 - <<'PY'
-        import os
         version = "${{ github.ref_name }}"
         try:
             text = open('CHANGELOG.md', encoding='utf-8').read()
@@ -51,7 +50,6 @@ jobs:
             elif capturing:
                 out.append(line)
         section = '\n'.join(out).strip() or f"Release {version}"
-        # Debug: confirm what we extracted.
         print("--- extracted section for %s ---" % version)
         print(section)
         print("--- end ---")
@@ -60,8 +58,13 @@ jobs:
         PY
 
     - name: Create GitHub Release
-      uses: softprops/action-gh-release@v2
-      with:
-        files: bin/Release/net9.0/Jellyfin.Plugin.AIRecommender.zip
-        body_path: changelog_section.md
-        # generate_release_notes left OFF so the curated changelog is shown verbatim.
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # Remove any pre-existing release for this tag so the curated body is applied fresh.
+        gh release delete "${{ github.ref_name }}" --yes || true
+        gh release create "${{ github.ref_name }}" \
+          --title "${{ github.ref_name }}" \
+          --notes-file changelog_section.md \
+          --target "${{ github.sha }}" \
+          bin/Release/net9.0/Jellyfin.Plugin.AIRecommender.zip
