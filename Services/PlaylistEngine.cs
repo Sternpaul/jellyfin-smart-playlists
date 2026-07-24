@@ -57,6 +57,17 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         {
             try
             {
+                // v1.5.1: completion-weighted learning. A watch only counts as a real
+                // signal (penalty + reward) if playback reached MinCompletionPercent.
+                // Quick glances / tests (< threshold) are ignored — no penalty.
+                if (e.PlaybackPercentage.HasValue && e.PlaybackPercentage < _config.MinCompletionPercent)
+                {
+                    _logger.LogInformation(
+                        "Watch of {MovieId} by {UserId} was only {Pct}% complete (< {Min}% threshold); ignoring as a learning signal.",
+                        e.MovieId, e.UserId, e.PlaybackPercentage, _config.MinCompletionPercent);
+                    return;
+                }
+
                 await HandlePunishmentAndRebuildAsync(e.UserId, e.MovieId, CancellationToken.None);
             }
             catch (Exception ex)

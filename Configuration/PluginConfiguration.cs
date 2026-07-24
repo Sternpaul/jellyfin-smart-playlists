@@ -56,6 +56,7 @@ namespace Jellyfin.Plugin.AIRecommender.Configuration
         public double NewMovieBoostMinFit { get; set; } = 0.30;  // For You only boosts new movies that fit taste at/above this score
         public double NoveltyBonus { get; set; } = 0.05;          // nudge for movies not recently surfaced in playlists
         public int NoveltyHalfLifeDays { get; set; } = 30;        // days; how fast the novelty nudge fades after a movie is surfaced
+        public int MinCompletionPercent { get; set; } = 50;       // v1.5.1: min playback % for a watch to count as a real signal (penalty/reward). 0 = any "played" counts (old behavior); 100 = must finish.
 
         // User Exclusions
         // User GUIDs (as strings) for whom playlist generation is skipped entirely.

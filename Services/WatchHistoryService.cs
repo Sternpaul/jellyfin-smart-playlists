@@ -107,9 +107,28 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             if (e.Item is Movie && e.UserData.Played)
             {
                 _logger.LogInformation("User {UserId} watched {Movie}. Emitting watch event...", e.UserId, e.Item.Name);
-                
+
+                // v1.5.1: compute playback % so the engine can ignore quick glances /
+                // tests (below MinCompletionPercent) — only a real watch learns.
+                double? pct = null;
+                if (e.Item.RunTimeTicks is > 0 && e.UserData.PlaybackPositionTicks is > 0)
+                {
+                    pct = (double)e.UserData.PlaybackPositionTicks / e.Item.RunTimeTicks * 100.0;
+                }
+                else if (e.UserData.Played)
+                {
+                    // Marked played without position info (e.g. manual mark) -> treat as
+                    // 0% so it does NOT count as a learning signal (glance/test).
+                    pct = 0.0;
+                }
+
                 // Fire an event that PlaylistEngine can listen to for real-time punishment + rebuild
-                WatchEventEmitted?.Invoke(this, new WatchEventArgs { UserId = e.UserId, MovieId = e.Item.Id });
+                WatchEventEmitted?.Invoke(this, new WatchEventArgs
+                {
+                    UserId = e.UserId,
+                    MovieId = e.Item.Id,
+                    PlaybackPercentage = pct
+                });
             }
         }
 
@@ -120,5 +139,8 @@ namespace Jellyfin.Plugin.AIRecommender.Services
     {
         public Guid UserId { get; set; }
         public Guid MovieId { get; set; }
+        // v1.5.1: playback % at time of the watch event (null if unknown). Below
+        // MinCompletionPercent => not a real watch signal (glance/test); engine ignores it.
+        public double? PlaybackPercentage { get; set; }
     }
 }
