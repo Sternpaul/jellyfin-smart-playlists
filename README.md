@@ -10,6 +10,48 @@ A Jellyfin server plugin that solves the "what should I watch" problem for massi
 
 ---
 
+## 📦 Installation
+
+### Prerequisites
+- Jellyfin Server **10.11.x**
+- .NET 9.0 SDK (for building from source)
+- An API key from one of: [Google AI Studio](https://aistudio.google.com/) (free tier available), [OpenRouter](https://openrouter.ai/), [OpenAI](https://platform.openai.com/), or [Anthropic](https://console.anthropic.com/)
+
+### Method 1 — Self-hosted plugin repository (recommended, auto-updates)
+
+Add the plugin's manifest as a custom repository so Jellyfin shows it in the catalog with proper developer info and one-click updates (no more sideloading):
+
+1. In Jellyfin: **Dashboard → Plugins → Repositories → Add**
+2. URL: `https://sternpaul.github.io/jellyfin-smart-playlists/repo/manifest.json`
+3. Save, then go to **Catalog** (or restart Jellyfin). "AI Recommender" appears under Available with Developer **Sternpaul** and category **AI Recommender**.
+4. Install it. Future releases show an **Update** button automatically — each tagged version is added to the manifest by the build workflow.
+5. Open **Dashboard → Plugins → AI Recommender**, pick your AI provider, enter your API key, and click **"Classify Library"** (runs once; takes a few minutes for large libraries). Playlists generate automatically after classification.
+
+> The plugin's identity is the fixed GUID `3D3D8BE7-67AB-4F65-9F31-3EAE8764BBA3`. `targetAbi` is `10.11.0.0` (the minimum 10.11 ABI — Jellyfin silently drops a plugin pinned to the exact server build). If you move to a different Jellyfin major version, bump the ABI in `repo/manifest.json` and the `Jellyfin.Model` package to match.
+
+### Method 2 — Manual install (sideload the DLL)
+
+1. Download the latest `.dll` from [Releases](../../releases)
+2. Place it in your Jellyfin plugin directory:
+   ```
+   # Docker (Depends on your mount, usually one of these)
+   /config/plugins/AIRecommender/Jellyfin.Plugin.AIRecommender.dll
+   /config/data/plugins/AIRecommender/Jellyfin.Plugin.AIRecommender.dll
+
+   # Windows
+   C:\Users\{you}\AppData\Local\jellyfin\plugins\AIRecommender\Jellyfin.Plugin.AIRecommender.dll
+
+   # Linux (Native install)
+   /var/lib/jellyfin/plugins/AIRecommender/Jellyfin.Plugin.AIRecommender.dll
+   ```
+3. Restart Jellyfin
+4. Go to **Dashboard → Plugins → AI Recommender**
+5. Select your AI provider and enter your API key
+6. Click **"Classify Library"** — runs once, takes a few minutes for large libraries
+7. Playlists are generated automatically after classification completes
+
+---
+
 ## The Problem
 
 You have thousands of movies. Jellyfin (via TMDB) tags a psychological slow-burn character study and a Fast & Furious movie both as "Action/Thriller". Browsing by genre is meaningless. You end up scrolling endlessly or rewatching the same 20 movies.
@@ -191,46 +233,6 @@ Every N hours (configurable, default: 12):
 ```
 
 ---
-
-## 📦 Installation
-
-### Prerequisites
-- Jellyfin Server **10.11.x**
-- .NET 9.0 SDK (for building from source)
-- An API key from one of: [Google AI Studio](https://aistudio.google.com/) (free tier available), [OpenRouter](https://openrouter.ai/), [OpenAI](https://platform.openai.com/), or [Anthropic](https://console.anthropic.com/)
-
-### Method 1 — Self-hosted plugin repository (recommended, auto-updates)
-
-Add the plugin's manifest as a custom repository so Jellyfin shows it in the catalog with proper developer info and one-click updates (no more sideloading):
-
-1. In Jellyfin: **Dashboard → Plugins → Repositories → Add**
-2. URL: `https://sternpaul.github.io/jellyfin-smart-playlists/repo/manifest.json`
-3. Save, then go to **Catalog** (or restart Jellyfin). "AI Recommender" appears under Available with Developer **Sternpaul** and category **AI Recommender**.
-4. Install it. Future releases show an **Update** button automatically — each tagged version is added to the manifest by the build workflow.
-5. Open **Dashboard → Plugins → AI Recommender**, pick your AI provider, enter your API key, and click **"Classify Library"** (runs once; takes a few minutes for large libraries). Playlists generate automatically after classification.
-
-> The plugin's identity is the fixed GUID `3D3D8BE7-67AB-4F65-9F31-3EAE8764BBA3`. `targetAbi` is `10.11.0.0` (the minimum 10.11 ABI — Jellyfin silently drops a plugin pinned to the exact server build). If you move to a different Jellyfin major version, bump the ABI in `repo/manifest.json` and the `Jellyfin.Model` package to match.
-
-### Method 2 — Manual install (sideload the DLL)
-
-1. Download the latest `.dll` from [Releases](../../releases)
-2. Place it in your Jellyfin plugin directory:
-   ```
-   # Docker (Depends on your mount, usually one of these)
-   /config/plugins/AIRecommender/Jellyfin.Plugin.AIRecommender.dll
-   /config/data/plugins/AIRecommender/Jellyfin.Plugin.AIRecommender.dll
-
-   # Windows
-   C:\Users\{you}\AppData\Local\jellyfin\plugins\AIRecommender\Jellyfin.Plugin.AIRecommender.dll
-
-   # Linux (Native install)
-   /var/lib/jellyfin/plugins/AIRecommender/Jellyfin.Plugin.AIRecommender.dll
-   ```
-3. Restart Jellyfin
-4. Go to **Dashboard → Plugins → AI Recommender**
-5. Select your AI provider and enter your API key
-6. Click **"Classify Library"** — runs once, takes a few minutes for large libraries
-7. Playlists are generated automatically after classification completes
 
 ### Build from Source
 
