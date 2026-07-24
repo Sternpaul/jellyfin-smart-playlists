@@ -52,7 +52,16 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             }).OfType<Movie>().ToList();
 
             var existingMovies = await _movieStore.GetAllMoviesAsync(cancellationToken);
-            var existingDict = existingMovies.ToDictionary(m => m.ItemId);
+            // v1.5.28: tolerate duplicate ItemId rows that can exist on databases
+            // created before the PRIMARY KEY (ItemId) constraint was added (the
+            // CREATE TABLE IF NOT EXISTS is a no-op on pre-existing tables, so the
+            // PK was never applied on upgraded DBs and SaveMoviesAsync let dups in).
+            // Group + keep the most-recently-updated row per ItemId instead of
+            // letting ToDictionary throw "An item with the same key has already
+            // been added", which aborted the whole index in ~0 seconds.
+            var existingDict = existingMovies
+                .GroupBy(m => m.ItemId)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(m => m.LastUpdated).First());
 
             _logger.LogInformation("Library scan: {LibraryCount} movies in Jellyfin, {DbCount} in recommender DB.", allMovies.Count, existingDict.Count);
 
@@ -80,7 +89,23 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 await _movieStore.SaveMoviesAsync(newOrUpdatedMovies, cancellationToken);
                 _logger.LogInformation("Indexed {Count} new/updated movies.", newOrUpdatedMovies.Count);
             }
-            
+
+            // v1.5.28: prune orphan rows for movies that no longer exist in Jellyfin
+            // (the index only ever added before, so deleted movies accumulated and
+            // the DB grew far larger than the real library — e.g. 3328 rows for a
+            // smaller library). Deletes rows whose ItemId isn't in this scan.
+            var liveIds = new HashSet<Guid>(allMovies.Select(m => m.Id));
+            try
+            {
+                var removed = await _movieStore.DeleteMoviesNotInAsync(liveIds, cancellationToken);
+                if (removed > 0)
+                    _logger.LogInformation("Pruned {Count} orphaned movie rows no longer in the library.", removed);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Orphan pruning failed; continuing.");
+            }
+
             _logger.LogInformation("Library indexing complete.");
         }
 

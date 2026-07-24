@@ -30,8 +30,6 @@ namespace Jellyfin.Plugin.AIRecommender.Api
         private readonly IUserManager _userManager;
         private readonly MovieStore _movieStore;
         private readonly ITaskManager _taskManager;
-        private readonly MovieIndexer _movieIndexer;
-        private readonly MovieClassifier _movieClassifier;
         private readonly ILogger<AIRecommenderController> _logger;
 
         public AIRecommenderController(
@@ -42,8 +40,6 @@ namespace Jellyfin.Plugin.AIRecommender.Api
             IUserManager userManager,
             MovieStore movieStore,
             ITaskManager taskManager,
-            MovieIndexer movieIndexer,
-            MovieClassifier movieClassifier,
             ILogger<AIRecommenderController> logger)
         {
             _aiProviderFactory = aiProviderFactory;
@@ -53,8 +49,6 @@ namespace Jellyfin.Plugin.AIRecommender.Api
             _userManager = userManager;
             _movieStore = movieStore;
             _taskManager = taskManager;
-            _movieIndexer = movieIndexer;
-            _movieClassifier = movieClassifier;
             _logger = logger;
         }
 

@@ -105,6 +105,16 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                 )");
             MigrateAddMovieKeywordColumns(db);
             MigrateAddUserWatchlistColumns(db);
+            // v1.5.28: one-time repair for databases created before the
+            // PRIMARY KEY (ItemId) constraint existed. CREATE TABLE IF NOT EXISTS
+            // is a no-op on pre-existing tables, so upgraded DBs never got the PK
+            // and SaveMoviesAsync (which only uses FindAsync, never a SQL upsert)
+            // let duplicate ItemId rows in. Those dups crash IndexLibraryAsync
+            // (ToDictionary(ItemId)) and cause inconsistent playlist matching.
+            // Collapse to one row per ItemId (keep the latest) and add a UNIQUE
+            // index so duplicates can never accumulate again.
+            DedupMovies(db);
+            EnsureUniqueMovieIndex(db);
         }
 
         // v1.5.25: add the v1.5.17 ratings columns to the UserWatchlists table on
@@ -137,6 +147,37 @@ namespace Jellyfin.Plugin.AIRecommender.Data
             catch { /* column missing or already populated — ignore */ }
         }
 
+        // v1.5.28: collapse duplicate ItemId rows (a pre-PK-index artifact) to a
+        // single row per ItemId, keeping the most-recently-updated one. Safe to call
+        // repeatedly (no-ops when there are no dups). Uses a single grouped query so
+        // it never throws even when rows are duplicated.
+        private static void DedupMovies(AiDbContext db)
+        {
+            try
+            {
+                // Keep the row with the max LastUpdated per ItemId; delete the rest.
+                // SQLite supports DELETE ... WHERE ... IN (subquery) with rowid.
+                db.Database.ExecuteSqlRaw(@"
+                    DELETE FROM Movies
+                    WHERE rowid NOT IN (
+                        SELECT MAX(rowid) FROM Movies GROUP BY ItemId
+                    )");
+            }
+            catch { /* best-effort; ignore if schema/engine quirk */ }
+        }
+
+        // v1.5.28: guarantee one row per ItemId going forward. The PK constraint in
+        // CREATE TABLE is a no-op on pre-existing tables, so add an explicit UNIQUE
+        // index. Requires duplicates to already be removed (see DedupMovies).
+        private static void EnsureUniqueMovieIndex(AiDbContext db)
+        {
+            try
+            {
+                db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS UX_Movies_ItemId ON Movies(ItemId)");
+            }
+            catch { /* index may already exist, or dups remain — both are non-fatal here */ }
+        }
+
         private static void EnsureTable(AiDbContext db, string sql)
         {
             db.Database.ExecuteSqlRaw(sql);
@@ -161,6 +202,9 @@ namespace Jellyfin.Plugin.AIRecommender.Data
 
         public async Task SaveMoviesAsync(IEnumerable<MovieMetadata> movies, CancellationToken cancellationToken = default)
         {
+            // v1.5.28: true upsert. FindAsync by ItemId guarantees we UPDATE the
+            // existing row rather than INSERT a duplicate, so the UNIQUE index added
+            // in InitializeDatabase can never be violated (no more dup rows).
             using var db = GetContext();
             foreach (var movie in movies)
             {
@@ -175,6 +219,24 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                 }
             }
             await db.SaveChangesAsync(cancellationToken);
+        }
+
+        // v1.5.28: prune rows whose ItemId is no longer present in the Jellyfin
+        // library. The index only ever added rows (OnItemRemoved was a no-op), so
+        // deleted movies accumulated as orphans and the DB grew far larger than the
+        // real library — which also inflated TMDB enrichment counts and playlist
+        // matching. Pass the set of current Jellyfin movie ItemIds; anything in the
+        // DB not in that set is deleted.
+        public async Task<int> DeleteMoviesNotInAsync(HashSet<Guid> liveItemIds, CancellationToken cancellationToken = default)
+        {
+            using var db = GetContext();
+            var toDelete = db.Movies
+                .Where(m => !liveItemIds.Contains(m.ItemId))
+                .ToList();
+            if (toDelete.Count == 0) return 0;
+            db.Movies.RemoveRange(toDelete);
+            await db.SaveChangesAsync(cancellationToken);
+            return toDelete.Count;
         }
 
         public async Task<UserWatchlistConfig?> GetUserWatchlistConfigAsync(Guid userId, CancellationToken cancellationToken = default)
