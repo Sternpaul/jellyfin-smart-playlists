@@ -362,7 +362,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             await CreateOrUpdateJellyfinPlaylistAsync(userId, $"Because You Watched {mostRecent.Title}", picks, cancellationToken);
         }
         
-        private async Task GenerateHiddenGemsPlaylistAsync(guid userId, List<MovieMetadata> unwatched, TasteProfile profile, Dictionary<Guid, MovieAffinity> affinities, CancellationToken cancellationToken)
+        private async Task GenerateHiddenGemsPlaylistAsync(Guid userId, List<MovieMetadata> unwatched, TasteProfile profile, Dictionary<Guid, MovieAffinity> affinities, CancellationToken cancellationToken)
         {
             var now = DateTime.UtcNow;
             // "Hidden Gems" = high acclaim AND unfamiliar to the user (subcategories
@@ -422,7 +422,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             await CreateOrUpdateJellyfinPlaylistAsync(userId, "Recently Added", recent, cancellationToken);
         }
 
-        private async Task GenerateSubcategoryPlaylistsAsync(guid userId, TasteProfile profile, List<MovieMetadata> unwatched, Dictionary<Guid, MovieAffinity> affinities, CancellationToken cancellationToken)
+        private async Task GenerateSubcategoryPlaylistsAsync(Guid userId, TasteProfile profile, List<MovieMetadata> unwatched, Dictionary<Guid, MovieAffinity> affinities, CancellationToken cancellationToken)
         {
             if (profile.SubcategoryPreferences.Any() && _config.EnableSubcategory)
             {
@@ -483,7 +483,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 .ToList();
         }
 
-        private async Task GenerateWildCardPlaylistAsync(guid userId, TasteProfile profile, List<MovieMetadata> unwatched, Dictionary<Guid, MovieAffinity> affinities, CancellationToken cancellationToken)
+        private async Task GenerateWildCardPlaylistAsync(Guid userId, TasteProfile profile, List<MovieMetadata> unwatched, Dictionary<Guid, MovieAffinity> affinities, CancellationToken cancellationToken)
         {
             var now = DateTime.UtcNow;
             // Wild Card = 100% exploration: the user's LEAST-explored subcategory,
