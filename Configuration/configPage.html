@@ -104,6 +104,12 @@
                     </div>
 
                     <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="FamePenaltyWeight">Hidden Gems Fame Penalty:</label>
+                        <input type="number" id="FamePenaltyWeight" name="FamePenaltyWeight" is="emby-input" step="0.05" min="0" max="1" />
+                        <div class="fieldDescription">How hard blockbuster "Hidden Gems" are pushed down in favor of obscure-acclaimed films (uses TMDB popularity; needs a TMDB key). 0 = off (old behavior, where famous films qualified). Default: 0.15.</div>
+                    </div>
+
+                    <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="DiversityWeight">Exploration Slots (%):</label>
                         <input type="range" id="DiversityWeight" name="DiversityWeight" min="10" max="50" step="1" is="emby-input" />
                         <div class="fieldDescription">Share of taste playlists reserved for unfamiliar picks. Higher = more discovery. Default: 25%.</div>
@@ -393,6 +399,7 @@
                     document.querySelector('#TmdbApiKey').value = config.TmdbApiKey || "";
                     document.querySelector('#RatingWeight').value = (config.RatingWeight !== undefined && config.RatingWeight !== null) ? config.RatingWeight : 0.50;
                     document.querySelector('#KeywordWeight').value = (config.KeywordWeight !== undefined && config.KeywordWeight !== null) ? config.KeywordWeight : 0.10;
+                    document.querySelector('#FamePenaltyWeight').value = (config.FamePenaltyWeight !== undefined && config.FamePenaltyWeight !== null) ? config.FamePenaltyWeight : 0.15;
                     document.querySelector('#CustomEndpoint').value = config.CustomEndpoint || "";
                     
                     document.querySelector('#PlaylistRefreshHours').value = config.PlaylistRefreshHours || 12;
@@ -605,6 +612,8 @@
                     if (isNaN(config.RatingWeight)) config.RatingWeight = 0.50;
                     config.KeywordWeight = parseFloat(document.querySelector('#KeywordWeight').value);
                     if (isNaN(config.KeywordWeight)) config.KeywordWeight = 0.10;
+                    config.FamePenaltyWeight = parseFloat(document.querySelector('#FamePenaltyWeight').value);
+                    if (isNaN(config.FamePenaltyWeight)) config.FamePenaltyWeight = 0.15;
                     config.CustomEndpoint = document.querySelector('#CustomEndpoint').value;
                     config.PlaylistRefreshHours = parseInt(document.querySelector('#PlaylistRefreshHours').value, 10);
                     config.MaxMoviesPerPlaylist = parseInt(document.querySelector('#MaxMoviesPerPlaylist').value, 10);
