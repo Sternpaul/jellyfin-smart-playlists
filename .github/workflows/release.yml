@@ -76,7 +76,16 @@ jobs:
       run: |
         set -euo pipefail
         version="${{ github.ref_name }}"
-        export ver_no_prefix="${version#v}"
+        ver_no_prefix="${version#v}"
+        # Normalize to a 4-part version (e.g. 1.5.9 -> 1.5.9.0) so it matches the
+        # assembly Version in the .csproj and Jellyfin's version comparison.
+        case "$ver_no_prefix" in
+          *.*.*.*) ;;
+          *.*.*) ver_no_prefix="${ver_no_prefix}.0" ;;
+          *.*)   ver_no_prefix="${ver_no_prefix}.0.0" ;;
+          *)     ver_no_prefix="${ver_no_prefix}.0.0.0" ;;
+        esac
+        export ver_no_prefix
         zip_path="bin/Release/net9.0/Jellyfin.Plugin.AIRecommender.zip"
         export checksum=$(md5sum "$zip_path" | awk '{print $1}')
         export timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
