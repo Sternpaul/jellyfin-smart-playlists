@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.5.25.0",
+        "changelog": "- **Fixed three bugs reported from the NAS logs:**\n  1. **`no such column: u.EnableRatingsPlaylist` crash.** The `UserWatchlists` table DDL predated v1.5.17 and was missing `RatingsJsonUrl` + `EnableRatingsPlaylist`; no migration added them, so every load/save of the per-user watchlist/ratings config threw and dropped the save. Added an idempotent ALTER migration (and the columns to the fresh-install DDL).\n  2. **New movies never got classified.** The incremental `ItemAdded` handler saved metadata but never triggered classification, so freshly-added movies sat unclassified until the next 2am daily task. Added a 20s debounced classification trigger on add.\n  3. **\"Generate Playlists\" button hung on \"running\" with no logs.** It called `_taskManager.Execute` (fire-and-forget) and returned immediately, with no completion signal and swallowed errors. Now it awaits the refresh per user inside the request and returns success/error, so the UI reflects real progress and failures are visible.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.25/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "c67c57d62bf5724ed540022bd788cffd",
+        "timestamp": "2026-07-24T21:40:16Z"
+      },
+      {
         "version": "1.5.24.0",
         "changelog": "- **Fixed a crash on upgraded databases (regression from v1.5.21).** `Popularity` is a non-nullable `double` in the model but the column was added as NULL, so every pre-v1.5.21 row had NULL there. `GetAllMoviesAsync` → `GetDouble` then threw \"The data is NULL at ordinal 14\", killing the index/classify task on existing installs. Root cause: `MovieStore.MigrateAddMovieKeywordColumns` added `Popularity` nullable and never backfilled. Fix: backfill NULLs to 0 at migration time, and make the column `REAL NOT NULL DEFAULT 0` for fresh installs.",
         "targetAbi": "10.11.0.0",
