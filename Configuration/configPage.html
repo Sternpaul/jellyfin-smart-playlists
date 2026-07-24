@@ -568,7 +568,12 @@
 
                     ApiClient.updatePluginConfiguration(AIRecommenderConfig.pluginUniqueId, config).then(function (result) {
                         Dashboard.processPluginConfigurationUpdateResult(result);
-                    });
+                        // v1.5.9: purge playlists for disabled users immediately (don't wait for next refresh).
+                        return fetch(ApiClient.getUrl('AIRecommender/ApplyExclusions'), {
+                            method: 'POST',
+                            headers: ApiClient.getAuthorizationHeader ? ApiClient.getAuthorizationHeader() : {}
+                        });
+                    }).catch(function () {});
                 });
             });
         </script>

@@ -194,12 +194,24 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         }
 
 
+        // v1.5.9: apply per-user exclusions immediately when config is saved, so the
+        // disabled users' playlists disappear without waiting for the next 12h refresh.
+        public async Task ApplyExclusionsNowAsync(IEnumerable<Guid> disabledUserIds, CancellationToken cancellationToken = default)
+        {
+            foreach (var userId in disabledUserIds)
+            {
+                if (cancellationToken.IsCancellationRequested) break;
+                _logger.LogInformation("User {UserId} disabled via config; removing their recommendation playlists.", userId);
+                await DeleteUserRecommendationPlaylistsAsync(userId, cancellationToken);
+            }
+        }
+
         public async Task RefreshUserPlaylistsAsync(Guid userId, CancellationToken cancellationToken = default)
         {
             _currentUserId = userId; // v1.5.3: for read-time decay helpers
             // Respect per-user exclusions configured by the admin.
             if (_config.DisabledUserIds != null &&
-                _config.DisabledUserIds.Any(id => string.Equals(id, userId.ToString(), StringComparison.OrdinalIgnoreCase)))
+                _config.DisabledUserIds.Any(id => Guid.TryParse(id, out var disabledId) && disabledId == userId))
             {
                 _logger.LogInformation("User {UserId} is disabled; removing their recommendation playlists.", userId);
                 await DeleteUserRecommendationPlaylistsAsync(userId, cancellationToken);
@@ -928,6 +940,12 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                         boosts.Add(new { ItemId = kv.Key, Title = title, Type = "novelty", Value = Math.Round(novelty, 4) });
                 }
             }
+            // Cap these lists: with large libraries the affinity table can be huge and an
+            // uncapped response makes the config-page panel fail to render.
+            var penaltyCount = penalties.Count;
+            var boostCount = boosts.Count;
+            penalties = penalties.Take(50).ToList();
+            boosts = boosts.Take(50).ToList();
 
             Dictionary<Guid, List<string>> exclusions;
             lock (_exclusionsLock)
@@ -963,7 +981,9 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 GeneratedAt = now,
                 HasTaste = profile.SubcategoryPreferences.Any() || profile.MoodPreferences.Any(),
                 TopSubcategories = topSubcats,
+                PenaltyCount = penaltyCount,
                 ActivePenalties = penalties,
+                BoostCount = boostCount,
                 ActiveBoosts = boosts,
                 ExclusionCount = exclusions.Count,
                 Exclusions = exclusionView,

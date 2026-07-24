@@ -2,6 +2,10 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.5.9
+- **User exclusions now take effect immediately.** Saving config with excluded users deletes their playlists right away (previously you had to wait for the next 12h refresh). Exclusion matching also normalized via `Guid.Parse` (handles case/braces).
+- **Debug panel no longer fails on large libraries.** `Active Penalties` and `Active Boosts` are now capped at 50 entries each (Exclusions already capped); the panel shows counts (`PenaltyCount`, `BoostCount`, `ExclusionCount`) and a sample. Fixes the panel breaking when a user has hundreds of watched movies.
+
 ## v1.5.8
 - **Fixed `no such table: Affinities` crash on existing databases.** `EnsureCreated()` only creates tables when the DB file is new, so a database written by an older version (missing the `Affinities` table) stayed broken and the Debug panel / playlist refresh crashed. Startup now also runs idempotent `CREATE TABLE IF NOT EXISTS` for all five tables, upgrading existing DBs in place without data loss.
 

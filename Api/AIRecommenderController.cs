@@ -174,6 +174,28 @@ namespace Jellyfin.Plugin.AIRecommender.Api
             return NoContent();
         }
 
+        // v1.5.9: immediately purge playlists for users disabled in config, so exclusions
+        // take effect on save instead of waiting for the next scheduled refresh.
+        [HttpPost("ApplyExclusions")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        public async Task<ActionResult> ApplyExclusions(CancellationToken cancellationToken)
+        {
+            var disabled = (Plugin.Instance?.Configuration?.DisabledUserIds ?? new List<string>())
+                .Where(id => Guid.TryParse(id, out _))
+                .Select(id => Guid.Parse(id))
+                .ToHashSet();
+            if (disabled.Count == 0) return NoContent();
+            foreach (var user in _userManager.GetUsers())
+            {
+                var idProp = user.GetType().GetProperty("Id");
+                if (idProp == null) continue;
+                if (idProp.GetValue(user) is not Guid userId) continue;
+                if (disabled.Contains(userId))
+                    await _playlistEngine.ApplyExclusionsNowAsync(new[] { userId }, cancellationToken);
+            }
+            return NoContent();
+        }
+
         // v1.5.0: read-only "what's happening" snapshot for the config-page debug panel.
         [HttpGet("Debug/{userId}")]
         [ProducesResponseType(StatusCodes.Status200OK)]
