@@ -130,62 +130,37 @@ namespace Jellyfin.Plugin.AIRecommender.Api
         }
         
         [HttpPost("ClassifyLibrary")]
-        public async Task<ActionResult> ClassifyLibrary(CancellationToken cancellationToken)
+        public ActionResult ClassifyLibrary()
         {
-            // v1.5.26: run the index + classify synchronously within the request (awaited)
-            // and report real counts. Previously this called _taskManager.Execute
-            // (fire-and-forget), so the config-page "Classify Library" button returned
-            // "Task Started" with no result and no visibility into whether new movies
-            // were actually picked up or classified.
-            try
+            // Fire-and-forget REAL scheduled task (the correct, stoppable behavior).
+            // Do NOT run the index/classify inside the HTTP request: that ties the work
+            // to the request's CancellationToken, which cancels every in-flight call
+            // (TMDB HTTP, EF save) the moment the browser closes the tab -> a forever
+            // loading circle, no way to stop it, and mass TaskCanceledException spam in
+            // the logs. The scheduled task runs on its own token and shows progress /
+            // can be stopped from Dashboard > Scheduled Tasks.
+            var task = _taskManager.ScheduledTasks.FirstOrDefault(t => t.Name == "AI Recommender - Index & Classify Library");
+            if (task != null)
             {
-                var before = await _movieStore.GetUnclassifiedMoviesAsync(cancellationToken);
-                await _movieIndexer.IndexLibraryAsync(cancellationToken);
-                await _movieClassifier.ClassifyPendingMoviesAsync(cancellationToken);
-                var after = await _movieStore.GetUnclassifiedMoviesAsync(cancellationToken);
-                return Ok(new
-                {
-                    Success = true,
-                    Indexed = before.Count - after.Count,
-                    StillUnclassified = after.Count,
-                    Message = $"Indexed & classified. {before.Count - after.Count} movies processed; {after.Count} still unclassified."
-                });
+                _taskManager.Execute(task, new MediaBrowser.Model.Tasks.TaskOptions());
+                return NoContent();
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Manual index/classify failed.");
-                return Ok(new { Success = false, Message = ex.Message });
-            }
+            return NotFound("Task not found");
         }
-        
+
         [HttpPost("RefreshPlaylists")]
-        public async Task<ActionResult> RefreshAllPlaylists(CancellationToken cancellationToken)
+        public ActionResult RefreshAllPlaylists()
         {
-            // v1.5.25: run the refresh synchronously within the request (awaited) so the
-            // config-page "Generate Playlists" button reflects real progress and any error
-            // is surfaced instead of hanging on "running" forever. Previously this called
-            // _taskManager.Execute (fire-and-forget), which returned immediately while the
-            // task ran on a hidden background thread with no completion signal.
-            try
+            // Fire-and-forget REAL scheduled task. Same rationale as ClassifyLibrary:
+            // running the refresh inside the HTTP request caused the loading-circle /
+            // unstoppable / mass-cancellation regressions.
+            var task = _taskManager.ScheduledTasks.FirstOrDefault(t => t.Name == "AI Recommender - Refresh Playlists");
+            if (task != null)
             {
-                var users = _userManager.GetUsers().ToArray();
-                int refreshed = 0;
-                foreach (var user in users)
-                {
-                    if (cancellationToken.IsCancellationRequested) break;
-                    var idProp = user.GetType().GetProperty("Id");
-                    if (idProp == null) continue;
-                    if (idProp.GetValue(user) is not Guid userId) continue;
-                    await _playlistEngine.RefreshUserPlaylistsAsync(userId, cancellationToken);
-                    refreshed++;
-                }
-                return Ok(new { Success = true, Message = $"Refreshed playlists for {refreshed} user(s)." });
+                _taskManager.Execute(task, new MediaBrowser.Model.Tasks.TaskOptions());
+                return NoContent();
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Manual playlist refresh failed.");
-                return Ok(new { Success = false, Message = ex.Message });
-            }
+            return NotFound("Task not found");
         }
         
         [HttpGet("UserWatchlistConfig")]

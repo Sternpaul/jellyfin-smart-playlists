@@ -2,6 +2,11 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.5.27
+- **Reverted the config-page buttons to fire-and-forget scheduled tasks (fixes v1.5.26 regression).** v1.5.26 ran Index/Classify and Playlist Refresh *inside the HTTP request*, which caused a forever loading circle, no way to stop the job, and — when the browser closed the tab — the request's cancellation token aborted every in-flight TMDB HTTP call and EF save at once, producing 2000+ `TaskCanceledException` spam. The buttons now trigger the real Jellyfin scheduled tasks again: progress is visible and the job is stoppable from Dashboard > Scheduled Tasks.
+- **Quieted TMDB enrichment logging.** Per-movie TMDB failures now log at Debug (message only, no stack trace) instead of Warning + full exception, so transient TMDB hiccups stop flooding the log.
+- **Fixed "classified but never sent to OpenRouter" (real pre-existing bug).** `MovieClassifier.ProcessClassificationResult` marked every batch movie `IsClassified = true` unconditionally — including movies the AI returned with **empty `Subcategories`**. Those movies got flagged classified with no usable tags and were never re-sent for classification. Now a movie is only marked classified when it actually received non-empty subcategories; movies that came back empty stay unclassified and get re-sent on the next run. (Same fix applied to the text-fallback parse path.)
+
 ## v1.5.26
 - **Manual "Classify Library" / "Generate Playlists" buttons now report real results** (were fire-and-forget "Task Started" with no feedback). The index/classify button runs the index + classification synchronously in the request and returns how many movies were processed and how many remain unclassified; the Generate button already awaited and now surfaces per-run success/errors. The config page shows these messages instead of "Task Started".
 - **TMDB keyword enrichment can no longer abort playlist generation.** It ran under the request's cancellation token, so cancelling the button (tab close / timeout) or a slow TMDB call cancelled the EF DB write and killed the whole refresh before any playlist was built. Enrichment now uses its own 3-minute timeout, a 10s per-movie budget, and a non-cancellable DB save, and any failure is logged and the refresh continues.

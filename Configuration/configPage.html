@@ -469,13 +469,12 @@
                 ApiClient.ajax({
                     type: "POST",
                     url: ApiClient.getUrl('AIRecommender/ClassifyLibrary')
-                }).then(function(result) {
+                }).then(function() {
                     Dashboard.hideLoadingMsg();
-                    var msg = (result && result.Message) ? result.Message : "Library indexed & classified.";
-                    Dashboard.alert(msg);
+                    Dashboard.alert("Classification Task Started! Check Scheduled Tasks for progress.");
                 }).catch(function() {
                     Dashboard.hideLoadingMsg();
-                    Dashboard.alert("Error running Classify Library.");
+                    Dashboard.alert("Error starting Classification task.");
                 });
             });
             
@@ -484,13 +483,12 @@
                 ApiClient.ajax({
                     type: "POST",
                     url: ApiClient.getUrl('AIRecommender/RefreshPlaylists')
-                }).then(function(result) {
+                }).then(function() {
                     Dashboard.hideLoadingMsg();
-                    var msg = (result && result.Message) ? result.Message : "Playlists refreshed.";
-                    Dashboard.alert(msg);
+                    Dashboard.alert("Playlist Refresh Task Started! Check Scheduled Tasks for progress.");
                 }).catch(function() {
                     Dashboard.hideLoadingMsg();
-                    Dashboard.alert("Error refreshing playlists.");
+                    Dashboard.alert("Error starting Playlist Refresh task.");
                 });
             });
 
