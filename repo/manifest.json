@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.5.9",
+        "changelog": "- **User exclusions now take effect immediately.** Saving config with excluded users deletes their playlists right away (previously you had to wait for the next 12h refresh). Exclusion matching also normalized via `Guid.Parse` (handles case/braces).\n- **Debug panel no longer fails on large libraries.** `Active Penalties` and `Active Boosts` are now capped at 50 entries each (Exclusions already capped); the panel shows counts (`PenaltyCount`, `BoostCount`, `ExclusionCount`) and a sample. Fixes the panel breaking when a user has hundreds of watched movies.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.9/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "db1b8a5c91170a3e9ffa994b9e5f07db",
+        "timestamp": "2026-07-24T14:16:06Z"
+      },
+      {
         "version": "1.5.8.0",
         "changelog": "Fixed no-such-table:Affinities crash on existing databases.",
         "targetAbi": "10.11.0.0",
