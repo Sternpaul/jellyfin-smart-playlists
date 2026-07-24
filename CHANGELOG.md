@@ -1,0 +1,50 @@
+# Changelog
+
+All notable changes to the Jellyfin AI Recommender plugin.
+
+## v1.4.3
+- **Novelty tracking:** movies that haven't been surfaced in a playlist recently get a small bonus that decays over `Novelty Half-Life` (default 30d), so the same films stop recycling to the top every refresh.
+- **Taste-fit-gated new-movie boost:** in "For You", the new-movie recency boost now only applies when a film's taste-fit score is ≥ `NewMovieBoostMinFit` (default 0.30) — fresh additions surface *because they fit*, not just because they're new.
+- New config: `NewMovieBoostMinFit`, `NoveltyBonus`, `NoveltyHalfLifeDays`.
+
+## v1.4.2
+- **Director affinity:** learned per-director weights (decay-weighted from watch history) nudge movies by filmmakers the user returns to. Adds the `DirectorPreferences` signal to the taste profile.
+- **Configurable Diversity Cap** (gentle default 60%): no single subcategory may occupy more than this share of a playlist (anti-bubble). Set lower (e.g. 40) for stricter diversification.
+- **Soft penalty:** rejected movies now gracefully sink in ranking during the cooling window (`SoftPenaltyStrength`, 0 = hard ban … 1 = none; default 0.50) instead of being hard-excluded.
+- New config: `DiversityCapPercent`, `DirectorAffinityBonus`, `SoftPenaltyStrength`.
+
+## v1.4.1 (yanked — broken build)
+## v1.4.0 (yanked — broken build)
+> Superseded by v1.4.2 / v1.4.3 (compile fixes). Do not use.
+
+## v1.3.2
+- **Real learning engine:** per-(user, movie) `MovieAffinity` rating table.
+- **Punishment / reward written only on watch events:** siblings of a picked movie get a rejection penalty + temporary ban; similar movies get a reward; active penalties are pulled forward. Read with lazy exponential time-decay (no refresh-time writes).
+- **Hidden Gems / Discover / Wild Card made real** — similarity/diversity-driven, no `Guid.NewGuid()` randomness.
+- **New-movie recency boost** so fresh additions surface beyond "Recently Added".
+- 6 configurable learning knobs in a new "Dynamic Rating / Learning" config section.
+
+## v1.3.1 (yanked — broken build)
+## v1.3.0 (yanked — broken build)
+> Superseded by v1.3.2 (compile fixes). Do not use.
+
+## v1.2.13
+- Playlist generation now starts from a **clean slate**: all playlists owned by a user are wiped before regenerating.
+
+## v1.2.11 – v1.2.12
+- Playlists belonging to a disabled user are deleted; enabled users get a full wipe before regen.
+
+## v1.2.10
+- **Per-user exclusion:** `DisabledUserIds` config skips playlist generation for chosen users.
+
+## v1.2.9
+- **Watchlist playlist** now reads the user's real Letterboxd/CSV watchlist (`MatchedItemIds`), not a mocked top-10.
+
+## v1.2.8
+- **Because You Watched** seeds on the 5 most-recently *watched* movies and is named after the most recent.
+
+## v1.2.7
+- Removed emojis from all playlist names.
+
+## v1.2.6
+- Fixed per-user playlist scoping (each user sees only their own recommendation playlists).
