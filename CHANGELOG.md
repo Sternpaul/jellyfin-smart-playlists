@@ -2,6 +2,9 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.5.6
+- **User exclusions are now name-based checkboxes:** the config page lists every Jellyfin user with a tick-box; ticking a user disables playlist generation for them. No more pasting GUIDs. Backend still stores GUIDs (unchanged), so existing exclusions keep working.
+
 ## v1.5.5
 - **Recently-surfaced history:** every time a movie is placed in a playlist, it's logged in a new `SurfaceHistory` table (user, movie, playlist, time). The "What's Happening" debug panel now lists your recently surfaced movies with which playlist and when — so you can see exactly what the engine put in front of you and when.
 

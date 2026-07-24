@@ -84,6 +84,7 @@ When you **pick a movie from a playlist**, the plugin learns from that single ac
 - **Where it's written:** interaction signals are written **only when you watch a movie** (off another playlist). Playlist refreshes *read* the learned ratings; they don't write interaction signals. This is what keeps the system honest — it learns from your choices, not from its own rotations.
 - **Completion-weighted:** only a watch that reached `Min Watch % to Learn` (default 50%) counts as a real signal — a quick glance or test below it is ignored (no penalty, no reward). Manual "mark played" with no progress is treated as 0% and ignored. 0 = any "played" counts; 100 = must finish.
 - All knobs are configurable and default to **small nudges** so learning never overrides strong taste-matching.
+- Admins can disable playlist generation per user via name-based tick-boxes in the config page (no GUIDs to copy).
 
 This forces constant freshness — you never see the same stale playlist twice, and the system reacts to what you actually choose.
 

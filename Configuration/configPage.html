@@ -192,9 +192,9 @@
 
                     <div class="sectionTitleContainer"><h2 class="sectionTitle">🚫 User Exclusions</h2></div>
                     <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="DisabledUserIds">Disable playlist generation for these users:</label>
-                        <input type="text" id="DisabledUserIds" name="DisabledUserIds" is="emby-input" placeholder="comma-separated user GUIDs" />
-                        <div class="fieldDescription">Enter Jellyfin user GUIDs (comma-separated) for users you do NOT want playlists generated for. Leave empty to generate for everyone. User GUIDs can be found in the Jellyfin dashboard URL when editing a user, or in the logs during a playlist refresh (the "Refreshing playlists for user &lt;GUID&gt;" line).</div>
+                        <label class="inputLabel inputLabelUnfocused">Disable playlist generation for these users:</label>
+                        <div id="userExclusionList" style="display: flex; flex-wrap: wrap; gap: 8px 24px; margin-bottom: 8px;"></div>
+                        <div class="fieldDescription">Tick the users you do NOT want playlists generated for. Leave all unticked to generate for everyone. (Stored as user GUIDs internally.)</div>
                     </div>
                     
                     <div class="sectionTitleContainer"><h2 class="sectionTitle">⚙️ Actions</h2></div>
@@ -268,20 +268,50 @@
             document.querySelector('#aiRecommenderConfigPage').addEventListener('pageshow', function () {
                 Dashboard.showLoadingMsg();
 
+                // Cache of users for the name-based exclusion checkboxes.
+                var allUsers = [];
+                var pendingConfig = null;
+                // Tick/untick the exclusion checkboxes from a loaded config.
+                function applyExclusions(config) {
+                    var disabled = config.DisabledUserIds || [];
+                    allUsers.forEach(function (u) {
+                        var cb = document.querySelector('#excl_' + u.Id);
+                        if (cb) cb.checked = disabled.indexOf(u.Id) !== -1;
+                    });
+                }
+
                 // Load Users for the dropdown
                 ApiClient.getUsers().then(function (users) {
+                    allUsers = users;
                     var userSelect = document.querySelector('#WatchlistUser');
                     userSelect.innerHTML = '<option value="">(Select a user)</option>';
                     var debugSelect = document.querySelector('#DebugUser');
                     debugSelect.innerHTML = '<option value="">(current admin user)</option>';
-                    users.forEach(function(u) {
+                    var exList = document.querySelector('#userExclusionList');
+                    if (exList) exList.innerHTML = '';
+                    users.forEach(function (u) {
                         var opt = document.createElement('option');
                         opt.value = u.Id;
                         opt.textContent = u.Name;
                         userSelect.appendChild(opt);
                         var dopt = opt.cloneNode(true);
                         debugSelect.appendChild(dopt);
+
+                        // Exclusion checkbox (name shown, value = GUID)
+                        if (exList) {
+                            var label = document.createElement('label');
+                            label.className = 'checkboxContainer';
+                            var cb = document.createElement('input');
+                            cb.type = 'checkbox';
+                            cb.setAttribute('is', 'emby-checkbox');
+                            cb.value = u.Id;
+                            cb.id = 'excl_' + u.Id;
+                            label.appendChild(cb);
+                            label.appendChild(document.createTextNode(' ' + u.Name));
+                            exList.appendChild(label);
+                        }
                     });
+                    if (pendingConfig) { applyExclusions(pendingConfig); pendingConfig = null; }
                 });
 
                 ApiClient.getPluginConfiguration(AIRecommenderConfig.pluginUniqueId).then(function (config) {
@@ -312,7 +342,9 @@
                     document.querySelector('#NoveltyHalfLifeDays').value = config.NoveltyHalfLifeDays || 30;
                     document.querySelector('#MinCompletionPercent').value = (config.MinCompletionPercent !== undefined && config.MinCompletionPercent !== null) ? config.MinCompletionPercent : 50;
                     document.querySelector('#DecayRateReferencePerWeek').value = (config.DecayRateReferencePerWeek !== undefined && config.DecayRateReferencePerWeek !== null) ? config.DecayRateReferencePerWeek : 3;
-                    document.querySelector('#DisabledUserIds').value = (config.DisabledUserIds || []).join(', ');
+
+                    // Tick exclusion checkboxes once users are loaded (guards promise ordering).
+                    if (allUsers.length) { applyExclusions(config); } else { pendingConfig = config; }
                     
                     document.querySelector('#EnableForYou').checked = config.EnableForYou !== false;
                     document.querySelector('#EnableBecauseYouWatched').checked = config.EnableBecauseYouWatched !== false;
@@ -521,10 +553,10 @@
                     if (isNaN(config.MinCompletionPercent)) config.MinCompletionPercent = 50;
                     config.DecayRateReferencePerWeek = parseInt(document.querySelector('#DecayRateReferencePerWeek').value, 10);
                     if (isNaN(config.DecayRateReferencePerWeek)) config.DecayRateReferencePerWeek = 3;
-                    config.DisabledUserIds = (document.querySelector('#DisabledUserIds').value || '')
-                        .split(',')
-                        .map(function (s) { return s.trim(); })
-                        .filter(function (s) { return s.length > 0; });
+                    config.DisabledUserIds = Array.prototype.slice
+                        .call(document.querySelectorAll('#userExclusionList input[type="checkbox"]'))
+                        .filter(function (cb) { return cb.checked; })
+                        .map(function (cb) { return cb.value; });
                     
                     config.EnableForYou = document.querySelector('#EnableForYou').checked;
                     config.EnableBecauseYouWatched = document.querySelector('#EnableBecauseYouWatched').checked;
