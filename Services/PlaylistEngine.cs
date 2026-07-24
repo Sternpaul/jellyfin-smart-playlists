@@ -216,16 +216,23 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             // so Because You Watched respects TMDB keyword overlap.
             _similarityEngine.KeywordWeight = _config.KeywordWeight;
 
-            // v1.5.26: enrich TMDB keywords for the library (refresh-time fetch). Skipped
+            // v1.5.28: enrich TMDB keywords for the library (refresh-time fetch). Skipped
             // automatically when no TMDB key is configured. Failures are swallowed so
-            // keyword absence never breaks the rest of the refresh. IMPORTANT: use a
-            // dedicated timeout token (NOT the request's cancellationToken) so a cancelled
-            // button request or a slow TMDB call can never abort playlist generation.
+            // keyword absence never breaks the rest of the refresh.
+            // IMPORTANT: the enrichment timeout CTS is LINKED to the task's
+            // cancellationToken, so clicking Stop on the scheduled task actually aborts
+            // the enrichment loop (an unlinked CTS made the task unstoppable). A 3-minute
+            // hard cap also ensures a pathological TMDB stall can't hang the refresh forever.
             try
             {
-                using var enrichCts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+                using var enrichCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                enrichCts.CancelAfter(TimeSpan.FromMinutes(3));
                 var allMovies = await _movieStore.GetAllMoviesAsync(cancellationToken);
                 await _tmdbKeywordService.EnrichKeywordsAsync(_config.TmdbApiKey, allMovies, enrichCts.Token);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogInformation("TMDB keyword enrichment cancelled (task stop requested). Continuing to build playlists.");
             }
             catch (Exception ex)
             {

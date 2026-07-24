@@ -2,6 +2,11 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.5.28
+- **Fixed the Index & Classify crash ("An item with the same key has already been added").** Your `airecommender.db` had duplicate `ItemId` rows — from a database created before the `PRIMARY KEY (ItemId)` constraint existed (`CREATE TABLE IF NOT EXISTS` is a no-op on pre-existing tables, so upgraded DBs never got the PK, and `SaveMoviesAsync` let duplicates in). `IndexLibraryAsync` blew up at `ToDictionary(ItemId)` in ~0 seconds, so the Classify Library button never ran. Now: (1) startup runs a one-time repair that collapses duplicate rows (keeps the latest) and adds a `UNIQUE` index so dups can't recur; (2) the index no longer throws on dups; (3) `SaveMoviesAsync` is a true upsert so it can't create dups going forward.
+- **Fixed the DB being far larger than your real library (the "3328 but I don't have that many" mystery).** The index only ever *added* rows — `OnItemRemoved` was a no-op — so movies you deleted from Jellyfin stayed in the DB as orphans, and TMDB enrichment counted those rows (hence 3328). The index now prunes rows whose `ItemId` isn't in the current Jellyfin library. Next Classify Library run will shrink the DB to match your real movie count.
+- **Made the Refresh task stoppable.** v1.5.26's enrichment timeout CTS was not linked to the task's cancellation token, so clicking Stop couldn't abort the enrichment loop. Now it's linked (with a 3-minute hard cap) and a Stop request is logged instead of hanging.
+
 ## v1.5.27
 - **Reverted the config-page buttons to fire-and-forget scheduled tasks (fixes v1.5.26 regression).** v1.5.26 ran Index/Classify and Playlist Refresh *inside the HTTP request*, which caused a forever loading circle, no way to stop the job, and — when the browser closed the tab — the request's cancellation token aborted every in-flight TMDB HTTP call and EF save at once, producing 2000+ `TaskCanceledException` spam. The buttons now trigger the real Jellyfin scheduled tasks again: progress is visible and the job is stoppable from Dashboard > Scheduled Tasks.
 - **Quieted TMDB enrichment logging.** Per-movie TMDB failures now log at Debug (message only, no stack trace) instead of Warning + full exception, so transient TMDB hiccups stop flooding the log.
