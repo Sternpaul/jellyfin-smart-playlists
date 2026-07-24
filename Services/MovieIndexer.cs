@@ -52,32 +52,53 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             }).OfType<Movie>().ToList();
 
             var existingMovies = await _movieStore.GetAllMoviesAsync(cancellationToken);
-            // v1.5.28: tolerate duplicate ItemId rows that can exist on databases
-            // created before the PRIMARY KEY (ItemId) constraint was added (the
-            // CREATE TABLE IF NOT EXISTS is a no-op on pre-existing tables, so the
-            // PK was never applied on upgraded DBs and SaveMoviesAsync let dups in).
-            // Group + keep the most-recently-updated row per ItemId instead of
-            // letting ToDictionary throw "An item with the same key has already
-            // been added", which aborted the whole index in ~0 seconds.
-            var existingDict = existingMovies
-                .GroupBy(m => m.ItemId)
+            // v1.5.29: Jellyfin re-assigns ItemId on re-add/rescan and can store the
+            // same GUID in different casings, so ItemId is NOT a stable identity. Build
+            // the lookup on ImdbId (the real stable key) and also track ItemId, since
+            // the row's ItemId is what we must keep in sync when Jellyfin moves a movie
+            // to a new GUID. Normalize casing so "C2DA..." and "c2da..." match.
+            var byImdb = existingMovies
+                .Where(m => !string.IsNullOrWhiteSpace(m.ImdbId))
+                .GroupBy(m => m.ImdbId!.ToLowerInvariant())
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(m => m.LastUpdated).First());
+            var byTitleYear = existingMovies
+                .Where(m => string.IsNullOrWhiteSpace(m.ImdbId))
+                .GroupBy(m => $"{m.Title}|{m.ReleaseYear}")
                 .ToDictionary(g => g.Key, g => g.OrderByDescending(m => m.LastUpdated).First());
 
-            _logger.LogInformation("Library scan: {LibraryCount} movies in Jellyfin, {DbCount} in recommender DB.", allMovies.Count, existingDict.Count);
+            _logger.LogInformation("Library scan: {LibraryCount} movies in Jellyfin, {DbCount} in recommender DB.", allMovies.Count, existingMovies.Count);
 
             foreach (var movie in allMovies)
             {
                 if (cancellationToken.IsCancellationRequested) break;
 
-                // Create or update metadata
-                if (!existingDict.TryGetValue(movie.Id, out var metadata))
+                // Always normalize the ItemId casing so future joins never split.
+                var itemId = movie.Id;
+                movie.ProviderIds.TryGetValue(MediaBrowser.Model.Entities.MetadataProvider.Imdb.ToString(), out var imdbId);
+                imdbId = string.IsNullOrWhiteSpace(imdbId) ? null : imdbId.Trim();
+
+                // Reuse the existing row by stable identity: if Jellyfin re-assigned the
+                // movie a new GUID, update the row's ItemId to the new one instead of
+                // inserting a duplicate. This is what stopped the DB from ballooning.
+                MovieMetadata? metadata = null;
+                if (imdbId != null && byImdb.TryGetValue(imdbId.ToLowerInvariant(), out var byImdbMeta))
+                    metadata = byImdbMeta;
+                else if (imdbId == null)
+                    byTitleYear.TryGetValue($"{movie.Name}|{movie.ProductionYear}", out metadata);
+
+                if (metadata == null)
                 {
-                    metadata = new MovieMetadata 
-                    { 
-                        ItemId = movie.Id,
+                    metadata = new MovieMetadata
+                    {
+                        ItemId = itemId,
                         DateAdded = DateTime.UtcNow
                     };
-                    newOrUpdatedMovies.Add(metadata);
+                }
+                else
+                {
+                    // Keep the row, but sync its ItemId to the current Jellyfin GUID
+                    // (in case it changed) so Affinity/SurfaceHistory joins still line up.
+                    metadata.ItemId = itemId;
                 }
 
                 // Always sync basic metadata in case it changed in Jellyfin

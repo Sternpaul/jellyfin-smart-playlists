@@ -147,21 +147,39 @@ namespace Jellyfin.Plugin.AIRecommender.Data
             catch { /* column missing or already populated — ignore */ }
         }
 
-        // v1.5.28: collapse duplicate ItemId rows (a pre-PK-index artifact) to a
-        // single row per ItemId, keeping the most-recently-updated one. Safe to call
-        // repeatedly (no-ops when there are no dups). Uses a single grouped query so
-        // it never throws even when rows are duplicated.
+        // v1.5.29: collapse PHANTOM duplicate rows. The previous (v1.5.28) dedup keyed
+        // on ItemId, but Jellyfin re-assigns ItemId on re-add/rescan, so every phantom
+        // row already had a distinct ItemId and the dedup deleted nothing — the DB kept
+        // ballooning (e.g. 3367 rows for ~1700 movies, the same film stored 4x under
+        // different GUIDs). The real stable identity is ImdbId. Keep one row per ImdbId
+        // (latest), then one row per (Title, ReleaseYear) for rows with no ImdbId.
+        // Finally normalize ItemId casing in Movies + every table that joins on ItemId,
+        // so the same GUID in different casings can't split into two rows or miss joins.
+        // Runs once at startup; safe to repeat (no-ops when already clean).
         private static void DedupMovies(AiDbContext db)
         {
             try
             {
-                // Keep the row with the max LastUpdated per ItemId; delete the rest.
-                // SQLite supports DELETE ... WHERE ... IN (subquery) with rowid.
                 db.Database.ExecuteSqlRaw(@"
                     DELETE FROM Movies
-                    WHERE rowid NOT IN (
-                        SELECT MAX(rowid) FROM Movies GROUP BY ItemId
-                    )");
+                    WHERE ImdbId IS NOT NULL AND ImdbId <> ''
+                      AND rowid NOT IN (
+                        SELECT MAX(rowid) FROM Movies
+                        WHERE ImdbId IS NOT NULL AND ImdbId <> ''
+                        GROUP BY ImdbId
+                      )");
+                db.Database.ExecuteSqlRaw(@"
+                    DELETE FROM Movies
+                    WHERE (ImdbId IS NULL OR ImdbId = '')
+                      AND rowid NOT IN (
+                        SELECT MAX(rowid) FROM Movies
+                        WHERE ImdbId IS NULL OR ImdbId = ''
+                        GROUP BY coalesce(Title,'') || '|' || coalesce(ReleaseYear,'')
+                      )");
+                db.Database.ExecuteSqlRaw("UPDATE Movies SET ItemId = LOWER(ItemId)");
+                db.Database.ExecuteSqlRaw("UPDATE Affinities SET ItemId = LOWER(ItemId)");
+                db.Database.ExecuteSqlRaw("UPDATE SurfaceHistory SET ItemId = LOWER(ItemId)");
+                db.Database.ExecuteSqlRaw("UPDATE UserRatings SET ItemId = LOWER(ItemId)");
             }
             catch { /* best-effort; ignore if schema/engine quirk */ }
         }
@@ -202,13 +220,19 @@ namespace Jellyfin.Plugin.AIRecommender.Data
 
         public async Task SaveMoviesAsync(IEnumerable<MovieMetadata> movies, CancellationToken cancellationToken = default)
         {
-            // v1.5.28: true upsert. FindAsync by ItemId guarantees we UPDATE the
-            // existing row rather than INSERT a duplicate, so the UNIQUE index added
-            // in InitializeDatabase can never be violated (no more dup rows).
+            // v1.5.29: dedupe in-memory by ImdbId first (a re-index pass may pass the
+            // same ImdbId twice with a synced ItemId), then upsert each. Upserting by
+            // ItemId alone would miss rows whose ItemId was updated to a new GUID, so we
+            // also find by ImdbId and update that row's ItemId into the new value.
             using var db = GetContext();
+            var seenImdb = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var movie in movies)
             {
-                var existing = await db.Movies.FindAsync(new object[] { movie.ItemId }, cancellationToken);
+                MovieMetadata? existing = null;
+                if (!string.IsNullOrWhiteSpace(movie.ImdbId))
+                    existing = await db.Movies.FirstOrDefaultAsync(m => m.ImdbId == movie.ImdbId, cancellationToken);
+                if (existing == null)
+                    existing = await db.Movies.FindAsync(new object[] { movie.ItemId }, cancellationToken);
                 if (existing == null)
                 {
                     db.Movies.Add(movie);
@@ -217,6 +241,7 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                 {
                     db.Entry(existing).CurrentValues.SetValues(movie);
                 }
+                if (!string.IsNullOrWhiteSpace(movie.ImdbId)) seenImdb.Add(movie.ImdbId);
             }
             await db.SaveChangesAsync(cancellationToken);
         }
@@ -229,14 +254,20 @@ namespace Jellyfin.Plugin.AIRecommender.Data
         // DB not in that set is deleted.
         public async Task<int> DeleteMoviesNotInAsync(HashSet<Guid> liveItemIds, CancellationToken cancellationToken = default)
         {
+            // v1.5.29: raw SQL delete (bypasses EF change-tracking/concurrency checks).
+            // The previous EF RemoveRange threw DbUpdateConcurrencyException against
+            // some DBs; raw SQL is reliable and fast.
             using var db = GetContext();
-            var toDelete = db.Movies
+            // Collect the orphan ItemIds first (parameter lists are awkward in EF Core
+            // raw SQL, so do the membership test in SQL via a temp set of NOT IN).
+            var orphans = await db.Movies
                 .Where(m => !liveItemIds.Contains(m.ItemId))
-                .ToList();
-            if (toDelete.Count == 0) return 0;
-            db.Movies.RemoveRange(toDelete);
-            await db.SaveChangesAsync(cancellationToken);
-            return toDelete.Count;
+                .Select(m => m.ItemId)
+                .ToListAsync(cancellationToken);
+            if (orphans.Count == 0) return 0;
+            var idList = string.Join(",", orphans.Select(g => $"'{g.ToString().ToLowerInvariant()}'"));
+            await db.Database.ExecuteSqlRawAsync($"DELETE FROM Movies WHERE LOWER(ItemId) IN ({idList})");
+            return orphans.Count;
         }
 
         public async Task<UserWatchlistConfig?> GetUserWatchlistConfigAsync(Guid userId, CancellationToken cancellationToken = default)
