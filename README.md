@@ -298,8 +298,10 @@ Each Jellyfin user can configure their own Letterboxd integration via the plugin
 | **New-Movie Min Taste-Fit** | 0.30 | For You only boosts a new movie whose taste-fit score is ≥ this (so new films surface because they fit). |
 | **Novelty Bonus** | 0.05 | Nudge for movies not recently surfaced, so the same films don't keep recycling. |
 | **Novelty Half-Life** | 30 days | How fast the novelty nudge fades after a movie appears in a playlist. |
+| **Min Watch % to Learn** | 50% | A watch only counts as a real signal (penalty + reward) if playback reached this %. Below = ignored (no penalty). 0 = any "played" counts; 100 = must finish. |
+| **Decay Reference** | 3/week | "Normal" watch rate. Effective affinity + novelty half-lives scale by your recent weekly rate vs this (faster watchers decay quicker = fresher). Clamped 0.3x–3x. |
 
-The plugin keeps a per-(user, movie) learned rating ("affinity") in the SQLite DB. It is updated **only when you watch a movie** (penalty to siblings + reward to similar titles) and read (with lazy exponential time-decay) on every refresh to gently nudge ranking. Newly-added movies get a short recency boost **only when they fit your taste** (For You). Movies that haven't been surfaced recently get a small novelty nudge so playlists stay fresh. Every knob is configurable and defaults to a small nudge.
+The plugin keeps a per-(user, movie) learned rating ("affinity") in the SQLite DB. It is updated **only when you watch a movie** (penalty to siblings + reward to similar titles) and read (with lazy exponential time-decay, tuned to your watch rate) on every refresh to gently nudge ranking. Newly-added movies get a short recency boost **only when they fit your taste** (For You). Movies that haven't been surfaced recently get a small novelty nudge so playlists stay fresh. Every knob is configurable and defaults to a small nudge.
 
 ### Provider-Specific Model IDs
 

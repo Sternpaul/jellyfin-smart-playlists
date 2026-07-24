@@ -33,6 +33,14 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         private readonly Dictionary<Guid, Dictionary<Guid, List<string>>> _lastExclusions = new();
         private readonly object _exclusionsLock = new();
 
+        // v1.5.3: per-user consumption-rate decay factor (half-life multiplier).
+        // Computed once per refresh from the user's recent weekly watch rate.
+        private readonly Dictionary<Guid, double> _decayFactor = new();
+        private readonly object _decayLock = new();
+        // The user currently being refreshed (used by read-time decay helpers that
+        // don't otherwise carry a userId). Set at the top of RefreshUserPlaylistsAsync.
+        private Guid _currentUserId = Guid.Empty;
+
         public PlaylistEngine(
             IPlaylistManager playlistManager,
             ILibraryManager libraryManager,
@@ -188,6 +196,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
 
         public async Task RefreshUserPlaylistsAsync(Guid userId, CancellationToken cancellationToken = default)
         {
+            _currentUserId = userId; // v1.5.3: for read-time decay helpers
             // Respect per-user exclusions configured by the admin.
             if (_config.DisabledUserIds != null &&
                 _config.DisabledUserIds.Any(id => string.Equals(id, userId.ToString(), StringComparison.OrdinalIgnoreCase)))
@@ -216,7 +225,10 @@ namespace Jellyfin.Plugin.AIRecommender.Services
 
             var tasteProfile = await _watchHistoryService.GetUserTasteProfileAsync(userId, cancellationToken);
             var (unwatchedMovies, affinities) = await GetUnwatchedClassifiedMoviesAsync(userId, cancellationToken);
-            
+
+            // v1.5.3: compute this user's consumption-rate decay factor. Faster watchers
+            // get shorter effective half-lives (fresher playlists); slow watchers slower.
+            ComputeDecayFactor(userId, cancellationToken);
             if (_config.EnableForYou)
                 claimed.UnionWith(await GenerateForYouPlaylistAsync(userId, tasteProfile, unwatchedMovies, affinities, claimed, cancellationToken));
 
@@ -669,6 +681,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             => v < min ? min : (v > max ? max : v);
 
         // Effective affinity after lazy time-decay. Never writes — pure read-time computation.
+        // v1.5.3: the half-life is scaled by the user's consumption-rate factor.
         private double GetEffectiveAffinity(Dictionary<Guid, MovieAffinity> affinities, Guid itemId)
         {
             if (!affinities.TryGetValue(itemId, out var row) || row == null) return 0.0;
@@ -676,7 +689,8 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             if (!DateTime.TryParse(row.LastUpdated, out var updated)) return row.Affinity;
             var ageDays = (DateTime.UtcNow - updated).TotalDays;
             if (ageDays <= 0) return row.Affinity;
-            return row.Affinity * Math.Exp(-ageDays / Math.Max(1.0, _config.AffinityDecayHalfLifeDays));
+            var halfLife = _config.AffinityDecayHalfLifeDays * GetDecayFactor(_currentUserId);
+            return row.Affinity * Math.Exp(-ageDays / Math.Max(1.0, halfLife));
         }
 
         // Soft penalty: while a movie's cooling window is active, it gets pushed DOWN
@@ -730,7 +744,48 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             var ageDays = (now - surfaced).TotalDays;
             if (ageDays < 0) ageDays = 0;
             // Exponential decay: full nudge just after surfacing -> 0 after several half-lives.
-            return _config.NoveltyBonus * Math.Exp(-ageDays / _config.NoveltyHalfLifeDays);
+            // v1.5.3: half-life scaled by the user's consumption-rate factor.
+            var halfLife = _config.NoveltyHalfLifeDays * GetDecayFactor(_currentUserId);
+            return _config.NoveltyBonus * Math.Exp(-ageDays / Math.Max(1.0, halfLife));
+        }
+
+        // v1.5.3: returns the consumption-rate decay multiplier for a user (default 1.0).
+        // Faster watchers => <1 (quicker decay, fresher); slower => >1. Clamped 0.3x-3x.
+        private double GetDecayFactor(Guid userId)
+        {
+            lock (_decayLock)
+            {
+                return _decayFactor.TryGetValue(userId, out var f) ? f : 1.0;
+            }
+        }
+
+        // v1.5.3: compute the per-user decay factor from recent watch rate.
+        // weeklyRate = movies watched in the last 8 weeks / 8. factor = clamp(rate / ref, 0.3, 3).
+        private void ComputeDecayFactor(Guid userId, CancellationToken cancellationToken)
+        {
+            try
+            {
+                var watched = _watchHistoryService.GetWatchedMoviesWithDatesAsync(userId, cancellationToken).GetAwaiter().GetResult();
+                var cutoff = DateTime.UtcNow.AddDays(-56);
+                int recent = watched.Count(w => w.WatchedAt != null && w.WatchedAt.Value >= cutoff);
+                double weeklyRate = recent / 8.0;
+                double refRate = Math.Max(1.0, _config.DecayRateReferencePerWeek);
+                double factor = weeklyRate / refRate;
+                factor = factor < 0.3 ? 0.3 : (factor > 3.0 ? 3.0 : factor);
+                _logger.LogInformation("User {UserId} decay factor {Factor} (weekly rate {Rate}, ref {Ref})", userId, factor, weeklyRate, refRate);
+                lock (_decayLock)
+                {
+                    _decayFactor[userId] = factor;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to compute decay factor for {UserId}; using 1.0", userId);
+                lock (_decayLock)
+                {
+                    _decayFactor[userId] = 1.0;
+                }
+            }
         }
 
         // Returns unwatched, classified movies + the user's affinity map. Penalized
