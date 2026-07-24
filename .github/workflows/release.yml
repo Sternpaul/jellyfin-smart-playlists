@@ -58,25 +58,14 @@ jobs:
         PY
 
     - name: Delete existing release for this tag (if any)
-      continue-on-error: true  # 404 is expected when the release is detached/absent; ignore it
+      continue-on-error: true  # 404 expected when detached/absent; ignore it
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: gh release delete "${{ github.ref_name }}" --yes 2>/dev/null || true
 
     - name: Create GitHub Release
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        # Create the release directly via the REST API (bypasses `gh release create`'s
-        # tag-ref lookup, which 404s in this setup). Body is read from the file.
-        gh api -X POST "repos/${{ github.repository }}/releases" \
-          -f tag_name="${{ github.ref_name }}" \
-          -f name="${{ github.ref_name }}" \
-          -f target_commitish="${{ github.sha }}" \
-          -f body=@changelog_section.md \
-          -F draft=false
-        # Upload the built plugin zip as a release asset.
-        gh release upload "${{ github.ref_name }}" bin/Release/net9.0/Jellyfin.Plugin.AIRecommender.zip --clobber
-        # Explicitly mark this tag as Latest so version order (not workflow finish
-        # timing) decides the "Latest" flag.
-        gh api -X PATCH "repos/${{ github.repository }}/releases/tags/${{ github.ref_name }}" -f make_latest=true
+      uses: softprops/action-gh-release@v2
+      with:
+        files: bin/Release/net9.0/Jellyfin.Plugin.AIRecommender.zip
+        body_path: changelog_section.md
+        # generate_release_notes left OFF so the curated changelog (body_path) is used verbatim.
