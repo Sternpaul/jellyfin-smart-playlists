@@ -138,7 +138,14 @@ jobs:
         git config user.email "github-actions[bot]@users.noreply.github.com"
         git add repo/manifest.json
         git commit -m "repo: add ${version} to manifest" || echo "no manifest change"
-        # Rebase onto latest main before pushing so a concurrent push (e.g. from a
-        # local commit) doesn't cause a non-fast-forward rejection of the manifest update.
-        git pull --rebase origin main || echo "rebase had conflicts; attempting push anyway"
-        git push origin HEAD:main
+        # Push with retry+rebase so a concurrent push (e.g. a local commit landed in
+        # the same window) doesn't permanently drop the manifest update. Up to 5 tries.
+        for i in 1 2 3 4 5; do
+          git pull --rebase origin main || true
+          if git push origin HEAD:main; then
+            echo "manifest pushed on attempt $i"
+            break
+          fi
+          echo "push attempt $i failed; retrying after rebase"
+          sleep 5
+        done

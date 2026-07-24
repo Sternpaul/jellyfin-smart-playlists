@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.5.13.0",
+        "changelog": "No Letterboxd username = zero ratings weight (stale ratings cleared on refresh). README overhaul: concise overview up top, full config/technical detail moved to a DETAILS section; corrected stale ratings description.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.13/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "423c15fc3200c0ae1451076c68c807e2",
+        "timestamp": "2026-07-24T19:00:00Z"
+      },
+      {
         "version": "1.5.12.0",
         "changelog": "- **Letterboxd ratings are now the dominant recommendation signal.** Each user can enter their public Letterboxd username in the per-user config; the plugin scrapes their ratings page (`letterboxd.com/<user>/films/ratings/`), matches films to the library (reusing the lenient matcher), and stores per-user ratings. A 5-star rating contributes up to `RatingWeight` (default 0.50) to the For You score, dwarfing the smaller taste/affinity nudges. Added a \"Highly Rated by You\" playlist (top-rated library films, unwatched preferred). Scraping is fail-safe (errors logged, never break refresh) and cached wholesale per refresh. Note: scraping is ToS-gray (no open ratings API) and may break if Letterboxd changes its page markup.",
         "targetAbi": "10.11.0.0",
