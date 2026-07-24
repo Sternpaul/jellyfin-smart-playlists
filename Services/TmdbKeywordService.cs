@@ -133,9 +133,11 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     var hit = resp?.movie_results?.FirstOrDefault();
                     if (hit != null && hit.popularity > 0) return hit.popularity;
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    _logger.LogWarning(ex, "TMDB find (imdb={Imdb}) popularity lookup failed.", imdbId);
+                    // Keyword/popularity enrichment is best-effort; don't spew stack
+                    // traces into the log for a transient TMDB hiccup.
+                    _logger.LogDebug("TMDB find (imdb={Imdb}) popularity lookup failed.", imdbId);
                 }
             }
             return null;
@@ -150,9 +152,9 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 var hit = resp?.movie_results?.FirstOrDefault();
                 if (hit != null && hit.id > 0) return hit.id;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                _logger.LogWarning(ex, "TMDB find (imdb={Imdb}) failed; skipping keyword resolve.", imdbId);
+                _logger.LogDebug("TMDB find (imdb={Imdb}) failed; skipping keyword resolve.", imdbId);
             }
             return null;
         }
@@ -170,9 +172,9 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     .Select(n => n!.Trim())
                     .ToList();
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                _logger.LogWarning(ex, "TMDB keyword fetch for movie {TmdbId} failed; skipping.", tmdbId);
+                _logger.LogDebug("TMDB keyword fetch for movie {TmdbId} failed; skipping.", tmdbId);
                 return null;
             }
         }

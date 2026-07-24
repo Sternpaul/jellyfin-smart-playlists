@@ -164,6 +164,13 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     var intensity = GetStringProperty(element, "Intensity");
                     var score = GetIntProperty(element, "CriticalAcclaimScore");
 
+                    // Only mark classified if the AI actually returned a non-empty
+                    // subcategories tag. Otherwise the movie would be flagged
+                    // IsClassified=true with empty tags and never be sent to the AI
+                    // again, even though it has no usable classification.
+                    var realSubcats = JsonSerializer.Deserialize<List<string>>(subcats) ?? new List<string>();
+                    bool gotReal = realSubcats.Count > 0;
+
                     movie.Subcategories = subcats;
                     movie.Moods = moods;
                     movie.Themes = themes;
@@ -172,7 +179,9 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     if (!string.IsNullOrEmpty(intensity)) movie.Intensity = intensity;
                     if (score > 0) movie.CriticalAcclaimScore = score;
 
-                    movie.IsClassified = true;
+                    // v1.5.27: a movie that came back with no subcategories stays
+                    // unclassified so the next run re-sends it to the AI.
+                    movie.IsClassified = gotReal;
                     movie.LastUpdated = DateTime.UtcNow;
                     index++;
                 }
@@ -200,7 +209,10 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                             movie.Intensity = match.Groups["int"].Value.Trim();
                             if (int.TryParse(match.Groups["score"].Value, out int scoreVal)) movie.CriticalAcclaimScore = scoreVal;
                             
-                            movie.IsClassified = true;
+                            // Same rule as the JSON path: only count it as classified
+                            // if the AI actually supplied a non-empty subcategory list.
+                            var fbSubcats = JsonSerializer.Deserialize<List<string>>(match.Groups["subcategories"].Value) ?? new List<string>();
+                            movie.IsClassified = fbSubcats.Count > 0;
                             movie.LastUpdated = DateTime.UtcNow;
                             successCount++;
                         }
