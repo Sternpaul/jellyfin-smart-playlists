@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.5.26.0",
+        "changelog": "- **Manual \"Classify Library\" / \"Generate Playlists\" buttons now report real results** (were fire-and-forget \"Task Started\" with no feedback). The index/classify button runs the index + classification synchronously in the request and returns how many movies were processed and how many remain unclassified; the Generate button already awaited and now surfaces per-run success/errors. The config page shows these messages instead of \"Task Started\".\n- **TMDB keyword enrichment can no longer abort playlist generation.** It ran under the request's cancellation token, so cancelling the button (tab close / timeout) or a slow TMDB call cancelled the EF DB write and killed the whole refresh before any playlist was built. Enrichment now uses its own 3-minute timeout, a 10s per-movie budget, and a non-cancellable DB save, and any failure is logged and the refresh continues.\n- **Newly-added movies get a more reliable incremental classify.** The 20s debounced classify after an `ItemAdded` now retries up to 3 times (30s apart) so a transient AI/rate-limit error doesn't leave new movies permanently unclassified.\n- **Index now logs library-vs-DB counts** (\"Library scan: N movies in Jellyfin, M in recommender DB\") so it's visible whether new movies are being detected.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.26/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "b374c9ed2578609f7b3e72bdf2810975",
+        "timestamp": "2026-07-24T21:59:42Z"
+      },
+      {
         "version": "1.5.25.0",
         "changelog": "- **Fixed three bugs reported from user logs:**\n  1. **`no such column: u.EnableRatingsPlaylist` crash.** The `UserWatchlists` table DDL predated v1.5.17 and was missing `RatingsJsonUrl` + `EnableRatingsPlaylist`; no migration added them, so every load/save of the per-user watchlist/ratings config threw and dropped the save. Added an idempotent ALTER migration (and the columns to the fresh-install DDL).\n  2. **New movies never got classified.** The incremental `ItemAdded` handler saved metadata but never triggered classification, so freshly-added movies sat unclassified until the next 2am daily task. Added a 20s debounced classification trigger on add.\n  3. **\"Generate Playlists\" button hung on \"running\" with no logs.** It called `_taskManager.Execute` (fire-and-forget) and returned immediately, with no completion signal and swallowed errors. Now it awaits the refresh per user inside the request and returns success/error, so the UI reflects real progress and failures are visible.",
         "targetAbi": "10.11.0.0",
