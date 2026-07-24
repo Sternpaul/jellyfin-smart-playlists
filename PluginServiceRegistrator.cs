@@ -18,6 +18,7 @@ namespace Jellyfin.Plugin.AIRecommender
             serviceCollection.AddSingleton<MovieStore>();
 
             serviceCollection.AddHttpClient<LetterboxdService>();
+            serviceCollection.AddSingleton<TasteProfiler>();
             serviceCollection.AddSingleton<TmdbKeywordService>(sp =>
             {
                 var ms = sp.GetRequiredService<MovieStore>();

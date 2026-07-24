@@ -2,6 +2,9 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.5.16
+- **Fixed DI crash on the per-user config page.** `WatchHistoryService` depends on `TasteProfiler`, which was never registered in the dependency-injection container, so opening a user's watchlist/ratings config (and the `UserWatchlistConfig` endpoints) threw `Unable to resolve service for type 'TasteProfiler'`. Registered it. This was introduced in the v1.5.14 keyword work (TasteProfiler gained use by WatchHistoryService). No other unregistered services were found.
+
 ## v1.5.15
 - **Config page overhaul for readability.** Reorganised into clear sections (AI Provider, Playlist Behavior, Scoring & Weighting, Learning from Watches, Freshness Nudges, Enabled Playlists, Per-User Watchlist & Ratings) with consistent label + input + plain-English description (and the default value shown on every field). Added a short "How a movie's score is built" explainer at the top of the weighting section so the numbers stop being mysterious. Every weight now says "0 = off". Also surfaced three controls that existed in config but were missing from the UI: **Letterboxd Ratings Weight**, **TMDB Keyword Weight**, and **Custom Endpoint**.
 
