@@ -17,6 +17,7 @@ namespace Jellyfin.Plugin.AIRecommender.Data
         public DbSet<MovieAffinity> Affinities { get; set; }
         public DbSet<TasteSnapshot> TasteSnapshots { get; set; }
         public DbSet<SurfaceHistory> SurfaceHistory { get; set; }
+        public DbSet<UserRating> UserRatings { get; set; }
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
@@ -39,6 +40,9 @@ namespace Jellyfin.Plugin.AIRecommender.Data
 
             modelBuilder.Entity<SurfaceHistory>()
                 .HasKey(s => s.Id);
+
+            modelBuilder.Entity<UserRating>()
+                .HasKey(r => new { r.UserId, r.ItemId });
         }
     }
 }

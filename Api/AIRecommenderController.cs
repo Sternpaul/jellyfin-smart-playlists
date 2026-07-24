@@ -176,6 +176,14 @@ namespace Jellyfin.Plugin.AIRecommender.Api
             return NoContent();
         }
 
+        [HttpPost("UserConfig/SyncRatings")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        public async Task<ActionResult> SyncRatings([FromQuery][Required] Guid userId, CancellationToken cancellationToken)
+        {
+            await _letterboxdService.ScrapeRatingsAsync(userId, cancellationToken);
+            return NoContent();
+        }
+
         [HttpPost("Playlists/Refresh")]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         public async Task<ActionResult> RefreshUserPlaylists([FromQuery][Required] Guid userId, CancellationToken cancellationToken)

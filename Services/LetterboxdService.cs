@@ -208,5 +208,131 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             // normalized already strips trailing year; just return as-is for the substring compare.
             return normalized;
         }
+
+        // ---- Ratings scraping (v1.5.12) ----
+
+        // Scrape a user's public Letterboxd ratings page(s) and store matched library
+        // ratings as the dominant recommendation signal. ToS-gray / fragile by nature
+        // (no open API for this); all failures are logged and swallowed so a scrape
+        // problem never breaks the rest of the playlist refresh.
+        public async Task ScrapeRatingsAsync(Guid userId, CancellationToken cancellationToken = default)
+        {
+            var config = await _movieStore.GetUserWatchlistConfigAsync(userId, cancellationToken);
+            if (config == null || string.IsNullOrWhiteSpace(config.RatingsUsername))
+                return;
+
+            try
+            {
+                var username = config.RatingsUsername!.Trim().Trim('/');
+                var libraryMovies = await _movieStore.GetAllMoviesAsync(cancellationToken);
+                var titleDict = BuildTitleIndex(libraryMovies);
+
+                var ratings = new List<UserRating>();
+                const int maxPages = 25; // safety cap; ~600 ratings
+                for (int page = 1; page <= maxPages; page++)
+                {
+                    var url = page == 1
+                        ? $"https://letterboxd.com/{Uri.EscapeDataString(username)}/films/ratings/"
+                        : $"https://letterboxd.com/{Uri.EscapeDataString(username)}/films/ratings/page-{page}/";
+                    string html;
+                    try
+                    {
+                        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+                        req.Headers.UserAgent.ParseAdd("Mozilla/5.0 (compatible; AIRecommender/1.5)");
+                        using var resp = await _httpClient.SendAsync(req, cancellationToken);
+                        if (!resp.IsSuccessStatusCode)
+                        {
+                            _logger.LogWarning("Letterboxd ratings page {Page} for {User} returned {Status}.", page, username, resp.StatusCode);
+                            break;
+                        }
+                        html = await resp.Content.ReadAsStringAsync(cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to fetch Letterboxd ratings page {Page} for {User}.", page, username);
+                        break;
+                    }
+
+                    var pageRatings = ParseRatingsPage(html, libraryMovies, titleDict);
+                    if (pageRatings.Count == 0) break; // no more films / parse found nothing
+                    ratings.AddRange(pageRatings);
+                    if (ratings.Count >= 2000) break; // hard cap
+                }
+
+                if (ratings.Count > 0)
+                {
+                    foreach (var r in ratings) r.UserId = userId; // stamp before persisting
+                    await _movieStore.SaveUserRatingsAsync(userId, ratings, cancellationToken);
+                    _logger.LogInformation("Scraped {Count} rated films from Letterboxd for user {UserId}.", ratings.Count, userId);
+                }
+                else
+                {
+                    _logger.LogWarning("Scraped 0 ratings from Letterboxd for user {UserId} (username '{Username}'); check the handle is correct and public.", userId, username);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to scrape Letterboxd ratings for user {UserId}.", userId);
+            }
+        }
+
+        // Parse film cards from a Letterboxd ratings page. Each poster-container has the
+        // title in the first <img alt="..."> and the star rating in class="rating rated-X"
+        // where X is 0..10 (rating = X/2 stars). rated-0 means watched-but-unrated -> skip.
+        private static List<UserRating> ParseRatingsPage(string html, List<MovieMetadata> libraryMovies, Dictionary<string, List<MovieMetadata>> titleDict)
+        {
+            var results = new List<UserRating>();
+            var blocks = html.Split("<li class=\"poster-container", StringSplitOptions.None);
+            foreach (var block in blocks.Skip(1))
+            {
+                var titleMatch = System.Text.RegularExpressions.Regex.Match(block, "<img[^>]+alt=\"([^\"]+)\"");
+                if (!titleMatch.Success) continue;
+                var title = System.Net.WebUtility.HtmlDecode(titleMatch.Groups[1].Value);
+
+                var ratedMatch = System.Text.RegularExpressions.Regex.Match(block, "class=\"rating rated-(\\d+)\"");
+                if (!ratedMatch.Success) continue;
+                if (!int.TryParse(ratedMatch.Groups[1].Value, out int stars)) continue;
+                if (stars == 0) continue; // watched but not rated
+                var rating = Math.Round(stars / 2.0, 1); // 0.5 .. 5.0
+
+                var movie = MatchRatingTitle(title, libraryMovies, titleDict);
+                if (movie == null) continue;
+                results.Add(new UserRating
+                {
+                    UserId = Guid.Empty, // set by caller before save (we set after matching via userId)
+                    ItemId = movie.ItemId,
+                    Rating = rating,
+                    SourceTitle = title,
+                    LastUpdated = DateTime.UtcNow
+                });
+            }
+            return results;
+        }
+
+        private static Dictionary<string, List<MovieMetadata>> BuildTitleIndex(List<MovieMetadata> movies)
+        {
+            var dict = new Dictionary<string, List<MovieMetadata>>();
+            foreach (var m in movies)
+            {
+                if (string.IsNullOrWhiteSpace(m.Title)) continue;
+                var key = NormalizeTitle(m.Title);
+                if (!dict.TryGetValue(key, out var list))
+                    dict[key] = list = new List<MovieMetadata>();
+                list.Add(m);
+            }
+            return dict;
+        }
+
+        private static MovieMetadata? MatchRatingTitle(string title, List<MovieMetadata> libraryMovies, Dictionary<string, List<MovieMetadata>> titleDict)
+        {
+            var norm = NormalizeTitle(title);
+            if (titleDict.TryGetValue(norm, out var exact) && exact.Count > 0)
+                return exact[0];
+            var baseTitle = StripYearSuffix(norm);
+            return libraryMovies.FirstOrDefault(m =>
+                !string.IsNullOrWhiteSpace(m.Title) &&
+                (StripYearSuffix(NormalizeTitle(m.Title)).Contains(baseTitle) ||
+                 baseTitle.Contains(StripYearSuffix(NormalizeTitle(m.Title)))));
+        }
     }
 }

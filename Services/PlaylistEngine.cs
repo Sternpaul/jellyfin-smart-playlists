@@ -238,6 +238,12 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             var tasteProfile = await _watchHistoryService.GetUserTasteProfileAsync(userId, cancellationToken);
             var (unwatchedMovies, affinities) = await GetUnwatchedClassifiedMoviesAsync(userId, cancellationToken);
 
+            // v1.5.12: pull the user's Letterboxd ratings (public page scrape) and use
+            // them as the dominant recommendation signal. Failures are swallowed inside.
+            try { await _letterboxdService.ScrapeRatingsAsync(userId, cancellationToken); }
+            catch (Exception ex) { _logger.LogWarning(ex, "Ratings scrape failed for {UserId}; continuing without ratings.", userId); }
+            var ratings = await _movieStore.GetUserRatingsAsync(userId, cancellationToken);
+
             // v1.5.4: periodically snapshot the taste profile so the config page can
             // show how tastes drift over time (weekly, at most).
             await MaybeSaveTasteSnapshotAsync(userId, tasteProfile, cancellationToken);
@@ -245,7 +251,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             // get shorter effective half-lives (fresher playlists); slow watchers slower.
             ComputeDecayFactor(userId, cancellationToken);
             if (_config.EnableForYou)
-                claimed.UnionWith(await GenerateForYouPlaylistAsync(userId, tasteProfile, unwatchedMovies, affinities, claimed, cancellationToken));
+                claimed.UnionWith(await GenerateForYouPlaylistAsync(userId, tasteProfile, unwatchedMovies, affinities, ratings, claimed, cancellationToken));
 
             if (_config.EnableBecauseYouWatched)
                 await GenerateBecauseYouWatchedPlaylistAsync(userId, unwatchedMovies, cancellationToken);
@@ -262,11 +268,15 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             if (_config.EnableWildCard)
                 claimed.UnionWith(await GenerateWildCardPlaylistAsync(userId, tasteProfile, unwatchedMovies, affinities, claimed, cancellationToken));
 
-            // Watchlist is handled separately if the user enabled it
+            // Watchlist and ratings playlists are handled separately if the user enabled them
             var userConfig = await _movieStore.GetUserWatchlistConfigAsync(userId, cancellationToken);
             if (userConfig != null && userConfig.EnableWatchlistPlaylist)
             {
                 await GenerateWatchlistPlaylistAsync(userId, unwatchedMovies, cancellationToken);
+            }
+            if (userConfig != null && userConfig.EnableRatingsPlaylist && ratings.Count > 0)
+            {
+                await GenerateRatingsPlaylistAsync(userId, ratings, cancellationToken);
             }
             
             _logger.LogInformation("Finished refreshing playlists for user {UserId}", userId);
@@ -293,7 +303,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             await Task.CompletedTask;
         }
 
-        private async Task<List<Guid>> GenerateForYouPlaylistAsync(Guid userId, TasteProfile profile, List<MovieMetadata> unwatched, Dictionary<Guid, MovieAffinity> affinities, HashSet<Guid> claimed, CancellationToken cancellationToken)
+        private async Task<List<Guid>> GenerateForYouPlaylistAsync(Guid userId, TasteProfile profile, List<MovieMetadata> unwatched, Dictionary<Guid, MovieAffinity> affinities, Dictionary<Guid, double> ratings, HashSet<Guid> claimed, CancellationToken cancellationToken)
         {
             var now = DateTime.UtcNow;
             // 75% taste-matched, 25% exploration (from _config.DiversityWeight)
@@ -305,6 +315,9 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             // If the user has no watch history yet, the taste profile is empty, so
             // fall back to critical acclaim so "For You" still surfaces quality picks.
             bool hasTaste = profile.SubcategoryPreferences.Any() || profile.MoodPreferences.Any();
+            // v1.5.12: Letterboxd ratings are the dominant signal. A 5-star rating
+            // contributes up to RatingWeight to the score; other terms are nudges around it.
+            double ratingW = _config.RatingWeight;
             var scoredMovies = unwatched
                 .Where(m => !claimed.Contains(m.ItemId))
                 .Select(m => new
@@ -317,6 +330,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                             + GetNewMovieBoostByFit(m, profile, now)
                             + GetNoveltyBonus(affinities, m.ItemId, now)
                             + GetSoftPenalty(affinities, m.ItemId, now)
+                            + (ratings.TryGetValue(m.ItemId, out var r) ? ratingW * (r / 5.0) : 0.0)
                 }).OrderByDescending(x => x.Score).ToList();
 
             var tastePicks = scoredMovies.Take(tasteSize).Select(x => x.Movie.ItemId).ToList();
@@ -636,6 +650,27 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             }
 
             await CreateOrUpdateJellyfinPlaylistAsync(userId, "From Your Watchlist", matchedIds, cancellationToken);
+        }
+
+        // v1.5.12: "Highly Rated by You" — the user's top-rated Letterboxd films that are
+        // in the library, ordered by rating. Prefers unwatched films (a recommendation
+        // list of things you'd love), then fills with watched ones if short.
+        private async Task GenerateRatingsPlaylistAsync(Guid userId, Dictionary<Guid, double> ratings, CancellationToken cancellationToken)
+        {
+            var byId = (await _movieStore.GetAllMoviesAsync(cancellationToken)).ToDictionary(m => m.ItemId);
+            var watched = (await _watchHistoryService.GetWatchedMoviesAsync(userId, cancellationToken)).Select(w => w.ItemId).ToHashSet();
+
+            var rated = ratings
+                .Where(kv => byId.ContainsKey(kv.Key))
+                .Select(kv => new { Id = kv.Key, Rating = kv.Value, Watched = watched.Contains(kv.Key) })
+                .OrderByDescending(x => x.Watched ? 0 : 1) // unwatched first
+                .ThenByDescending(x => x.Rating)
+                .Take(_config.MaxMoviesPerPlaylist)
+                .Select(x => x.Id)
+                .ToList();
+
+            if (rated.Any())
+                await CreateOrUpdateJellyfinPlaylistAsync(userId, "Highly Rated by You", rated, cancellationToken);
         }
 
         private double ScoreMovieAgainstProfile(MovieMetadata movie, TasteProfile profile)

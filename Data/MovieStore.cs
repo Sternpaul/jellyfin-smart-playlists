@@ -89,6 +89,15 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                     SurfacedAt TEXT NOT NULL,
                     CONSTRAINT PK_SurfaceHistory PRIMARY KEY (Id)
                 )");
+            EnsureTable(db, @"
+                CREATE TABLE IF NOT EXISTS UserRatings (
+                    UserId TEXT NOT NULL,
+                    ItemId TEXT NOT NULL,
+                    Rating REAL NOT NULL,
+                    SourceTitle TEXT NULL,
+                    LastUpdated TEXT NOT NULL,
+                    CONSTRAINT PK_UserRatings PRIMARY KEY (UserId, ItemId)
+                )");
         }
 
         private static void EnsureTable(AiDbContext db, string sql)
@@ -268,6 +277,32 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                 .OrderByDescending(s => s.SurfacedAt)
                 .Take(limit)
                 .ToListAsync(cancellationToken);
+        }
+
+        // ---- UserRatings (v1.5.12): per-user Letterboxd ratings matched to library ItemIds ----
+
+        public async Task<Dictionary<Guid, double>> GetUserRatingsAsync(Guid userId, CancellationToken cancellationToken = default)
+        {
+            using var db = GetContext();
+            var rows = await db.UserRatings
+                .Where(r => r.UserId == userId)
+                .ToListAsync(cancellationToken);
+            var result = new Dictionary<Guid, double>();
+            foreach (var r in rows)
+                result[r.ItemId] = r.Rating;
+            return result;
+        }
+
+        // Replace a user's ratings wholesale (re-scraped). Old ratings for this user are cleared first.
+        public async Task SaveUserRatingsAsync(Guid userId, IEnumerable<UserRating> ratings, CancellationToken cancellationToken = default)
+        {
+            using var db = GetContext();
+            var uid = userId.ToString();
+            var existing = await db.UserRatings.Where(r => r.UserId == userId).ToListAsync(cancellationToken);
+            if (existing.Any())
+                db.UserRatings.RemoveRange(existing);
+            db.UserRatings.AddRange(ratings);
+            await db.SaveChangesAsync(cancellationToken);
         }
     }
 }
