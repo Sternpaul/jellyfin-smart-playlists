@@ -61,13 +61,28 @@ Prerequisites: Jellyfin **10.11.x**; an API key from [Google AI Studio](https://
 
 ---
 
-## Letterboxd ratings (the big one)
-Your **star ratings are the strongest recommendation signal**. Per user, in the plugin config → *Per-User Watchlist Settings*, point **Ratings JSON URL** at a JSON export of your Letterboxd ratings — each entry needs an `imdb_id` and a `rating` (0.5–5.0). The simplest source is your own `letterboxd-lists` repo: the raw GitHub URL of `public/ratings.json`. On each refresh the plugin fetches that JSON and matches films to your library by IMDB id (exact), then stores them. A 5-star rating contributes up to `RatingWeight` (default **0.50**) to the For You score — far above the smaller taste/affinity nudges — so films you loved rise to the top.
+## Letterboxd ratings (the dominant signal)
+Your **star ratings are the strongest recommendation signal**. Per user, in the plugin config → *Per-User Watchlist Settings*, set **Ratings JSON URL** to a URL that serves a JSON file of your ratings. On each refresh the plugin fetches that JSON and matches films to your library by IMDB id, then stores them. A 5-star rating contributes up to `RatingWeight` (default **0.50**) to the For You score — far above the smaller taste/affinity nudges — so films you loved rise to the top.
 
-- No scraping. The plugin never touches Letterboxd's HTML; it just reads your JSON file. Re-run your external scraper / re-push the JSON whenever your ratings change, and the next refresh picks it up.
+**Expected JSON format** (a JSON array of objects; `imdb_id` and `rating` are required, the rest optional):
+```json
+[
+  { "title": "Project Hail Mary", "imdb_id": "tt12042730", "rating": 4.0 },
+  { "title": "12 Angry Men",      "imdb_id": "tt0050083",  "rating": 5.0 },
+  { "title": "Vertigo",           "imdb_id": "tt0052357",  "rating": 3.5 }
+]
+```
+- `imdb_id` — used for **exact** matching to your library. Entries without a valid `imdb_id` (or that don't match a library item) are skipped.
+- `rating` — a number from `0.5` to `5.0` (half-star granularity). Values outside that range are ignored.
+- `title` — only used for logging/debugging; it is **not** used for matching.
+- Any other fields in each object are ignored.
+- The file must be served with `Content-Type: application/json` (a raw GitHub `/raw/` URL or any static host works).
+
+This is the only supported ratings source — the plugin does **not** scrape Letterboxd. You can generate this file yourself (e.g. from a Letterboxd export, or any tool that emits the shape above).
+
 - **No URL → no ratings weight.** Ratings are cleared for that user; recommendations use taste + learning only.
 - **"Highly Rated by You" playlist** is generated when enabled.
-- Fetching is **fail-safe**: a bad/empty URL or an unreachable file is logged and never breaks the rest of the refresh.
+- Fetching is **fail-safe**: a bad/empty URL or an unreachable file is logged and never breaks the rest of the refresh. Re-publish the JSON whenever your ratings change; the next refresh picks it up.
 
 ---
 
@@ -101,7 +116,28 @@ Movies compared via AI metadata: Subcategory 30% · Mood 20% · Theme 15% · Dir
 Curated, objective tags from TMDB (e.g. `serial killer`, `neo-noir`, `self-fulfilling prophecy`) are fetched per movie (resolving the TMDB id from the IMDB id already stored; cached in `tmdb_keywords_cache.json`) and added as a configurable overlap term in **For You** taste-matching (`KeywordWeight`, default 0.10) and the **Because You Watched** similarity engine. Keywords are more reliable than the LLM's subjective "themes" and need no re-classification — they're pulled at refresh time. Set a TMDB v3 API key in the config to enable; leave it blank to disable.
 
 ### Letterboxd Watchlist Integration
-Import via JSON URL (Radarr-compatible: `imdb_id`, `title`, `release_year`) or CSV export. Matched by IMDB ID, falling back to title + year. Per-user.
+Per user, in *Per-User Watchlist Settings*, enable **"From Your Watchlist"** and supply your list either as a **JSON URL** or a **CSV** paste (upload). Both are matched to your library by IMDB id (exact), falling back to title + year when no IMDB id is present.
+
+**JSON** — an array of objects. Recognised fields:
+```json
+[
+  { "imdb_id": "tt12042730", "title": "Project Hail Mary", "release_year": 2026 },
+  { "imdb_id": "tt0050083",  "title": "12 Angry Men",      "release_year": 1957 }
+]
+```
+- `imdb_id` — preferred; exact match to your library.
+- `title` — used for the IMDB-id fallback and for title-based matching.
+- `release_year` — used only to disambiguate title matches.
+
+**CSV** — a header row followed by one film per line. The parser looks for columns named `name` (required) and `year` (optional); other columns are ignored. Example:
+```csv
+name,year,Letterboxd URI
+Project Hail Mary,2026,/film/project-hail-mary/
+12 Angry Men,1957,/film/12-angry-men/
+```
+Matching is by title (+ year when available); a CSV without IMDB ids is less precise than the JSON path, so JSON is recommended where you have IMDB ids.
+
+The "From Your Watchlist" playlist is built from the matched items using the same smart scoring as the other playlists.
 
 ### Anti-Bubble Protection
 25% exploration reserve (configurable 10–50%); Diversity Cap (default 60%); dedicated Wild Card; rotating discovery.

@@ -2,8 +2,11 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.5.18
+- **Documentation: external-user data formats.** README now documents the exact JSON/CSV shapes for both the ratings feed (`Ratings JSON URL`: array of `{imdb_id, rating, title?}`) and the watchlist import (JSON array of `{imdb_id, title, release_year}` or CSV with `name`/`year` columns), plus the matching rules. CHANGELOG reworded to be vendor-neutral (no "your own repo" / first-person) ahead of other users adopting the plugin.
+
 ## v1.5.17
-- **Ratings now load from a JSON export instead of scraping Letterboxd.** Replaced the ToS-gray HTML scraper (spoofed UA, fragile DOM parsing, title-guess matching) with `FetchRatingsFromJsonAsync`, which fetches a user-supplied JSON URL of their ratings. Your own `letterboxd-lists` repo's `public/ratings.json` is the intended source. Each entry carries `imdb_id` + a `0.5`-`5.0` rating, so library matching is now **exact by IMDB id** (previously title-only, error-prone). The per-user config field changed from "Letterboxd Username" to "Ratings JSON URL"; blank = no ratings weight (unchanged guarantee). ToS-clean, no 12h HTML hits, fail-safe on fetch errors.
+- **Ratings now load from a JSON export instead of scraping Letterboxd.** Replaced the HTML scraper (spoofed user-agent, fragile DOM parsing, title-guess matching) with `FetchRatingsFromJsonAsync`, which fetches a user-supplied URL to a JSON file of ratings. Each entry carries an `imdb_id` and a `0.5`–`5.0` rating, so library matching is now **exact by IMDB id** (previously title-only and error-prone). The per-user config field changed from "Letterboxd Username" to "Ratings JSON URL"; blank = no ratings weight (unchanged guarantee). ToS-clean, no periodic HTML requests, fail-safe on fetch errors. See README for the expected JSON format.
 
 ## v1.5.16
 - **Fixed DI crash on the per-user config page.** `WatchHistoryService` depends on `TasteProfiler`, which was never registered in the dependency-injection container, so opening a user's watchlist/ratings config (and the `UserWatchlistConfig` endpoints) threw `Unable to resolve service for type 'TasteProfiler'`. Registered it. This was introduced in the v1.5.14 keyword work (TasteProfiler gained use by WatchHistoryService). No other unregistered services were found.
