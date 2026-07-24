@@ -10,162 +10,213 @@
             <div class="content-primary">
                 <h1>AI Recommender</h1>
                 <form id="aiRecommenderConfigForm">
-                    
-                    <div class="sectionTitleContainer"><h2 class="sectionTitle">🤖 AI Provider Settings</h2></div>
-                    
-                    <div class="selectContainer">
-                        <label class="selectLabel" for="AIProvider">AI Provider:</label>
+
+                    <!-- ============ AI PROVIDER ============ -->
+                    <div class="sectionTitleContainer"><h2 class="sectionTitle">🤖 AI Provider</h2></div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="AIProvider">AI Provider:</label>
                         <select is="emby-select" id="AIProvider" name="AIProvider" class="emby-select-withcolor">
                             <option value="GoogleAI">Google Gemini</option>
                             <option value="OpenRouter">OpenRouter</option>
                             <option value="OpenAI">OpenAI</option>
                             <option value="Anthropic">Anthropic Claude</option>
                         </select>
-                        <div class="fieldDescription">Select the AI service to use for classification and chat.</div>
+                        <div class="fieldDescription">Service used to classify your library and answer chat. Default: OpenRouter.</div>
                     </div>
-                    
+
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="ApiKey">API Key:</label>
                         <div style="display: flex; align-items: center; gap: 10px;">
                             <input type="password" id="ApiKey" name="ApiKey" is="emby-input" required="required" style="flex: 1;" />
                             <button is="emby-button" type="button" id="btnTestConnection" class="raised emby-button">Test Connection</button>
                         </div>
-                        <div class="fieldDescription">Your API key for the selected provider.</div>
+                        <div class="fieldDescription">Your API key for the provider above.</div>
                     </div>
-                    
+
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="ClassificationModel">Classification Model:</label>
                         <input type="text" id="ClassificationModel" name="ClassificationModel" is="emby-input" />
-                        <div class="fieldDescription">Model to use for background library classification (e.g. gemma-4-31b-it).</div>
+                        <div class="fieldDescription">Model that labels your movies once. Default: nvidia/nemotron-3-super-120b-a12b:free.</div>
                     </div>
-                    
+
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="ChatModel">Chat Model:</label>
                         <input type="text" id="ChatModel" name="ChatModel" is="emby-input" />
-                        <div class="fieldDescription">Model to use for the user chat interface. <br/><i>ⓘ Used for classifying your library and AI chat.</i></div>
+                        <div class="fieldDescription">Model that powers the "ask for recommendations" chat. Default: same as classification.</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="CustomEndpoint">Custom Endpoint (optional):</label>
+                        <input type="text" id="CustomEndpoint" name="CustomEndpoint" is="emby-input" />
+                        <div class="fieldDescription">Only for self-hosted / proxy setups. Leave blank normally.</div>
                     </div>
 
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="TmdbApiKey">TMDB API Key (optional):</label>
                         <input type="password" id="TmdbApiKey" name="TmdbApiKey" is="emby-input" />
-                        <div class="fieldDescription">TMDB v3 key (from themoviedb.org/settings/api). Enables <b>TMDB keywords</b> as a precision signal — sharpens "For You" and "Because You Watched" with curated tags like "serial killer" or "neo-noir". Leave blank to disable. Fetched at refresh time; no re-classification needed.</div>
+                        <div class="fieldDescription">Enables <b>TMDB keywords</b> (e.g. "serial killer", "neo-noir") as a precision signal in For You and Because You Watched. Leave blank to turn keywords off. No re-classification needed — fetched at refresh.</div>
                     </div>
+
+                    <!-- ============ PLAYLIST BEHAVIOR ============ -->
                     <div class="sectionTitleContainer"><h2 class="sectionTitle">🔀 Playlist Behavior</h2></div>
-                    
+
                     <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="PlaylistRefreshHours">Playlist Refresh Interval (Hours):</label>
+                        <label class="inputLabel inputLabelUnfocused" for="PlaylistRefreshHours">Refresh Interval (hours):</label>
                         <input type="number" id="PlaylistRefreshHours" name="PlaylistRefreshHours" is="emby-input" min="1" max="168" />
+                        <div class="fieldDescription">How often playlists rebuild. Default: 12.</div>
                     </div>
-                    
+
                     <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="MaxMoviesPerPlaylist">Movies per playlist:</label>
+                        <label class="inputLabel inputLabelUnfocused" for="MaxMoviesPerPlaylist">Movies per Playlist:</label>
                         <input type="number" id="MaxMoviesPerPlaylist" name="MaxMoviesPerPlaylist" is="emby-input" min="5" max="100" />
+                        <div class="fieldDescription">Default: 20.</div>
                     </div>
 
                     <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="PlaylistRotationPercent">Rotation % (each refresh):</label>
+                        <label class="inputLabel inputLabelUnfocused" for="PlaylistRotationPercent">Rotation per Refresh (%):</label>
                         <input type="range" id="PlaylistRotationPercent" name="PlaylistRotationPercent" min="10" max="100" step="5" is="emby-input" />
-                        <div class="fieldDescription"><i>ⓘ How aggressively playlists rotate content.</i></div>
-                    </div>
-                    
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="CoolingPeriodCycles">Cooling period (refresh cycles):</label>
-                        <input type="number" id="CoolingPeriodCycles" name="CoolingPeriodCycles" is="emby-input" min="1" max="10" />
-                        <div class="fieldDescription">How many refresh cycles a rejected movie stays hidden before returning.</div>
-                    </div>
-                    
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="DiversityWeight">Diversity Weight (%):</label>
-                        <input type="range" id="DiversityWeight" name="DiversityWeight" min="10" max="50" step="1" is="emby-input" />
-                        <div class="fieldDescription">Higher means more exploratory/wildcard movies in taste-matched playlists.</div>
-                    </div>
-                    
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="ReviewNudgingWeight">Review Nudging Weight (%):</label>
-                        <input type="range" id="ReviewNudgingWeight" name="ReviewNudgingWeight" min="0" max="15" step="1" is="emby-input" />
-                        <div class="fieldDescription">How much critical acclaim boosts a movie's score (0% to disable).</div>
+                        <div class="fieldDescription">How much of each playlist is swapped out every refresh. Higher = fresher but more churn. Default: 30%.</div>
                     </div>
 
                     <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="TasteDecayHalfLifeDays">Taste Decay Half-Life (days):</label>
-                        <input type="number" id="TasteDecayHalfLifeDays" name="TasteDecayHalfLifeDays" is="emby-input" min="7" max="730" />
-                        <div class="fieldDescription">How quickly older watches lose influence on your taste profile. A movie watched this many days ago counts half as much as one watched today. Higher = slower change (more stable taste). Default 120 (gentle).</div>
+                        <label class="inputLabel inputLabelUnfocused" for="CoolingPeriodCycles">Cooling Period (cycles):</label>
+                        <input type="number" id="CoolingPeriodCycles" name="CoolingPeriodCycles" is="emby-input" min="1" max="10" />
+                        <div class="fieldDescription">How many refreshes a rejected movie stays hidden before it can return. Default: 2.</div>
                     </div>
-                    
-                    <div class="sectionTitleContainer"><h2 class="sectionTitle">⚙️ Dynamic Rating / Learning</h2></div>
+
+                    <!-- ============ SCORING & WEIGHTING ============ -->
+                    <div class="sectionTitleContainer"><h2 class="sectionTitle">⚖️ Scoring &amp; Weighting</h2></div>
+                    <div class="fieldDescription" style="margin-bottom:14px;">
+                        <b>How a movie's score is built:</b> the base <b>For You</b> score is <b>0.7 × subcategory-match + 0.3 × mood-match</b> (fixed). On top of that, small nudges are added: your Letterboxd ratings (dominant), TMDB keyword overlap, learned affinity, new-movie recency, novelty, and critical acclaim. <b>Because You Watched</b> ranks by similarity (subcategory 30%, mood 20%, theme 15%, crew 10%, style 10%, era 5%, acclaim 5%, intensity 5%, keywords = KeywordWeight). Turn any weight to <b>0 to disable it</b>.
+                    </div>
+
                     <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="AffinityDecayHalfLifeDays">Affinity Decay Half-Life (days):</label>
-                        <input type="number" id="AffinityDecayHalfLifeDays" name="AffinityDecayHalfLifeDays" is="emby-input" min="1" max="365" />
-                        <div class="fieldDescription">How fast learned movie ratings (and penalties) fade. Default: 28.</div>
+                        <label class="inputLabel inputLabelUnfocused" for="RatingWeight">Letterboxd Ratings Weight:</label>
+                        <input type="number" id="RatingWeight" name="RatingWeight" is="emby-input" step="0.05" min="0" max="2" />
+                        <div class="fieldDescription">Dominant signal. A 5★ rating adds up to this much to the For You score. 0 = ignore ratings. Default: 0.50.</div>
                     </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="KeywordWeight">TMDB Keyword Weight:</label>
+                        <input type="number" id="KeywordWeight" name="KeywordWeight" is="emby-input" step="0.05" min="0" max="1" />
+                        <div class="fieldDescription">How strongly shared TMDB tags (e.g. "neo-noir") boost a movie in For You and Because You Watched. 0 = off. Default: 0.10.</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="DiversityWeight">Exploration Slots (%):</label>
+                        <input type="range" id="DiversityWeight" name="DiversityWeight" min="10" max="50" step="1" is="emby-input" />
+                        <div class="fieldDescription">Share of taste playlists reserved for unfamiliar picks. Higher = more discovery. Default: 25%.</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="DiversityCapPercent">Subcategory Cap (%):</label>
+                        <input type="number" id="DiversityCapPercent" name="DiversityCapPercent" is="emby-input" min="20" max="100" />
+                        <div class="fieldDescription">Max share any one subcategory may take in a playlist (anti-bubble). Lower = stricter mix. Default: 60%.</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="ReviewNudgingWeight">Critical Acclaim Nudge (%):</label>
+                        <input type="range" id="ReviewNudgingWeight" name="ReviewNudgingWeight" min="0" max="15" step="1" is="emby-input" />
+                        <div class="fieldDescription">Slight boost for highly-rated films. 0 = off. Default: 0%.</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="TasteDecayHalfLifeDays">Taste Memory (days):</label>
+                        <input type="number" id="TasteDecayHalfLifeDays" name="TasteDecayHalfLifeDays" is="emby-input" min="7" max="730" />
+                        <div class="fieldDescription">How long a watch keeps shaping your taste. A watch this many days old counts half as much. Higher = taste changes slower. Default: 120.</div>
+                    </div>
+
+                    <!-- ============ LEARNING (punishment / reward) ============ -->
+                    <div class="sectionTitleContainer"><h2 class="sectionTitle">🧠 Learning from Watches</h2></div>
+                    <div class="fieldDescription" style="margin-bottom:14px;">
+                        When you watch a movie from a playlist, its siblings are penalised and similar films are rewarded. These are small nudges — they refine, never override, your taste match.
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="AffinityDecayHalfLifeDays">Memory of Likes/Dislikes (days):</label>
+                        <input type="number" id="AffinityDecayHalfLifeDays" name="AffinityDecayHalfLifeDays" is="emby-input" min="1" max="365" />
+                        <div class="fieldDescription">How fast penalties/rewards fade. Default: 28.</div>
+                    </div>
+
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="PunishmentPenalty">Rejection Penalty:</label>
                         <input type="number" id="PunishmentPenalty" name="PunishmentPenalty" is="emby-input" step="0.05" min="-1" max="0" />
-                        <div class="fieldDescription">Affinity drop for other movies in a playlist you picked from (cooling period). Default: -0.30.</div>
+                        <div class="fieldDescription">Affinity drop for the other movies in a playlist you picked from. Default: -0.30.</div>
                     </div>
+
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="RewardBoost">Similar-Movie Reward:</label>
                         <input type="number" id="RewardBoost" name="RewardBoost" is="emby-input" step="0.05" min="0" max="1" />
-                        <div class="fieldDescription">Affinity rise for movies similar to one you watched. Default: 0.10.</div>
+                        <div class="fieldDescription">Affinity rise for films like one you watched. Default: 0.10.</div>
                     </div>
+
                     <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="AffinityRankWeight">Affinity Rank Weight:</label>
+                        <label class="inputLabel inputLabelUnfocused" for="AffinityRankWeight">Learned Affinity Cap:</label>
                         <input type="number" id="AffinityRankWeight" name="AffinityRankWeight" is="emby-input" step="0.05" min="0" max="1" />
-                        <div class="fieldDescription">Caps how much your learned likes/dislikes can nudge a movie's rank — it is a SMALL ADD-ON, not a re-weighting of the whole score. The base For-You score is 0.7&nbsp;×&nbsp;subcategory-match + 0.3&nbsp;×&nbsp;mood-match (fixed); affinity is then added on top, clamped to ±this value (default 0.15). Raising this does NOT push the other weights toward 1 — it only lets learned signals reach a bit further. 0 = ignore your history entirely.</div>
+                        <div class="fieldDescription">Max a learned like/dislike can nudge a rank. It's an add-on, not a rescale of the base score. 0 = ignore your history. Default: 0.15.</div>
                     </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="SoftPenaltyStrength">Penalty Softness:</label>
+                        <input type="number" id="SoftPenaltyStrength" name="SoftPenaltyStrength" is="emby-input" step="0.05" min="0" max="1" />
+                        <div class="fieldDescription">0 = rejected movies hard-banned while cooling; 1 = no penalty at all; 0.5 = they sink gently. Default: 0.50.</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="MinCompletionPercent">Count a Watch At (%):</label>
+                        <input type="number" id="MinCompletionPercent" name="MinCompletionPercent" is="emby-input" min="0" max="100" />
+                        <div class="fieldDescription">A watch only teaches the algorithm if you reached this much. Below it, ignored (no penalty). 0 = any "played"; 100 = must finish. Default: 50.</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="DecayRateReferencePerWeek">Your Normal Pace (movies/week):</label>
+                        <input type="number" id="DecayRateReferencePerWeek" name="DecayRateReferencePerWeek" is="emby-input" min="1" max="50" />
+                        <div class="fieldDescription">Reference watch rate. If you watch faster, old signals fade quicker (fresher); slower = stickier. Default: 3.</div>
+                    </div>
+
+                    <!-- ============ FRESHNESS NUDGES ============ -->
+                    <div class="sectionTitleContainer"><h2 class="sectionTitle">✨ Freshness Nudges</h2></div>
+
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="NewMovieBoostDays">New-Movie Boost Window (days):</label>
                         <input type="number" id="NewMovieBoostDays" name="NewMovieBoostDays" is="emby-input" min="0" max="365" />
-                        <div class="fieldDescription">How long a freshly-added movie gets a recency nudge in taste playlists. Default: 30.</div>
-                    </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="NewMovieBoostWeight">New-Movie Boost Weight:</label>
-                        <input type="number" id="NewMovieBoostWeight" name="NewMovieBoostWeight" is="emby-input" step="0.05" min="0" max="1" />
-                        <div class="fieldDescription">Size of the new-movie recency nudge (capped by Affinity Rank Weight). Default: 0.10.</div>
-                    </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="DiversityCapPercent">Diversity Cap (%):</label>
-                        <input type="number" id="DiversityCapPercent" name="DiversityCapPercent" is="emby-input" min="20" max="100" />
-                        <div class="fieldDescription">Max % any one subcategory may occupy in a playlist (anti-bubble). Higher = more concentrated. Default: 60 (gentle). Set lower (e.g. 40) for strict diversification.</div>
-                    </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="DirectorAffinityBonus">Director Affinity Bonus:</label>
-                        <input type="number" id="DirectorAffinityBonus" name="DirectorAffinityBonus" is="emby-input" step="0.05" min="0" max="1" />
-                        <div class="fieldDescription">Small nudge for movies by a director you watch often. Default: 0.05.</div>
-                    </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="SoftPenaltyStrength">Soft Penalty Strength:</label>
-                        <input type="number" id="SoftPenaltyStrength" name="SoftPenaltyStrength" is="emby-input" step="0.05" min="0" max="1" />
-                        <div class="fieldDescription">0 = rejected movies are hard-banned during cooling; 1 = no penalty. Between = graceful sink. Default: 0.50.</div>
-                    </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="NewMovieBoostMinFit">New-Movie Min Taste-Fit:</label>
-                        <input type="number" id="NewMovieBoostMinFit" name="NewMovieBoostMinFit" is="emby-input" step="0.05" min="0" max="1" />
-                        <div class="fieldDescription">For You only boosts a new movie if its taste-fit score is >= this. 0 = boost any new movie. Default: 0.30.</div>
-                    </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="NoveltyBonus">Novelty Bonus:</label>
-                        <input type="number" id="NoveltyBonus" name="NoveltyBonus" is="emby-input" step="0.05" min="0" max="1" />
-                        <div class="fieldDescription">Nudge for movies not recently surfaced (prevents recycling). Decays over Novelty Half-Life. Default: 0.05.</div>
-                    </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="NoveltyHalfLifeDays">Novelty Half-Life (days):</label>
-                        <input type="number" id="NoveltyHalfLifeDays" name="NoveltyHalfLifeDays" is="emby-input" min="1" />
-                        <div class="fieldDescription">How fast the novelty nudge fades after a movie appears. Default: 30.</div>
-                    </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="MinCompletionPercent">Min Watch % to Learn:</label>
-                        <input type="number" id="MinCompletionPercent" name="MinCompletionPercent" is="emby-input" min="0" max="100" />
-                        <div class="fieldDescription">v1.5.1: a watch only counts as a real signal (penalty to siblings + reward to similar) if playback reached this %. A quick glance or test below it is ignored — no penalty. 0 = any "played" counts (old behaviour); 100 = must finish. Default: 50.</div>
-                    </div>
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="DecayRateReferencePerWeek">Decay Reference (movies/week):</label>
-                        <input type="number" id="DecayRateReferencePerWeek" name="DecayRateReferencePerWeek" is="emby-input" min="1" max="50" />
-                        <div class="fieldDescription">v1.5.3: the "normal" watch rate. A user's effective half-lives (affinity + novelty decay) scale by their recent weekly rate vs this. Watch 6/week -> decays ~2x faster (fresher); 1.5/week -> ~2x slower. Clamped 0.3x-3x. Default: 3.</div>
+                        <div class="fieldDescription">How long a freshly-added movie gets a recency lift. Default: 30.</div>
                     </div>
 
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="NewMovieBoostWeight">New-Movie Boost Size:</label>
+                        <input type="number" id="NewMovieBoostWeight" name="NewMovieBoostWeight" is="emby-input" step="0.05" min="0" max="1" />
+                        <div class="fieldDescription">Strength of that recency lift (capped by Learned Affinity Cap). Default: 0.10.</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="NewMovieBoostMinFit">New-Movie Min Fit:</label>
+                        <input type="number" id="NewMovieBoostMinFit" name="NewMovieBoostMinFit" is="emby-input" step="0.05" min="0" max="1" />
+                        <div class="fieldDescription">New movies only get the boost if they fit your taste at/above this. 0 = boost anything new. Default: 0.30.</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="NoveltyBonus">Novelty Nudge:</label>
+                        <input type="number" id="NoveltyBonus" name="NoveltyBonus" is="emby-input" step="0.05" min="0" max="1" />
+                        <div class="fieldDescription">Lift for films not surfaced lately (stops recycling). Default: 0.05.</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="NoveltyHalfLifeDays">Novelty Fade (days):</label>
+                        <input type="number" id="NoveltyHalfLifeDays" name="NoveltyHalfLifeDays" is="emby-input" min="1" />
+                        <div class="fieldDescription">How fast the novelty lift fades after a movie appears. Default: 30.</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="DirectorAffinityBonus">Director Bonus:</label>
+                        <input type="number" id="DirectorAffinityBonus" name="DirectorAffinityBonus" is="emby-input" step="0.05" min="0" max="1" />
+                        <div class="fieldDescription">Small lift for films by a director you return to. Default: 0.05.</div>
+                    </div>
+
+                    <!-- ============ ENABLED PLAYLISTS ============ -->
                     <div class="sectionTitleContainer"><h2 class="sectionTitle">✅ Enabled Playlists</h2></div>
-                    
+
                     <label class="checkboxContainer">
                         <input type="checkbox" is="emby-checkbox" id="EnableForYou" name="EnableForYou" />
                         <span>For You</span>
@@ -195,15 +246,17 @@
                         <span>Wild Card</span>
                     </label>
 
+                    <!-- ============ USER EXCLUSIONS ============ -->
                     <div class="sectionTitleContainer"><h2 class="sectionTitle">🚫 User Exclusions</h2></div>
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused">Disable playlist generation for these users:</label>
                         <div id="userExclusionList" style="display: flex; flex-wrap: wrap; gap: 8px 24px; margin-bottom: 8px;"></div>
-                        <div class="fieldDescription">Tick the users you do NOT want playlists generated for. Leave all unticked to generate for everyone. (Stored as user GUIDs internally.)</div>
+                        <div class="fieldDescription">Tick users you do NOT want playlists for. Leave all unticked to generate for everyone.</div>
                     </div>
-                    
+
+                    <!-- ============ ACTIONS ============ -->
                     <div class="sectionTitleContainer"><h2 class="sectionTitle">⚙️ Actions</h2></div>
-                    
+
                     <div style="display: flex; gap: 15px; margin-bottom: 20px;">
                         <button is="emby-button" type="button" id="btnClassifyLibrary" class="raised emby-button">
                             <span>Classify Library</span>
@@ -213,11 +266,12 @@
                         </button>
                     </div>
                     <div class="fieldDescription" style="margin-bottom: 30px;">
-                        Status: Check Dashboard -> Scheduled Tasks for detailed progress.
+                        Status: check Dashboard → Scheduled Tasks for progress.
                     </div>
 
+                    <!-- ============ LIVE VIEW ============ -->
                     <div class="sectionTitleContainer"><h2 class="sectionTitle">🔍 What's Happening Right Now</h2></div>
-                    <div class="fieldDescription">A live, read-only view of what the algorithm is doing for a user: top taste weights, movies currently penalized (with cooling time left), active novelty boosts, and — for the last refresh — why specific movies were excluded from playlists. No settings here; this is just transparency.</div>
+                    <div class="fieldDescription">Live, read-only view of what the algorithm is doing for a user: top taste weights, movies currently penalised (with cooling time), active novelty boosts, and why movies were excluded last refresh. No settings here — just transparency.</div>
                     <div class="inputContainer">
                         <label class="selectLabel" for="DebugUser">Show for user:</label>
                         <select is="emby-select" id="DebugUser" name="DebugUser" class="emby-select-withcolor">
@@ -229,23 +283,24 @@
                     </button>
                     <div id="DebugOutput" style="margin-top: 15px; font-size: 13px; line-height: 1.5;"></div>
 
-                    <div class="sectionTitleContainer"><h2 class="sectionTitle">📋 Per-User Watchlist Settings</h2></div>
-                    <div class="fieldDescription">These settings are isolated per user. Select a user to edit their Letterboxd Watchlist config.</div>
-                    
+                    <!-- ============ PER-USER WATCHLIST ============ -->
+                    <div class="sectionTitleContainer"><h2 class="sectionTitle">📋 Per-User Watchlist &amp; Ratings</h2></div>
+                    <div class="fieldDescription">These settings are per user. Select a user to set their Letterboxd watchlist and ratings.</div>
+
                     <div class="selectContainer">
                         <label class="selectLabel" for="WatchlistUser">Select User:</label>
                         <select is="emby-select" id="WatchlistUser" name="WatchlistUser" class="emby-select-withcolor">
                             <option value="">(Select a user)</option>
                         </select>
                     </div>
-                    
+
                     <div id="UserWatchlistSettingsBlock" style="display: none; padding-left: 20px; border-left: 2px solid #52B54B; margin-bottom: 20px;">
                         <div class="inputContainer">
                             <label class="inputLabel inputLabelUnfocused" for="WatchlistJsonUrl">Watchlist JSON URL:</label>
                             <input type="text" id="WatchlistJsonUrl" name="WatchlistJsonUrl" is="emby-input" />
-                            <div class="fieldDescription">URL to a JSON array with {title, imdb_id, release_year}. Auto-synced during playlist refresh.</div>
+                            <div class="fieldDescription">URL to a JSON array with {title, imdb_id, release_year}. Auto-synced on refresh.</div>
                         </div>
-                        
+
                         <label class="checkboxContainer">
                             <input type="checkbox" is="emby-checkbox" id="EnableWatchlistPlaylist" name="EnableWatchlistPlaylist" />
                             <span>Enable "From Your Watchlist" playlist for this user</span>
@@ -254,14 +309,14 @@
                         <div class="inputContainer" style="margin-top: 16px;">
                             <label class="inputLabel inputLabelUnfocused" for="RatingsUsername">Letterboxd Username (for ratings):</label>
                             <input type="text" id="RatingsUsername" name="RatingsUsername" is="emby-input" />
-                            <div class="fieldDescription">Your public Letterboxd handle. The plugin scrapes letterboxd.com/&lt;username&gt;/films/ratings/ and uses your star ratings as the dominant recommendation weight. Leave blank to disable.</div>
+                            <div class="fieldDescription">Your public Letterboxd handle. The plugin scrapes your ratings and uses them as the <b>dominant</b> weight. Blank = no ratings weight for this user.</div>
                         </div>
 
                         <label class="checkboxContainer">
                             <input type="checkbox" is="emby-checkbox" id="EnableRatingsPlaylist" name="EnableRatingsPlaylist" />
                             <span>Enable "Highly Rated by You" playlist for this user</span>
                         </label>
-                        
+
                         <button is="emby-button" type="button" id="btnSaveUserConfig" class="raised emby-button">
                             <span>Save User Config</span>
                         </button>
@@ -336,6 +391,9 @@
                     document.querySelector('#ClassificationModel').value = config.ClassificationModel || "nvidia/nemotron-3-super-120b-a12b:free";
                     document.querySelector('#ChatModel').value = config.ChatModel || "nvidia/nemotron-3-super-120b-a12b:free";
                     document.querySelector('#TmdbApiKey').value = config.TmdbApiKey || "";
+                    document.querySelector('#RatingWeight').value = (config.RatingWeight !== undefined && config.RatingWeight !== null) ? config.RatingWeight : 0.50;
+                    document.querySelector('#KeywordWeight').value = (config.KeywordWeight !== undefined && config.KeywordWeight !== null) ? config.KeywordWeight : 0.10;
+                    document.querySelector('#CustomEndpoint').value = config.CustomEndpoint || "";
                     
                     document.querySelector('#PlaylistRefreshHours').value = config.PlaylistRefreshHours || 12;
                     document.querySelector('#MaxMoviesPerPlaylist').value = config.MaxMoviesPerPlaylist || 20;
@@ -543,6 +601,11 @@
                     config.ClassificationModel = document.querySelector('#ClassificationModel').value;
                     config.ChatModel = document.querySelector('#ChatModel').value;
                     config.TmdbApiKey = document.querySelector('#TmdbApiKey').value;
+                    config.RatingWeight = parseFloat(document.querySelector('#RatingWeight').value);
+                    if (isNaN(config.RatingWeight)) config.RatingWeight = 0.50;
+                    config.KeywordWeight = parseFloat(document.querySelector('#KeywordWeight').value);
+                    if (isNaN(config.KeywordWeight)) config.KeywordWeight = 0.10;
+                    config.CustomEndpoint = document.querySelector('#CustomEndpoint').value;
                     config.PlaylistRefreshHours = parseInt(document.querySelector('#PlaylistRefreshHours').value, 10);
                     config.MaxMoviesPerPlaylist = parseInt(document.querySelector('#MaxMoviesPerPlaylist').value, 10);
                     config.PlaylistRotationPercent = parseInt(document.querySelector('#PlaylistRotationPercent').value, 10);
