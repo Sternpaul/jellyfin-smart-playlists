@@ -8,6 +8,22 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.5.18.0",
+        "changelog": "Documentation: README now documents the exact JSON/CSV shapes for the ratings feed and watchlist import, plus matching rules. CHANGELOG reworded to be vendor-neutral ahead of external users. (Code unchanged from 1.5.17.)",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.18/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "cd20fa25a428e5849ffc6068e3c7452c",
+        "timestamp": "2026-07-24T22:30:00Z"
+      },
+      {
+        "version": "1.5.17.0",
+        "changelog": "Ratings now load from a JSON export instead of scraping Letterboxd. The per-user config field changed from 'Letterboxd Username' to 'Ratings JSON URL'; matching is exact by IMDB id. ToS-clean and fail-safe.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.17/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "43c80cda6dc28a4bebb17d55350e1242",
+        "timestamp": "2026-07-24T22:00:00Z"
+      },
+      {
         "version": "1.5.16.0",
         "changelog": "- **Fixed DI crash on the per-user config page.** `WatchHistoryService` depends on `TasteProfiler`, which was never registered in the dependency-injection container, so opening a user's watchlist/ratings config (and the `UserWatchlistConfig` endpoints) threw `Unable to resolve service for type 'TasteProfiler'`. Registered it. This was introduced in the v1.5.14 keyword work (TasteProfiler gained use by WatchHistoryService). No other unregistered services were found.",
         "targetAbi": "10.11.0.0",
