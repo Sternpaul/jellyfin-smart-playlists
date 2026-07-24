@@ -2,6 +2,10 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.5.11
+- **"From Your Watchlist" playlist now generates.** Root cause: the config page saved the per-user watchlist config without `ImportMethod`, so it defaulted to `None` and `SyncWatchlistAsync` returned immediately without fetching the URL — the playlist was silently skipped. `ImportMethod` is now derived from the data on save (and inferred at sync time for already-saved configs), so existing setups start working on the next refresh with no re-save needed.
+- **Lenient watchlist title matching.** Matching was exact (`string.Equals`), so minor title/year/punctuation differences caused 0 matches. Now normalizes titles (case/whitespace/year/separators) and adds a substring fallback, so real movies actually match.
+
 ## v1.5.10
 - **Discover and Wild Card playlists now always appear.** Both generators silently produced nothing when their strict filters yielded zero candidates (e.g. least-familiar subcategories already exhausted by other playlists), and `CreateOrUpdateJellyfinPlaylistAsync` skips empty playlists — so they vanished. Added fallbacks: Discover falls back to top-acclaim unwatched films; Wild Card falls back to any high-acclaim unwatched film. Fixes "admin missing some playlists."
 

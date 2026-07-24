@@ -38,8 +38,20 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         public async Task SyncWatchlistAsync(Guid userId, CancellationToken cancellationToken = default)
         {
             var config = await _movieStore.GetUserWatchlistConfigAsync(userId, cancellationToken);
-            if (config == null || config.ImportMethod == WatchlistImportMethod.None)
+            if (config == null)
                 return;
+
+            // v1.5.11: infer the import method from the stored data when it was saved as
+            // None (configs saved before this fix), so syncing still works.
+            if (config.ImportMethod == WatchlistImportMethod.None)
+            {
+                if (!string.IsNullOrWhiteSpace(config.JsonUrl))
+                    config.ImportMethod = WatchlistImportMethod.JsonUrl;
+                else if (!string.IsNullOrWhiteSpace(config.CsvData))
+                    config.ImportMethod = WatchlistImportMethod.CsvUpload;
+                else
+                    return;
+            }
 
             List<LetterboxdEntry> entries = new();
 
@@ -118,11 +130,22 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         {
             var matched = new List<Guid>();
             var libraryMovies = await _movieStore.GetAllMoviesAsync(cancellationToken);
-            
+
             // For faster lookup
             var imdbDict = libraryMovies
                 .Where(m => !string.IsNullOrWhiteSpace(m.ImdbId))
                 .ToDictionary(m => m.ImdbId!, StringComparer.OrdinalIgnoreCase);
+
+            // Normalized-title index for lenient matching (case/whitespace/punctuation/year-insensitive).
+            var titleDict = new Dictionary<string, List<MovieMetadata>>();
+            foreach (var m in libraryMovies)
+            {
+                if (string.IsNullOrWhiteSpace(m.Title)) continue;
+                var key = NormalizeTitle(m.Title);
+                if (!titleDict.TryGetValue(key, out var list))
+                    titleDict[key] = list = new List<MovieMetadata>();
+                list.Add(m);
+            }
 
             foreach (var entry in entries)
             {
@@ -133,22 +156,57 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     continue;
                 }
 
-                // 2. Title + Year fallback
+                // 2. Lenient Title (+ optional Year) match
                 if (!string.IsNullOrWhiteSpace(entry.title))
                 {
                     int.TryParse(entry.release_year, out int parsedYear);
-                    var movieByTitle = libraryMovies.FirstOrDefault(m => 
-                        string.Equals(m.Title, entry.title, StringComparison.OrdinalIgnoreCase) &&
-                        (parsedYear == 0 || !m.ReleaseYear.HasValue || Math.Abs(m.ReleaseYear.Value - parsedYear) <= 1));
-                        
-                    if (movieByTitle != null)
+                    var normTitle = NormalizeTitle(entry.title);
+
+                    if (titleDict.TryGetValue(normTitle, out var candidates))
                     {
-                        matched.Add(movieByTitle.ItemId);
+                        var movieByTitle = candidates.FirstOrDefault(m =>
+                            parsedYear == 0 || !m.ReleaseYear.HasValue || Math.Abs(m.ReleaseYear.Value - parsedYear) <= 1);
+                        if (movieByTitle == null && parsedYear != 0)
+                            movieByTitle = candidates.First(); // year unknown in library: accept title match
+                        if (movieByTitle != null)
+                        {
+                            matched.Add(movieByTitle.ItemId);
+                            continue;
+                        }
                     }
+
+                    // 3. Substring fallback: watchlist title contained in a library title
+                    // (or vice-versa), ignoring year suffixes. Catches "Alien" vs "Alien (1979)".
+                    var baseTitle = StripYearSuffix(normTitle);
+                    var fallback = libraryMovies.FirstOrDefault(m =>
+                        !string.IsNullOrWhiteSpace(m.Title) &&
+                        (StripYearSuffix(NormalizeTitle(m.Title)).Contains(baseTitle) ||
+                         baseTitle.Contains(StripYearSuffix(NormalizeTitle(m.Title)))) &&
+                        (parsedYear == 0 || !m.ReleaseYear.HasValue || Math.Abs(m.ReleaseYear.Value - parsedYear) <= 2));
+                    if (fallback != null)
+                        matched.Add(fallback.ItemId);
                 }
             }
 
             return matched;
+        }
+
+        // Lowercase, trim, collapse whitespace, strip a trailing "(YYYY)" / "YYYY" and
+        // common separators so "Spider-Man: Into the Spider-Verse" matches across sources.
+        private static string NormalizeTitle(string title)
+        {
+            var t = title.ToLowerInvariant().Trim();
+            t = System.Text.RegularExpressions.Regex.Replace(t, @"\s+", " ");
+            t = System.Text.RegularExpressions.Regex.Replace(t, @"\s*\(?\b(19|20)\d{2}\b\)?\s*$", ""); // trailing year
+            t = t.Replace(":", "").Replace("-", " ").Replace("–", " ").Replace("&", "and");
+            t = System.Text.RegularExpressions.Regex.Replace(t, @"\s+", " ").Trim();
+            return t;
+        }
+
+        private static string StripYearSuffix(string normalized)
+        {
+            // normalized already strips trailing year; just return as-is for the substring compare.
+            return normalized;
         }
     }
 }

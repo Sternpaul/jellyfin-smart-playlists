@@ -154,6 +154,16 @@ namespace Jellyfin.Plugin.AIRecommender.Api
         [HttpPost("UserWatchlistConfig")]
         public async Task<ActionResult> SaveUserWatchlistConfig([FromBody] UserWatchlistConfig request, CancellationToken cancellationToken)
         {
+            // Derive the import method from the provided data so the config page doesn't
+            // need to send it explicitly, and so configs saved before this fix (which left
+            // ImportMethod = None) start syncing on the next refresh.
+            if (request.ImportMethod == WatchlistImportMethod.None)
+            {
+                if (!string.IsNullOrWhiteSpace(request.JsonUrl))
+                    request.ImportMethod = WatchlistImportMethod.JsonUrl;
+                else if (!string.IsNullOrWhiteSpace(request.CsvData))
+                    request.ImportMethod = WatchlistImportMethod.CsvUpload;
+            }
             await _movieStore.SaveUserWatchlistConfigAsync(request, cancellationToken);
             return NoContent();
         }
