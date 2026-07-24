@@ -85,6 +85,10 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 return;
             }
 
+            // Clean slate: remove any existing recommendation playlists for this user
+            // before regenerating, so stale/disabled/renamed ones never linger.
+            await DeleteUserRecommendationPlaylistsAsync(userId, cancellationToken);
+
             _logger.LogInformation("Refreshing playlists for user {UserId}", userId);
             
             var tasteProfile = await _watchHistoryService.GetUserTasteProfileAsync(userId, cancellationToken);
