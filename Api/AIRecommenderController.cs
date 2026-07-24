@@ -173,6 +173,15 @@ namespace Jellyfin.Plugin.AIRecommender.Api
             await _playlistEngine.RefreshUserPlaylistsAsync(userId, cancellationToken);
             return NoContent();
         }
+
+        // v1.5.0: read-only "what's happening" snapshot for the config-page debug panel.
+        [HttpGet("Debug/{userId}")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        public async Task<ActionResult> GetDebugSnapshot([FromRoute][Required] Guid userId, CancellationToken cancellationToken)
+        {
+            var snapshot = await _playlistEngine.GetDebugSnapshotAsync(userId, cancellationToken);
+            return Ok(snapshot);
+        }
     }
 
     public class ChatRequest

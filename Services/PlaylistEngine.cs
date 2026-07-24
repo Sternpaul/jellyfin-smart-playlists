@@ -27,6 +27,12 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         private PluginConfiguration _config => Plugin.Instance!.Configuration;
         private readonly ILogger<PlaylistEngine> _logger;
 
+        // v1.5.0: observability. Records WHY each movie was excluded from a user's
+        // playlists on the last refresh, so the config page can show "what's happening".
+        // In-memory only (no DB); rebuilt every refresh. Keyed by user, then ItemId.
+        private readonly Dictionary<Guid, Dictionary<Guid, List<string>>> _lastExclusions = new();
+        private readonly object _exclusionsLock = new();
+
         public PlaylistEngine(
             IPlaylistManager playlistManager,
             ILibraryManager libraryManager,
@@ -184,6 +190,12 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             // before regenerating, so stale/disabled/renamed ones never linger.
             await DeleteUserRecommendationPlaylistsAsync(userId, cancellationToken);
 
+            // v1.5.0: reset the per-user exclusion log so the debug snapshot reflects THIS refresh.
+            lock (_exclusionsLock)
+            {
+                _lastExclusions[userId] = new Dictionary<Guid, List<string>>();
+            }
+
             _logger.LogInformation("Refreshing playlists for user {UserId}", userId);
             
             var tasteProfile = await _watchHistoryService.GetUserTasteProfileAsync(userId, cancellationToken);
@@ -270,14 +282,15 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             var finalPicks = tastePicks.Concat(explorePicks).ToList();
 
             // Anti-bubble: cap how much any single subcategory may occupy.
-            finalPicks = ApplyDiversityCap(finalPicks, unwatched, _config.DiversityCapPercent);
+            finalPicks = ApplyDiversityCap(finalPicks, unwatched, _config.DiversityCapPercent, userId);
 
             await CreateOrUpdateJellyfinPlaylistAsync(userId, "For You", finalPicks, cancellationToken);
         }
 
         // Enforces that no single subcategory exceeds maxPercent of the playlist.
         // Overflow picks are swapped for the next-best movie from a different subcategory.
-        private static List<Guid> ApplyDiversityCap(List<Guid> picks, List<MovieMetadata> pool, int maxPercent)
+        // v1.5.0: also records "over diversity cap" exclusions for the debug view.
+        private List<Guid> ApplyDiversityCap(List<Guid> picks, List<MovieMetadata> pool, int maxPercent, Guid userId)
         {
             if (maxPercent >= 100 || picks.Count == 0) return picks;
             var byId = pool.ToDictionary(m => m.ItemId);
@@ -293,7 +306,8 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 var sub = byId.TryGetValue(id, out var mv) ? PrimarySubcategory(mv) : null;
                 if (sub != null && counts.TryGetValue(sub, out int c) && c >= cap)
                 {
-                    // Over cap: try to swap for a different-subcat movie from the pool.
+                    // Over cap: record why this one was dropped, then try to swap.
+                    RecordExclusion(userId, id, $"Over diversity cap ({sub})");
                     var swap = poolLeft.FirstOrDefault(m =>
                     {
                         var psub = PrimarySubcategory(m);
@@ -307,7 +321,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                         if (ss != null) counts[ss] = counts.ContainsKey(ss) ? counts[ss] + 1 : 1;
                         continue;
                     }
-                    // No swap available — keep it (cap is a soft ceiling).
+                }
                 }
                 result.Add(id);
                 if (sub != null) counts[sub] = counts.TryGetValue(sub, out int cc) ? cc + 1 : 1;
@@ -703,11 +717,126 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             var watchedIds = watched.Select(m => m.ItemId).ToHashSet();
 
             var all = await _movieStore.GetAllMoviesAsync(cancellationToken);
-            var result = all
-                .Where(m => m.IsClassified && !watchedIds.Contains(m.ItemId))
-                .ToList();
+            var result = new List<MovieMetadata>();
+            var reasons = new Dictionary<Guid, List<string>>();
+            foreach (var m in all)
+            {
+                if (watchedIds.Contains(m.ItemId))
+                {
+                    RecordExclusion(userId, m.ItemId, "Already watched");
+                    continue;
+                }
+                if (!m.IsClassified)
+                {
+                    RecordExclusion(userId, m.ItemId, "Not yet AI-classified");
+                    continue;
+                }
+                result.Add(m);
+            }
+
+            // Persist reasons for this refresh (other reasons, e.g. over diversity cap,
+            // are appended later by ApplyDiversityCap during generation).
+            lock (_exclusionsLock)
+            {
+                if (!_lastExclusions.TryGetValue(userId, out var existing) || existing == null)
+                    _lastExclusions[userId] = reasons;
+                else
+                    foreach (var kv in reasons)
+                        if (!existing.ContainsKey(kv.Key)) existing[kv.Key] = kv.Value;
+            }
 
             return (result, affinities);
+        }
+
+        // v1.5.0: append an exclusion reason for a movie on the last refresh.
+        private void RecordExclusion(Guid userId, Guid itemId, string reason)
+        {
+            lock (_exclusionsLock)
+            {
+                if (!_lastExclusions.TryGetValue(userId, out var dict) || dict == null)
+                {
+                    dict = new Dictionary<Guid, List<string>>();
+                    _lastExclusions[userId] = dict;
+                }
+                if (!dict.TryGetValue(itemId, out var list))
+                {
+                    list = new List<string>();
+                    dict[itemId] = list;
+                }
+                if (!list.Contains(reason)) list.Add(reason);
+            }
+        }
+
+        // v1.5.0: read-only snapshot of "what the algorithm is doing right now" for a
+        // user, for the config-page debug panel. Returns taste weights, active penalties
+        // (with remaining cooling time), active novelty/new-movie boosts, and the last
+        // refresh's exclusion reasons. No DB writes — pure observability.
+        public async Task<object> GetDebugSnapshotAsync(Guid userId, CancellationToken cancellationToken = default)
+        {
+            var now = DateTime.UtcNow;
+            var profile = await _watchHistoryService.GetUserTasteProfileAsync(userId, cancellationToken);
+            var affinities = await _movieStore.GetAffinitiesAsync(userId, cancellationToken);
+            var all = await _movieStore.GetAllMoviesAsync(cancellationToken);
+            var byId = all.ToDictionary(m => m.ItemId);
+
+            var topSubcats = profile.SubcategoryPreferences
+                .OrderByDescending(kv => kv.Value)
+                .Take(8)
+                .ToDictionary(kv => kv.Key, kv => Math.Round(kv.Value, 3));
+
+            var penalties = new List<object>();
+            var boosts = new List<object>();
+            foreach (var kv in affinities)
+            {
+                var row = kv.Value;
+                if (row == null) continue;
+                var title = byId.TryGetValue(kv.Key, out var mv) ? mv.Title : kv.Key.ToString();
+                if (!string.IsNullOrEmpty(row.PenaltyUntil) &&
+                    DateTime.TryParse(row.PenaltyUntil, out var until) && until > now)
+                {
+                    penalties.Add(new
+                    {
+                        ItemId = kv.Key,
+                        Title = title,
+                        Affinity = Math.Round(row.Affinity, 3),
+                        CoolingHoursLeft = Math.Round((until - now).TotalHours, 1)
+                    });
+                }
+                // Active novelty nudge (movie surfaced recently -> nudge decaying) or
+                // currently-boosted new movie: surface anything with a non-trivial signal.
+                if (!string.IsNullOrEmpty(row.LastSurfaced) &&
+                    DateTime.TryParse(row.LastSurfaced, out var surfaced))
+                {
+                    var novelty = _config.NoveltyBonus * Math.Exp(-(now - surfaced).TotalDays / Math.Max(1, _config.NoveltyHalfLifeDays));
+                    if (novelty > 0.001)
+                        boosts.Add(new { ItemId = kv.Key, Title = title, Type = "novelty", Value = Math.Round(novelty, 4) });
+                }
+            }
+
+            Dictionary<Guid, List<string>> exclusions;
+            lock (_exclusionsLock)
+            {
+                exclusions = _lastExclusions.TryGetValue(userId, out var e) && e != null
+                    ? new Dictionary<Guid, List<string>>(e)
+                    : new Dictionary<Guid, List<string>>();
+            }
+            var exclusionView = exclusions
+                .Where(kv => byId.ContainsKey(kv.Key))
+                .OrderBy(kv => byId[kv.Key].Title)
+                .Take(50)
+                .Select(kv => new { ItemId = kv.Key, Title = byId[kv.Key].Title, Reasons = kv.Value })
+                .ToList();
+
+            return new
+            {
+                GeneratedAt = now,
+                HasTaste = profile.SubcategoryPreferences.Any() || profile.MoodPreferences.Any(),
+                TopSubcategories = topSubcats,
+                ActivePenalties = penalties,
+                ActiveBoosts = boosts,
+                ExclusionCount = exclusions.Count,
+                Exclusions = exclusionView
+            };
         }
 
         private async Task CreateOrUpdateJellyfinPlaylistAsync(Guid userId, string name, List<Guid> itemIds, CancellationToken cancellationToken)

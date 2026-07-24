@@ -84,6 +84,15 @@ When you **pick a movie from a playlist**, the plugin learns from that single ac
 
 This forces constant freshness — you never see the same stale playlist twice, and the system reacts to what you actually choose.
 
+### 🔍 What's Happening (Transparency)
+The config page now explains every knob in plain language (e.g. *Affinity Rank Weight* is a small additive nudge on top of the fixed 0.7×subcategory + 0.3×mood base score — it does **not** renormalize the other weights toward 1). There is also a read-only **"What's Happening Right Now"** panel per user that shows, live:
+- your **top taste weights** (or "falling back to critical acclaim" if you have no history yet)
+- movies **currently penalized** with cooling time remaining
+- **active novelty boosts**
+- every movie **excluded on the last refresh** and *why* (already watched / not yet AI-classified / over the diversity cap)
+
+This is observability only — it changes no behavior, it just shows what the algorithm is doing and why.
+
 ### 🌍 Anti-Bubble Protection
 
 Your taste is wide? The plugin respects that.

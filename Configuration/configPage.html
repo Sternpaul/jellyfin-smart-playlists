@@ -106,7 +106,7 @@
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="AffinityRankWeight">Affinity Rank Weight:</label>
                         <input type="number" id="AffinityRankWeight" name="AffinityRankWeight" is="emby-input" step="0.05" min="0" max="1" />
-                        <div class="fieldDescription">Max contribution of learned affinity to ranking (keeps it a small nudge). Default: 0.15.</div>
+                        <div class="fieldDescription">Caps how much your learned likes/dislikes can nudge a movie's rank — it is a SMALL ADD-ON, not a re-weighting of the whole score. The base For-You score is 0.7&nbsp;×&nbsp;subcategory-match + 0.3&nbsp;×&nbsp;mood-match (fixed); affinity is then added on top, clamped to ±this value (default 0.15). Raising this does NOT push the other weights toward 1 — it only lets learned signals reach a bit further. 0 = ignore your history entirely.</div>
                     </div>
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="NewMovieBoostDays">New-Movie Boost Window (days):</label>
@@ -200,7 +200,20 @@
                     <div class="fieldDescription" style="margin-bottom: 30px;">
                         Status: Check Dashboard -> Scheduled Tasks for detailed progress.
                     </div>
-                    
+
+                    <div class="sectionTitleContainer"><h2 class="sectionTitle">🔍 What's Happening Right Now</h2></div>
+                    <div class="fieldDescription">A live, read-only view of what the algorithm is doing for a user: top taste weights, movies currently penalized (with cooling time left), active novelty boosts, and — for the last refresh — why specific movies were excluded from playlists. No settings here; this is just transparency.</div>
+                    <div class="inputContainer">
+                        <label class="selectLabel" for="DebugUser">Show for user:</label>
+                        <select is="emby-select" id="DebugUser" name="DebugUser" class="emby-select-withcolor">
+                            <option value="">(current admin user)</option>
+                        </select>
+                    </div>
+                    <button is="emby-button" type="button" id="btnLoadDebug" class="raised emby-button">
+                        <span>Load Live View</span>
+                    </button>
+                    <div id="DebugOutput" style="margin-top: 15px; font-size: 13px; line-height: 1.5;"></div>
+
                     <div class="sectionTitleContainer"><h2 class="sectionTitle">📋 Per-User Watchlist Settings</h2></div>
                     <div class="fieldDescription">These settings are isolated per user. Select a user to edit their Letterboxd Watchlist config.</div>
                     
@@ -249,11 +262,15 @@
                 ApiClient.getUsers().then(function (users) {
                     var userSelect = document.querySelector('#WatchlistUser');
                     userSelect.innerHTML = '<option value="">(Select a user)</option>';
+                    var debugSelect = document.querySelector('#DebugUser');
+                    debugSelect.innerHTML = '<option value="">(current admin user)</option>';
                     users.forEach(function(u) {
                         var opt = document.createElement('option');
                         opt.value = u.Id;
                         opt.textContent = u.Name;
                         userSelect.appendChild(opt);
+                        var dopt = opt.cloneNode(true);
+                        debugSelect.appendChild(dopt);
                     });
                 });
 
@@ -348,7 +365,61 @@
                     Dashboard.alert("Error starting Playlist Refresh task.");
                 });
             });
-            
+
+            // v1.5.0: "What's happening right now" live debug panel.
+            document.querySelector('#btnLoadDebug').addEventListener('click', function() {
+                var selected = document.querySelector('#DebugUser').value;
+                var userId = selected || ApiClient.getCurrentUserId();
+                if (!userId) { Dashboard.alert("Could not determine a user to inspect."); return; }
+                var out = document.querySelector('#DebugOutput');
+                out.innerHTML = '<em>Loading…</em>';
+                ApiClient.getJSON(ApiClient.getUrl('AIRecommender/Debug/' + userId)).then(function(s) {
+                    var html = '';
+                    html += '<p><strong>Top taste weights:</strong> ';
+                    if (s.TopSubcategories && Object.keys(s.TopSubcategories).length) {
+                        html += Object.keys(s.TopSubcategories).map(function(k) {
+                            return k + ' (' + s.TopSubcategories[k] + ')';
+                        }).join(', ');
+                    } else {
+                        html += s.HasTaste ? '(none yet)' : '<em>no watch history — falling back to critical acclaim</em>';
+                    }
+                    html += '</p>';
+
+                    html += '<p><strong>Currently penalized (' + (s.ActivePenalties ? s.ActivePenalties.length : 0) + '):</strong><br>';
+                    if (s.ActivePenalties && s.ActivePenalties.length) {
+                        html += s.ActivePenalties.map(function(p) {
+                            return '• ' + escapeHtml(p.Title) + ' — affinity ' + p.Affinity + ', cooling ' + p.CoolingHoursLeft + 'h left';
+                        }).join('<br>');
+                    } else { html += '<em>none</em>'; }
+                    html += '</p>';
+
+                    html += '<p><strong>Active novelty boosts (' + (s.ActiveBoosts ? s.ActiveBoosts.length : 0) + '):</strong><br>';
+                    if (s.ActiveBoosts && s.ActiveBoosts.length) {
+                        html += s.ActiveBoosts.map(function(b) {
+                            return '• ' + escapeHtml(b.Title) + ' — ' + b.Value;
+                        }).join('<br>');
+                    } else { html += '<em>none</em>'; }
+                    html += '</p>';
+
+                    html += '<p><strong>Excluded on last refresh (' + (s.ExclusionCount || 0) + ' movies):</strong><br>';
+                    if (s.Exclusions && s.Exclusions.length) {
+                        html += s.Exclusions.map(function(x) {
+                            return '• ' + escapeHtml(x.Title) + ' — ' + x.Reasons.join('; ');
+                        }).join('<br>');
+                    } else { html += '<em>none recorded (run a refresh first)</em>'; }
+                    html += '</p>';
+                    out.innerHTML = html;
+                }).catch(function(err) {
+                    out.innerHTML = '<span style="color:#d33;">Failed to load: ' + (err && err.statusText ? err.statusText : 'error') + '</span>';
+                });
+            });
+
+            function escapeHtml(s) {
+                return String(s).replace(/[&<>"']/g, function(c) {
+                    return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
+                });
+            }
+
             document.querySelector('#WatchlistUser').addEventListener('change', function(e) {
                 var userId = e.target.value;
                 var settingsBlock = document.querySelector('#UserWatchlistSettingsBlock');

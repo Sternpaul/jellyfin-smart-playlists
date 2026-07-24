@@ -2,6 +2,11 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.5.0
+- **Config-page transparency:** every learning knob now has a plain-language explanation. The key clarification — *Affinity Rank Weight* is a small **additive** nudge on top of the fixed `0.7×subcategory + 0.3×mood` base For-You score; it does **not** renormalize the other weights toward 1.
+- **"What's Happening Right Now" panel:** new read-only, per-user live view on the config page showing top taste weights, currently penalized movies (with cooling time left), active novelty boosts, and — for the last refresh — every **excluded** movie and *why* (already watched / not yet AI-classified / over the diversity cap). Observability only; no behavior change.
+- New API: `GET AIRecommender/Debug/{userId}` (read-only snapshot).
+
 ## v1.4.3
 - **Novelty tracking:** movies that haven't been surfaced in a playlist recently get a small bonus that decays over `Novelty Half-Life` (default 30d), so the same films stop recycling to the top every refresh.
 - **Taste-fit-gated new-movie boost:** in "For You", the new-movie recency boost now only applies when a film's taste-fit score is ≥ `NewMovieBoostMinFit` (default 0.30) — fresh additions surface *because they fit*, not just because they're new.
