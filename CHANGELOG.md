@@ -2,6 +2,9 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.5.8
+- **Fixed `no such table: Affinities` crash on existing databases.** `EnsureCreated()` only creates tables when the DB file is new, so a database written by an older version (missing the `Affinities` table) stayed broken and the Debug panel / playlist refresh crashed. Startup now also runs idempotent `CREATE TABLE IF NOT EXISTS` for all five tables, upgrading existing DBs in place without data loss.
+
 ## v1.5.7
 - **Build is now warning-clean (0 warnings).** Turned off XML doc generation (a Jellyfin plugin doesn't ship/consume a `.xml` doc file, so the 428 CS1591 "missing XML comment" warnings were pure noise) and genuinely fixed the 12 nullable-reference warnings (CS8600/8602/8604/8605) in `AutoRefreshPlaylistsTask.cs` and `MovieClassifier.cs` with proper null-guards. No behavior change.
 

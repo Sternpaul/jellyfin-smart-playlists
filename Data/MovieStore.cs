@@ -22,7 +22,78 @@ namespace Jellyfin.Plugin.AIRecommender.Data
         private void InitializeDatabase()
         {
             using var db = GetContext();
+            // EnsureCreated only creates tables when the database file is NEW.
+            // On a pre-existing DB (e.g. one written by an older plugin version)
+            // it does nothing, so any table added since that version was created
+            // would be missing and queries would fail with "no such table".
+            // Create each table idempotently so existing databases are upgraded
+            // in place without dropping data.
             db.Database.EnsureCreated();
+            EnsureTable(db, @"
+                CREATE TABLE IF NOT EXISTS Movies (
+                    ItemId TEXT NOT NULL,
+                    Title TEXT NULL,
+                    ReleaseYear INTEGER NULL,
+                    ImdbId TEXT NULL,
+                    Plot TEXT NULL,
+                    Director TEXT NULL,
+                    Cast TEXT NULL,
+                    Subcategories TEXT NULL,
+                    Moods TEXT NULL,
+                    Themes TEXT NULL,
+                    NarrativeStyle TEXT NULL,
+                    Accessibility TEXT NULL,
+                    Intensity TEXT NULL,
+                    CriticalAcclaimScore INTEGER NOT NULL,
+                    IsClassified INTEGER NOT NULL,
+                    DateAdded TEXT NOT NULL,
+                    LastUpdated TEXT NOT NULL,
+                    CONSTRAINT PK_Movies PRIMARY KEY (ItemId)
+                )");
+            EnsureTable(db, @"
+                CREATE TABLE IF NOT EXISTS UserWatchlists (
+                    UserId TEXT NOT NULL,
+                    ImportMethod INTEGER NOT NULL,
+                    JsonUrl TEXT NULL,
+                    CsvData TEXT NULL,
+                    EnableWatchlistPlaylist INTEGER NOT NULL,
+                    LastSynced TEXT NOT NULL,
+                    MatchedItemIds TEXT NULL,
+                    CONSTRAINT PK_UserWatchlists PRIMARY KEY (UserId)
+                )");
+            EnsureTable(db, @"
+                CREATE TABLE IF NOT EXISTS Affinities (
+                    UserId TEXT NOT NULL,
+                    ItemId TEXT NOT NULL,
+                    Affinity REAL NOT NULL,
+                    PenaltyUntil TEXT NULL,
+                    LastSurfaced TEXT NULL,
+                    LastUpdated TEXT NOT NULL,
+                    CONSTRAINT PK_Affinities PRIMARY KEY (UserId, ItemId)
+                )");
+            EnsureTable(db, @"
+                CREATE TABLE IF NOT EXISTS TasteSnapshots (
+                    Id INTEGER NOT NULL,
+                    UserId TEXT NULL,
+                    SnapshotAt TEXT NOT NULL,
+                    SubcategoryWeightsJson TEXT NULL,
+                    MoodWeightsJson TEXT NULL,
+                    CONSTRAINT PK_TasteSnapshots PRIMARY KEY (Id)
+                )");
+            EnsureTable(db, @"
+                CREATE TABLE IF NOT EXISTS SurfaceHistory (
+                    Id INTEGER NOT NULL,
+                    UserId TEXT NULL,
+                    ItemId TEXT NULL,
+                    PlaylistType TEXT NULL,
+                    SurfacedAt TEXT NOT NULL,
+                    CONSTRAINT PK_SurfaceHistory PRIMARY KEY (Id)
+                )");
+        }
+
+        private static void EnsureTable(AiDbContext db, string sql)
+        {
+            db.Database.ExecuteSqlRaw(sql);
         }
 
         private AiDbContext GetContext()
