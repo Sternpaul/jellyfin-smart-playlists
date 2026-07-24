@@ -68,3 +68,7 @@ jobs:
           --notes-file changelog_section.md \
           --target "${{ github.sha }}" \
           bin/Release/net9.0/Jellyfin.Plugin.AIRecommender.zip
+        # Explicitly mark this tag as Latest so version order (not workflow finish
+        # timing) decides the "Latest" flag. For normal single-version releases this
+        # is a no-op beyond correctness; for batch re-tags it keeps the highest version Latest.
+        gh api -X PATCH "repos/${{ github.repository }}/releases/tags/${{ github.ref_name }}" -f make_latest=true
