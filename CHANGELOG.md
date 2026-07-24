@@ -2,6 +2,9 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.5.19
+- **Fixed the release workflow's manifest auto-update (the part that kept failing to land).** Root cause: the checkout step ran on the release *tag* (detached HEAD), and the manifest push used `git push --force-with-lease origin HEAD:main` from that detached HEAD — the lease can't verify a remote it never fetched, so every retry failed silently and the manifest never updated. It also based the edit on the tag's `repo/manifest.json`, which would have dropped prior versions. The step now checks out `main` first and does a clean fast-forward push. No plugin code change — this is a CI/release fix. The previous 1.5.17/1.5.18 manifest entries were added by hand in the interim.
+
 ## v1.5.18
 - **Documentation: external-user data formats.** README now documents the exact JSON/CSV shapes for both the ratings feed (`Ratings JSON URL`: array of `{imdb_id, rating, title?}`) and the watchlist import (JSON array of `{imdb_id, title, release_year}` or CSV with `name`/`year` columns), plus the matching rules. CHANGELOG reworded to be vendor-neutral (no "your own repo" / first-person) ahead of other users adopting the plugin.
 
