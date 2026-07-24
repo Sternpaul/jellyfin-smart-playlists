@@ -240,8 +240,16 @@ namespace Jellyfin.Plugin.AIRecommender.Services
 
             // v1.5.12: pull the user's Letterboxd ratings (public page scrape) and use
             // them as the dominant recommendation signal. Failures are swallowed inside.
-            try { await _letterboxdService.ScrapeRatingsAsync(userId, cancellationToken); }
-            catch (Exception ex) { _logger.LogWarning(ex, "Ratings scrape failed for {UserId}; continuing without ratings.", userId); }
+            // If no username is configured, clear any stale ratings so NO ratings weight
+            // is ever applied for this user.
+            var userRatingsConfig = await _movieStore.GetUserWatchlistConfigAsync(userId, cancellationToken);
+            if (string.IsNullOrWhiteSpace(userRatingsConfig?.RatingsUsername))
+                await _movieStore.SaveUserRatingsAsync(userId, Array.Empty<UserRating>(), cancellationToken);
+            else
+            {
+                try { await _letterboxdService.ScrapeRatingsAsync(userId, cancellationToken); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Ratings scrape failed for {UserId}; continuing without ratings.", userId); }
+            }
             var ratings = await _movieStore.GetUserRatingsAsync(userId, cancellationToken);
 
             // v1.5.4: periodically snapshot the taste profile so the config page can
