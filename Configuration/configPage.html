@@ -117,6 +117,13 @@
                         <input type="checkbox" is="emby-checkbox" id="EnableWildCard" name="EnableWildCard" />
                         <span>Wild Card</span>
                     </label>
+
+                    <div class="sectionTitleContainer"><h2 class="sectionTitle">🚫 User Exclusions</h2></div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="DisabledUserIds">Disable playlist generation for these users:</label>
+                        <input type="text" id="DisabledUserIds" name="DisabledUserIds" is="emby-input" placeholder="comma-separated user GUIDs" />
+                        <div class="fieldDescription">Enter Jellyfin user GUIDs (comma-separated) for users you do NOT want playlists generated for. Leave empty to generate for everyone. User GUIDs can be found in the Jellyfin dashboard URL when editing a user, or in the logs during a playlist refresh (the "Refreshing playlists for user &lt;GUID&gt;" line).</div>
+                    </div>
                     
                     <div class="sectionTitleContainer"><h2 class="sectionTitle">⚙️ Actions</h2></div>
                     
@@ -202,6 +209,7 @@
                     document.querySelector('#DiversityWeight').value = config.DiversityWeight || 25;
                     document.querySelector('#ReviewNudgingWeight').value = config.ReviewNudgingWeight || 0;
                     document.querySelector('#TasteDecayHalfLifeDays').value = config.TasteDecayHalfLifeDays || 120;
+                    document.querySelector('#DisabledUserIds').value = (config.DisabledUserIds || []).join(', ');
                     
                     document.querySelector('#EnableForYou').checked = config.EnableForYou !== false;
                     document.querySelector('#EnableBecauseYouWatched').checked = config.EnableBecauseYouWatched !== false;
@@ -331,6 +339,10 @@
                     config.DiversityWeight = parseInt(document.querySelector('#DiversityWeight').value, 10);
                     config.ReviewNudgingWeight = parseInt(document.querySelector('#ReviewNudgingWeight').value, 10);
                     config.TasteDecayHalfLifeDays = parseInt(document.querySelector('#TasteDecayHalfLifeDays').value, 10) || 120;
+                    config.DisabledUserIds = (document.querySelector('#DisabledUserIds').value || '')
+                        .split(',')
+                        .map(function (s) { return s.trim(); })
+                        .filter(function (s) { return s.length > 0; });
                     
                     config.EnableForYou = document.querySelector('#EnableForYou').checked;
                     config.EnableBecauseYouWatched = document.querySelector('#EnableBecauseYouWatched').checked;

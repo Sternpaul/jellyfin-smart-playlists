@@ -76,6 +76,14 @@ namespace Jellyfin.Plugin.AIRecommender.Services
 
         public async Task RefreshUserPlaylistsAsync(Guid userId, CancellationToken cancellationToken = default)
         {
+            // Respect per-user exclusions configured by the admin.
+            if (_config.DisabledUserIds != null &&
+                _config.DisabledUserIds.Any(id => string.Equals(id, userId.ToString(), StringComparison.OrdinalIgnoreCase)))
+            {
+                _logger.LogInformation("Skipping playlist generation for disabled user {UserId}", userId);
+                return;
+            }
+
             _logger.LogInformation("Refreshing playlists for user {UserId}", userId);
             
             var tasteProfile = await _watchHistoryService.GetUserTasteProfileAsync(userId, cancellationToken);

@@ -38,5 +38,9 @@ namespace Jellyfin.Plugin.AIRecommender.Configuration
         // Taste Profile Settings
         public int TasteDecayHalfLifeDays { get; set; } = 120; // days; exponential decay of older watches in the taste profile
         public int ReviewNudgingWeight { get; set; } = 0; // percentage, 0-15
+
+        // User Exclusions
+        // User GUIDs (as strings) for whom playlist generation is skipped entirely.
+        public List<string> DisabledUserIds { get; set; } = new();
     }
 }
