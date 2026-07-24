@@ -138,4 +138,7 @@ jobs:
         git config user.email "github-actions[bot]@users.noreply.github.com"
         git add repo/manifest.json
         git commit -m "repo: add ${version} to manifest" || echo "no manifest change"
+        # Rebase onto latest main before pushing so a concurrent push (e.g. from a
+        # local commit) doesn't cause a non-fast-forward rejection of the manifest update.
+        git pull --rebase origin main || echo "rebase had conflicts; attempting push anyway"
         git push origin HEAD:main

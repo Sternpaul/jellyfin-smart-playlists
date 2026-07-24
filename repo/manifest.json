@@ -8,12 +8,20 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.5.11.0",
+        "changelog": "From Your Watchlist playlist now generates (ImportMethod was never set on save). Lenient watchlist title matching (normalize case/year/punctuation + substring fallback).",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.11/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "95e08c3e60b031648c490d84974bfc78",
+        "timestamp": "2026-07-24T18:00:00Z"
+      },
+      {
         "version": "1.5.10.0",
-        "changelog": "- **Discover and Wild Card playlists now always appear.** Both generators silently produced nothing when their strict filters yielded zero candidates (e.g. least-familiar subcategories already exhausted by other playlists), and `CreateOrUpdateJellyfinPlaylistAsync` skips empty playlists — so they vanished. Added fallbacks: Discover falls back to top-acclaim unwatched films; Wild Card falls back to any high-acclaim unwatched film. Fixes \"admin missing some playlists.\"",
+        "changelog": "Discover and Wild Card playlists now always appear (fallback when strict filters empty).",
         "targetAbi": "10.11.0.0",
         "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.10/Jellyfin.Plugin.AIRecommender.zip",
         "checksum": "cbe6a95323224414931dd11e3ca1d1f9",
-        "timestamp": "2026-07-24T17:26:35Z"
+        "timestamp": "2026-07-24T17:00:00Z"
       },
       {
         "version": "1.5.9.0",
