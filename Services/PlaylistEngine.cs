@@ -946,6 +946,18 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             // v1.5.4: taste drift — compare the oldest stored snapshot to the current profile.
             var tasteDrift = await GetTasteDriftAsync(userId, profile, cancellationToken);
 
+            // v1.5.5: recently surfaced history.
+            var recent = await _movieStore.GetRecentSurfaceHistoryAsync(userId, 50, cancellationToken);
+            var surfacedView = recent
+                .Select(s => new
+                {
+                    ItemId = Guid.TryParse(s.ItemId, out var g) ? g : Guid.Empty,
+                    Title = byId.TryGetValue(Guid.TryParse(s.ItemId, out var g2) ? g2 : Guid.Empty, out var mv) ? mv.Title : s.ItemId,
+                    Playlist = s.PlaylistType,
+                    SurfacedAt = s.SurfacedAt
+                })
+                .ToList();
+
             return new
             {
                 GeneratedAt = now,
@@ -955,7 +967,8 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 ActiveBoosts = boosts,
                 ExclusionCount = exclusions.Count,
                 Exclusions = exclusionView,
-                TasteDrift = tasteDrift
+                TasteDrift = tasteDrift,
+                RecentlySurfaced = surfacedView
             };
         }
 
@@ -1030,6 +1043,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 try
                 {
                     await _movieStore.MarkSurfacedAsync(userId, itemIds, cancellationToken);
+                    await _movieStore.RecordSurfaceHistoryAsync(userId, itemIds, name, cancellationToken);
                 }
                 catch (Exception ex)
                 {
