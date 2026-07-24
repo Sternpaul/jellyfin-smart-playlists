@@ -1,5 +1,7 @@
 # 🎬 Jellyfin AI Movie Recommender
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 > The Netflix algorithm, from first principles — just better.
 
 A Jellyfin plugin that solves "what should I watch" for massive libraries. It **uses AI to properly classify every movie** (TMDB's broad "Action/Thriller" tags are useless), then builds **intelligent, self-updating playlists** that learn from your watch history, rotate content, punish rejected movies, and avoid filter bubbles.
