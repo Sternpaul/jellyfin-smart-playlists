@@ -88,6 +88,11 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             jellyfinMovie.ProviderIds.TryGetValue(MetadataProvider.Imdb.ToString(), out var imdbId);
             metadata.ImdbId = imdbId;
 
+            // v1.5.14: capture TMDB id too (needed to fetch TMDB keywords)
+            jellyfinMovie.ProviderIds.TryGetValue(MetadataProvider.Tmdb.ToString(), out var tmdbId);
+            if (!string.IsNullOrWhiteSpace(tmdbId) && int.TryParse(tmdbId, out var parsedTmdb))
+                metadata.TmdbId = parsedTmdb;
+
             // Extract director and top-billed cast from the Jellyfin item's People.
             // In Jellyfin 10.11, People is read via ILibraryManager.GetPeople(BaseItem)
             // (returns IReadOnlyList<PersonInfo>); PersonInfo.Type is the PersonKind enum.

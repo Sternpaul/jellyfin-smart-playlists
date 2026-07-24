@@ -4,6 +4,7 @@ using Jellyfin.Plugin.AIRecommender.Services.AI;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.AIRecommender
 {
@@ -16,11 +17,17 @@ namespace Jellyfin.Plugin.AIRecommender
             // Register Data Access
             serviceCollection.AddSingleton<MovieStore>();
 
+            serviceCollection.AddHttpClient<LetterboxdService>();
+            serviceCollection.AddSingleton<TmdbKeywordService>(sp =>
+            {
+                var ms = sp.GetRequiredService<MovieStore>();
+                var http = sp.GetRequiredService<HttpClient>();
+                var logger = sp.GetRequiredService<ILogger<TmdbKeywordService>>();
+                return new TmdbKeywordService(http, ms, logger, ms.DataDirectory);
+            });
+
             // Register AI Providers
             serviceCollection.AddSingleton<AIProviderFactory>();
-
-            // Register Core Engines
-            serviceCollection.AddSingleton<TasteProfiler>();
             serviceCollection.AddSingleton<WatchHistoryService>();
             serviceCollection.AddSingleton<SimilarityEngine>();
             serviceCollection.AddSingleton<PlaylistEngine>();

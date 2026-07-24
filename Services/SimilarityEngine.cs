@@ -41,8 +41,15 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             if (string.Equals(source.Intensity, target.Intensity, StringComparison.OrdinalIgnoreCase))
                 score += 0.05;
 
-            return score; // Range: 0.0 to 1.0
+            // 9. v1.5.14: TMDB keyword overlap — objective precision signal.
+            if (KeywordWeight > 0)
+                score += CalculateJaccardSimilarity(source.Keywords, target.Keywords) * KeywordWeight;
+
+            return Math.Min(1.0, score); // Range: 0.0 to 1.0
         }
+
+        // Keyword weight for similarity (set by PlaylistEngine per config; default 0 = off).
+        public double KeywordWeight { get; set; } = 0.0;
 
         private double CalculateJaccardSimilarity(string? jsonA, string? jsonB)
         {

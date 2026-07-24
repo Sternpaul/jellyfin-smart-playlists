@@ -13,6 +13,8 @@ namespace Jellyfin.Plugin.AIRecommender.Data
     {
         private readonly string _dbPath;
 
+        public string DataDirectory => Path.GetDirectoryName(_dbPath) ?? ".";
+
         public MovieStore(MediaBrowser.Common.Configuration.IApplicationPaths applicationPaths)
         {
             _dbPath = Path.Combine(applicationPaths.PluginConfigurationsPath, "airecommender.db");
@@ -98,6 +100,19 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                     LastUpdated TEXT NOT NULL,
                     CONSTRAINT PK_UserRatings PRIMARY KEY (UserId, ItemId)
                 )");
+            MigrateAddMovieKeywordColumns(db);
+        }
+
+        // v1.5.14: add TmdbId + Keywords columns to the Movies table on existing
+        // databases (the CREATE TABLE above only affects fresh installs). ALTER is
+        // idempotent — adding a column that already exists is a no-op / caught.
+        private static void MigrateAddMovieKeywordColumns(AiDbContext db)
+        {
+            foreach (var col in new[] { "TmdbId", "Keywords" })
+            {
+                try { db.Database.ExecuteSqlRaw($"ALTER TABLE Movies ADD COLUMN {col} TEXT NULL"); }
+                catch { /* column already exists — ignore */ }
+            }
         }
 
         private static void EnsureTable(AiDbContext db, string sql)

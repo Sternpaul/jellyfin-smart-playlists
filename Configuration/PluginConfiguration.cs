@@ -59,6 +59,10 @@ namespace Jellyfin.Plugin.AIRecommender.Configuration
         public int MinCompletionPercent { get; set; } = 50;       // v1.5.1: min playback % for a watch to count as a real signal (penalty/reward). 0 = any "played" counts (old behavior); 100 = must finish.
         public int DecayRateReferencePerWeek { get; set; } = 3;   // v1.5.3: reference watch rate. Effective affinity/novelty half-lives scale by (user's weekly rate / this). Faster watchers => quicker decay (fresher). Clamped 0.3x-3x.
 
+        // v1.5.14: TMDB keywords (objective precision signal) + the key to fetch them.
+        public string TmdbApiKey { get; set; } = string.Empty;    // TMDB v3 API key (https://www.themoviedb.org/settings/api)
+        public double KeywordWeight { get; set; } = 0.10;         // max contribution of keyword overlap to a 0..1 score (For You + similarity). 0 disables.
+
         // v1.5.12: Letterboxd ratings are the dominant recommendation signal. This is
         // the max contribution of a 5-star rating to a 0..1 ranking score (other
         // terms are scaled down so ratings dominate). 0 disables the ratings weight.

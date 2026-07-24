@@ -11,7 +11,8 @@ A Jellyfin plugin that solves "what should I watch" for massive libraries. It **
 ## How it works (the short version)
 
 1. **AI classifies every movie once** — reads the plot and assigns real subcategories, moods, themes, narrative style, and intensity. This is the foundation; everything else builds on it.
-2. **It learns from what you watch** — picks, rejections, and ratings shape per-user taste profiles and a small "affinity" nudge per movie.
+2. **TMDB keywords sharpen it** — curated, objective tags (e.g. `serial killer`, `neo-noir`) are pulled per movie and used as a precision signal in taste-matching and similarity.
+3. **It learns from what you watch** — picks, rejections, and ratings shape per-user taste profiles and a small "affinity" nudge per movie.
 3. **Letterboxd ratings are the dominant signal** — if you set your Letterboxd username, your star ratings pull strongly toward (or away from) films. **No username → zero ratings weight**, your recommendations fall back to taste + learning only.
 4. **Playlists regenerate on a schedule** (default 12h) and after you finish a movie — fresh picks, no staleness.
 
@@ -95,6 +96,9 @@ AI reads each plot and assigns meaningful subcategories (Heist, Neo-Noir, Folk H
 
 ### Similarity Engine
 Movies compared via AI metadata: Subcategory 30% · Mood 20% · Theme 15% · Director/Cast 10% · Narrative style 10% · Era 5% · Rating 5% · Intensity 5%. Powers *Because You Watched* and exploration slots.
+
+### TMDB Keywords (v1.5.14, precision signal)
+Curated, objective tags from TMDB (e.g. `serial killer`, `neo-noir`, `self-fulfilling prophecy`) are fetched per movie (resolving the TMDB id from the IMDB id already stored; cached in `tmdb_keywords_cache.json`) and added as a configurable overlap term in **For You** taste-matching (`KeywordWeight`, default 0.10) and the **Because You Watched** similarity engine. Keywords are more reliable than the LLM's subjective "themes" and need no re-classification — they're pulled at refresh time. Set a TMDB v3 API key in the config to enable; leave it blank to disable.
 
 ### Letterboxd Watchlist Integration
 Import via JSON URL (Radarr-compatible: `imdb_id`, `title`, `release_year`) or CSV export. Matched by IMDB ID, falling back to title + year. Per-user.

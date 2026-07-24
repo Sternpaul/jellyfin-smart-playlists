@@ -18,6 +18,10 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         // Key: Director, Value: Weight (0.0 to 1.0) — learned so we can
         // nudge other films by a director the user watches and (implicitly) enjoys.
         public Dictionary<string, double> DirectorPreferences { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+        // v1.5.14: TMDB keyword preferences — the user's affinity for specific
+        // objective tags (e.g. "serial killer", "neo-noir") learned from watches.
+        public Dictionary<string, double> KeywordPreferences { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     }
 
     public class TasteProfiler
@@ -35,6 +39,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             var subcatWeights = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
             var moodWeights = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
             var directorWeights = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+            var keywordWeights = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var (movie, watchedAt) in watchedMovies)
             {
@@ -92,6 +97,26 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                         else directorWeights[dir] = decay;
                     }
                 }
+
+                // v1.5.14: keyword affinity — TMDB tags earn decay-weighted credit.
+                if (!string.IsNullOrWhiteSpace(movie.Keywords))
+                {
+                    try
+                    {
+                        var kws = System.Text.Json.JsonSerializer.Deserialize<List<string>>(movie.Keywords);
+                        if (kws != null)
+                        {
+                            foreach (var k in kws)
+                            {
+                                var key = k.Trim();
+                                if (key.Length == 0) continue;
+                                if (keywordWeights.ContainsKey(key)) keywordWeights[key] += decay;
+                                else keywordWeights[key] = decay;
+                            }
+                        }
+                    }
+                    catch { /* ignore parse errors */ }
+                }
             }
 
             // Normalize so the strongest signal maps to 1.0 (keeps ScoreMovieAgainstProfile unchanged).
@@ -114,6 +139,13 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 double max = directorWeights.Values.Max();
                 foreach (var kvp in directorWeights)
                     profile.DirectorPreferences[kvp.Key] = kvp.Value / max;
+            }
+
+            if (keywordWeights.Any())
+            {
+                double max = keywordWeights.Values.Max();
+                foreach (var kvp in keywordWeights)
+                    profile.KeywordPreferences[kvp.Key] = kvp.Value / max;
             }
 
             return profile;

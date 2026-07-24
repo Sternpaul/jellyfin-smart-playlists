@@ -24,6 +24,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         private readonly WatchHistoryService _watchHistoryService;
         private readonly SimilarityEngine _similarityEngine;
         private readonly LetterboxdService _letterboxdService;
+        private readonly TmdbKeywordService _tmdbKeywordService;
         private PluginConfiguration _config => Plugin.Instance!.Configuration;
         private readonly ILogger<PlaylistEngine> _logger;
 
@@ -48,6 +49,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             WatchHistoryService watchHistoryService,
             SimilarityEngine similarityEngine,
             LetterboxdService letterboxdService,
+            TmdbKeywordService tmdbKeywordService,
             ILogger<PlaylistEngine> logger)
         {
             _playlistManager = playlistManager;
@@ -56,6 +58,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             _watchHistoryService = watchHistoryService;
             _similarityEngine = similarityEngine;
             _letterboxdService = letterboxdService;
+            _tmdbKeywordService = tmdbKeywordService;
             _logger = logger;
             
             _watchHistoryService.WatchEventEmitted += OnMovieWatched;
@@ -209,6 +212,23 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         public async Task RefreshUserPlaylistsAsync(Guid userId, CancellationToken cancellationToken = default)
         {
             _currentUserId = userId; // v1.5.3: for read-time decay helpers
+            // v1.5.14: push the configured keyword weight into the similarity engine
+            // so Because You Watched respects TMDB keyword overlap.
+            _similarityEngine.KeywordWeight = _config.KeywordWeight;
+
+            // v1.5.14: enrich TMDB keywords for the library (refresh-time fetch). Skipped
+            // automatically when no TMDB key is configured. Failures are swallowed so
+            // keyword absence never breaks the rest of the refresh.
+            try
+            {
+                var allMovies = await _movieStore.GetAllMoviesAsync(cancellationToken);
+                await _tmdbKeywordService.EnrichKeywordsAsync(_config.TmdbApiKey, allMovies, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "TMDB keyword enrichment failed; continuing without keywords.");
+            }
+
             // Respect per-user exclusions configured by the admin.
             if (_config.DisabledUserIds != null &&
                 _config.DisabledUserIds.Any(id => Guid.TryParse(id, out var disabledId) && disabledId == userId))
@@ -740,8 +760,28 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             }
 
             // Subcategories are the strongest taste signal; moods refine it; director is a small bonus.
+            // v1.5.14: keyword overlap (objective TMDB tags) is added as a configurable nudge.
+            double keywordScore = 0.0;
+            if (_config.KeywordWeight > 0 && !string.IsNullOrWhiteSpace(movie.Keywords) && profile.KeywordPreferences.Any())
+            {
+                try
+                {
+                    var movieKw = JsonSerializer.Deserialize<List<string>>(movie.Keywords)?
+                        .Select(k => k.ToLowerInvariant()).ToHashSet() ?? new HashSet<string>();
+                    var prefKw = profile.KeywordPreferences.Keys.Select(k => k.ToLowerInvariant()).ToHashSet();
+                    if (movieKw.Count > 0 && prefKw.Count > 0)
+                    {
+                        double inter = movieKw.Intersect(prefKw).Count();
+                        double uni = movieKw.Union(prefKw).Count();
+                        if (uni > 0) keywordScore = Math.Min(1.0, inter / uni);
+                    }
+                }
+                catch { /* ignore parse errors */ }
+            }
+
             return 0.7 * subScore + 0.3 * moodScore
-                   + Clamp(directorScore * _config.DirectorAffinityBonus, 0.0, _config.DirectorAffinityBonus);
+                   + Clamp(directorScore * _config.DirectorAffinityBonus, 0.0, _config.DirectorAffinityBonus)
+                   + Clamp(keywordScore * _config.KeywordWeight, 0.0, _config.KeywordWeight);
         }
         
         private double CalculateReviewNudge(MovieMetadata movie)

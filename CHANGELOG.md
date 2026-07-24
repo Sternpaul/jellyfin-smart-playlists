@@ -2,6 +2,9 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.5.14
+- **TMDB keywords as a precision signal.** Curated, objective tags (e.g. `serial killer`, `neo-noir`, `self-fulfilling prophecy`) are fetched per movie (TMDB id resolved from the already-stored IMDB id; cached in `tmdb_keywords_cache.json`) and added as a configurable overlap term in **For You** taste-matching (`KeywordWeight`, default 0.10) and the **Because You Watched** similarity engine. More reliable than the LLM's subjective themes, and fetched at refresh time — no re-classification needed. Add a TMDB v3 API key in the plugin config to enable; blank disables it.
+
 ## v1.5.13
 - **No Letterboxd username = zero ratings weight (guaranteed).** On every refresh, if a user has no `RatingsUsername` set, any previously-stored ratings are cleared so the dominant ratings signal can never leak into their recommendations. (Ratings only apply when a username is configured.)
 - README overhaul: tight overview up top (how it works, playlist types, ratings-as-dominant, install), with the full config tables, technical internals, API, cost, and roadmap moved to a DETAILS section at the bottom. Corrected the stale "Review Nudging" description (ratings are now the dominant signal, not a 0–15% nudge).

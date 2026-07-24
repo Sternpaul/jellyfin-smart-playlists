@@ -44,7 +44,12 @@
                         <input type="text" id="ChatModel" name="ChatModel" is="emby-input" />
                         <div class="fieldDescription">Model to use for the user chat interface. <br/><i>ⓘ Used for classifying your library and AI chat.</i></div>
                     </div>
-                    
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="TmdbApiKey">TMDB API Key (optional):</label>
+                        <input type="password" id="TmdbApiKey" name="TmdbApiKey" is="emby-input" />
+                        <div class="fieldDescription">TMDB v3 key (from themoviedb.org/settings/api). Enables <b>TMDB keywords</b> as a precision signal — sharpens "For You" and "Because You Watched" with curated tags like "serial killer" or "neo-noir". Leave blank to disable. Fetched at refresh time; no re-classification needed.</div>
+                    </div>
                     <div class="sectionTitleContainer"><h2 class="sectionTitle">🔀 Playlist Behavior</h2></div>
                     
                     <div class="inputContainer">
@@ -330,6 +335,7 @@
                     document.querySelector('#ApiKey').value = config.ApiKey || "";
                     document.querySelector('#ClassificationModel').value = config.ClassificationModel || "nvidia/nemotron-3-super-120b-a12b:free";
                     document.querySelector('#ChatModel').value = config.ChatModel || "nvidia/nemotron-3-super-120b-a12b:free";
+                    document.querySelector('#TmdbApiKey').value = config.TmdbApiKey || "";
                     
                     document.querySelector('#PlaylistRefreshHours').value = config.PlaylistRefreshHours || 12;
                     document.querySelector('#MaxMoviesPerPlaylist').value = config.MaxMoviesPerPlaylist || 20;
@@ -536,7 +542,7 @@
                     config.ApiKey = document.querySelector('#ApiKey').value;
                     config.ClassificationModel = document.querySelector('#ClassificationModel').value;
                     config.ChatModel = document.querySelector('#ChatModel').value;
-                    
+                    config.TmdbApiKey = document.querySelector('#TmdbApiKey').value;
                     config.PlaylistRefreshHours = parseInt(document.querySelector('#PlaylistRefreshHours').value, 10);
                     config.MaxMoviesPerPlaylist = parseInt(document.querySelector('#MaxMoviesPerPlaylist').value, 10);
                     config.PlaylistRotationPercent = parseInt(document.querySelector('#PlaylistRotationPercent').value, 10);
