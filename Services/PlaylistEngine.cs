@@ -196,16 +196,16 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 await GenerateBecauseYouWatchedPlaylistAsync(userId, unwatchedMovies, cancellationToken);
                 
             if (_config.EnableHiddenGems)
-                await GenerateHiddenGemsPlaylistAsync(userId, unwatchedMovies, cancellationToken);
+                await GenerateHiddenGemsPlaylistAsync(userId, unwatchedMovies, profile, affinities, cancellationToken);
                 
             if (_config.EnableRecentlyAdded)
                 await GenerateRecentlyAddedPlaylistAsync(userId, unwatchedMovies, cancellationToken);
                 
             if (_config.EnableSubcategory || _config.EnableDiscover)
-                await GenerateSubcategoryPlaylistsAsync(userId, tasteProfile, unwatchedMovies, cancellationToken);
+                await GenerateSubcategoryPlaylistsAsync(userId, tasteProfile, unwatchedMovies, affinities, cancellationToken);
                 
             if (_config.EnableWildCard)
-                await GenerateWildCardPlaylistAsync(userId, unwatchedMovies, cancellationToken);
+                await GenerateWildCardPlaylistAsync(userId, tasteProfile, unwatchedMovies, affinities, cancellationToken);
 
             // Watchlist is handled separately if the user enabled it
             var userConfig = await _movieStore.GetUserWatchlistConfigAsync(userId, cancellationToken);
@@ -308,17 +308,52 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             await CreateOrUpdateJellyfinPlaylistAsync(userId, $"Because You Watched {mostRecent.Title}", picks, cancellationToken);
         }
         
-        private async Task GenerateHiddenGemsPlaylistAsync(Guid userId, List<MovieMetadata> unwatched, CancellationToken cancellationToken)
+        private async Task GenerateHiddenGemsPlaylistAsync(guid userId, List<MovieMetadata> unwatched, TasteProfile profile, Dictionary<Guid, MovieAffinity> affinities, CancellationToken cancellationToken)
         {
-            // Filter movies with high acclaim but obscure/niche tags
+            var now = DateTime.UtcNow;
+            // "Hidden Gems" = high acclaim AND unfamiliar to the user (subcategories
+            // the user does NOT already watch a lot). This is the opposite of the
+            // familiar "For You" — it surfaces quality films outside the comfort zone.
+            var familiarSubs = TopSubcategories(profile, 5); // most-watched subcats
             var gems = unwatched
                 .Where(m => m.CriticalAcclaimScore >= 7)
-                .OrderBy(m => Guid.NewGuid()) // randomize for now
+                .Where(m => !SharesAnySubcategory(m, familiarSubs)) // unfamiliar = hidden
+                .Select(m => new
+                {
+                    M = m,
+                    Score = m.CriticalAcclaimScore / 10.0
+                            + Clamp(GetEffectiveAffinity(affinities, m.ItemId) * _config.AffinityRankWeight, -_config.AffinityRankWeight, _config.AffinityRankWeight)
+                            + GetNewMovieBoost(m, now)
+                })
+                .OrderByDescending(x => x.Score)
                 .Take(15)
-                .Select(m => m.ItemId)
+                .Select(x => x.M.ItemId)
                 .ToList();
-                
+
             await CreateOrUpdateJellyfinPlaylistAsync(userId, "Hidden Gems", gems, cancellationToken);
+        }
+
+        // Returns the user's most-preferred subcategory names (by taste profile weight).
+        private static HashSet<string> TopSubcategories(TasteProfile profile, int count)
+        {
+            if (profile?.SubcategoryPreferences == null) return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            return profile.SubcategoryPreferences
+                .OrderByDescending(kv => kv.Value)
+                .Take(count)
+                .Select(kv => kv.Key)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+
+        private static bool SharesAnySubcategory(MovieMetadata m, HashSet<string> subs)
+        {
+            if (subs.Count == 0 || string.IsNullOrWhiteSpace(m.Subcategories)) return false;
+            try
+            {
+                var movieSubs = JsonSerializer.Deserialize<List<string>>(m.Subcategories)?
+                    .Select(s => s.ToLowerInvariant()).ToHashSet() ?? new HashSet<string>();
+                return movieSubs.Overlaps(subs.Select(s => s.ToLowerInvariant()));
+            }
+            catch { return false; }
         }
 
         private async Task GenerateRecentlyAddedPlaylistAsync(Guid userId, List<MovieMetadata> unwatched, CancellationToken cancellationToken)
@@ -332,7 +367,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             await CreateOrUpdateJellyfinPlaylistAsync(userId, "Recently Added", recent, cancellationToken);
         }
 
-        private async Task GenerateSubcategoryPlaylistsAsync(Guid userId, TasteProfile profile, List<MovieMetadata> unwatched, CancellationToken cancellationToken)
+        private async Task GenerateSubcategoryPlaylistsAsync(guid userId, TasteProfile profile, List<MovieMetadata> unwatched, Dictionary<Guid, MovieAffinity> affinities, CancellationToken cancellationToken)
         {
             if (profile.SubcategoryPreferences.Any() && _config.EnableSubcategory)
             {
@@ -351,18 +386,75 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             
             if (_config.EnableDiscover)
             {
-                // Mock discovering an unfamiliar subcategory
-                var discoverPicks = unwatched.OrderBy(m => Guid.NewGuid()).Take(8).Select(m => m.ItemId).ToList();
-                await CreateOrUpdateJellyfinPlaylistAsync(userId, "Discover: Hidden World", discoverPicks, cancellationToken);
+                // Discover = the user's LEAST-explored subcategories (gateway into the unknown).
+                // Surface movies from those subcats, ranked by acclaim + learned affinity +
+                // new-movie nudge, so they're adjacent to taste, not random.
+                var discovered = DiscoverPicks(unwatched, profile, affinities, 8);
+                if (discovered.Any())
+                    await CreateOrUpdateJellyfinPlaylistAsync(userId, "Discover: Hidden World", discovered, cancellationToken);
             }
         }
-        
-        private async Task GenerateWildCardPlaylistAsync(Guid userId, List<MovieMetadata> unwatched, CancellationToken cancellationToken)
+
+        // Movies from the user's least-weighted subcategories, ranked by acclaim + affinity.
+        private List<Guid> DiscoverPicks(List<MovieMetadata> unwatched, TasteProfile profile, Dictionary<Guid, MovieAffinity> affinities, int count)
         {
-            var wildPicks = unwatched.OrderBy(m => Guid.NewGuid()).Take(10).Select(m => m.ItemId).ToList();
+            var now = DateTime.UtcNow;
+            IEnumerable<string> leastFamiliar;
+            if (profile.SubcategoryPreferences.Any())
+                leastFamiliar = profile.SubcategoryPreferences
+                    .OrderBy(kv => kv.Value)          // least preferred first
+                    .Take(3)
+                    .Select(kv => kv.Key);
+            else
+                leastFamiliar = Enumerable.Empty<string>(); // cold user: fall back to acclaim below
+
+            var leastSet = leastFamiliar
+                .Select(s => s.ToLowerInvariant())
+                .ToHashSet();
+
+            return unwatched
+                .Where(m => m.IsClassified && (!leastSet.Any() || SharesAnySubcategory(m, leastSet)))
+                .Select(m => new
+                {
+                    M = m,
+                    Score = (leastSet.Any() && SharesAnySubcategory(m, leastSet) ? 0.5 : 0.0)
+                            + m.CriticalAcclaimScore / 10.0
+                            + Clamp(GetEffectiveAffinity(affinities, m.ItemId) * _config.AffinityRankWeight, -_config.AffinityRankWeight, _config.AffinityRankWeight)
+                            + GetNewMovieBoost(m, now)
+                })
+                .OrderByDescending(x => x.Score)
+                .Take(count)
+                .Select(x => x.M.ItemId)
+                .ToList();
+        }
+
+        private async Task GenerateWildCardPlaylistAsync(guid userId, TasteProfile profile, List<MovieMetadata> unwatched, Dictionary<Guid, MovieAffinity> affinities, CancellationToken cancellationToken)
+        {
+            var now = DateTime.UtcNow;
+            // Wild Card = 100% exploration: the user's LEAST-explored subcategory,
+            // only high-acclaim films, ranked by acclaim + affinity + new-movie nudge.
+            var leastFamiliar = profile.SubcategoryPreferences.Any()
+                ? profile.SubcategoryPreferences.OrderBy(kv => kv.Value).First().Key
+                : null;
+
+            var wildPicks = unwatched
+                .Where(m => m.CriticalAcclaimScore >= 7)
+                .Where(m => leastFamiliar == null || (m.Subcategories ?? "").Contains(leastFamiliar, StringComparison.OrdinalIgnoreCase))
+                .Select(m => new
+                {
+                    M = m,
+                    Score = m.CriticalAcclaimScore / 10.0
+                            + Clamp(GetEffectiveAffinity(affinities, m.ItemId) * _config.AffinityRankWeight, -_config.AffinityRankWeight, _config.AffinityRankWeight)
+                            + GetNewMovieBoost(m, now)
+                })
+                .OrderByDescending(x => x.Score)
+                .Take(10)
+                .Select(x => x.M.ItemId)
+                .ToList();
+
             await CreateOrUpdateJellyfinPlaylistAsync(userId, "Wild Card", wildPicks, cancellationToken);
         }
-        
+
         private async Task GenerateWatchlistPlaylistAsync(Guid userId, List<MovieMetadata> unwatched, CancellationToken cancellationToken)
         {
             // Sync the user's watchlist (from the JSON URL or CSV they provided in

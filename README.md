@@ -63,11 +63,11 @@ Dynamic, per-user playlists that update automatically. These appear as regular p
 |---|---|
 | **For You** | Your top 20 personalized picks across all genres. 75% taste-matched, 25% exploration. |
 | **Because You Watched [X]** | 10 movies similar to what you just watched. Regenerates after every movie. |
-| **Hidden Gems** | High-rated movies (≥ 7.0) that are cult, arthouse, or niche. Discovery-focused. |
+| **Hidden Gems** | High-rated movies (≥ 7.0) from subcategories you do NOT already watch much — quality films outside your comfort zone. Ranked by acclaim + learned affinity. |
 | **Recently Added** | All unwatched movies, sorted by date added to library (most recent first). |
 | **[Subcategory] For You** | Deep dives into subcategories you love (e.g., "Psychological Thrillers For You"). |
-| **Discover: [Subcategory]** | Gateway playlists into subcategories you haven't explored yet. Rotates regularly. |
-| **Wild Card** | 100% exploration — picks from subcategories you watch the least. Only high-rated films. |
+| **Discover: Hidden World** | Gateway into your least-explored subcategories, similarity-bridged to your taste (not random). Rotates as your taste shifts. |
+| **Wild Card** | 100% exploration — pulls from your least-explored subcategory, only high-rated (≥ 7.0) films. Ranked by acclaim + learned affinity. |
 | **From Your Watchlist** | Your Letterboxd watchlist filtered to movies in your library, with full smart scoring. |
 
 All playlists are **private per user** — each user gets their own set, invisible to other users.
