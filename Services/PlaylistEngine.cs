@@ -488,7 +488,15 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             // "Hidden Gems" = high acclaim AND unfamiliar to the user (subcategories
             // the user does NOT already watch a lot). This is the opposite of the
             // familiar "For You" — it surfaces quality films outside the comfort zone.
+            //
+            // v1.5.21: "hidden" also means genuinely obscure, not just genre-unfamiliar.
+            // Acclaimed blockbusters (e.g. Seven Samurai, Black Panther) used to qualify
+            // because they sat in an unfamili使用的 subcategory. A log-scaled TMDB
+            // popularity penalty now pushes famous films down so obscure-acclaimed films
+            // rise to the top. The penalty is skipped when popularity is unknown (no TMDB
+            // key) or when FamePenaltyWeight is 0, restoring the old behavior.
             var familiarSubs = TopSubcategories(profile, 5); // most-watched subcats
+            var fameScale = Math.Log(1 + 100); // popularity of ~100 → full penalty
             var gems = unwatched
                 .Where(m => !claimed.Contains(m.ItemId))
                 .Where(m => m.CriticalAcclaimScore >= 7)
@@ -496,12 +504,15 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 .Select(m => new
                 {
                     M = m,
+                    FamePenalty = (_config.FamePenaltyWeight > 0 && m.Popularity > 0)
+                        ? _config.FamePenaltyWeight * Math.Min(1.0, Math.Log(1 + m.Popularity) / fameScale)
+                        : 0.0,
                     Score = m.CriticalAcclaimScore / 10.0
                             + Clamp(GetEffectiveAffinity(affinities, m.ItemId) * _config.AffinityRankWeight, -_config.AffinityRankWeight, _config.AffinityRankWeight)
                             + GetNewMovieBoost(m, now)
                             + GetSoftPenalty(affinities, m.ItemId, now)
                 })
-                .OrderByDescending(x => x.Score)
+                .OrderByDescending(x => x.Score - x.FamePenalty)
                 .Take(15)
                 .Select(x => x.M.ItemId)
                 .ToList();

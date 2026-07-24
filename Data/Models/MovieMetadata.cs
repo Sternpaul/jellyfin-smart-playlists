@@ -11,6 +11,10 @@ namespace Jellyfin.Plugin.AIRecommender.Data.Models
         public int? ReleaseYear { get; set; }
         public string? ImdbId { get; set; }
         public int? TmdbId { get; set; }   // v1.5.14: TMDB movie id (ProviderIds["Tmdb"]) — used to fetch keywords
+        // v1.5.21: TMDB "popularity" (a live 0..N score; blockbusters are in the tens/hundreds,
+        // cult/obscure films are <1). Used to make "Hidden Gems" genuinely obscure. 0 = unknown
+        // (no TMDB key configured or not yet enriched) → fame penalty is skipped.
+        public double Popularity { get; set; } = 0;
         public string? Plot { get; set; }
         public string? Director { get; set; }
         public string? Cast { get; set; }

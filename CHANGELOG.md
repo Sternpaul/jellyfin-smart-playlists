@@ -2,6 +2,9 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.5.21
+- **Made "Hidden Gems" genuinely hidden.** Previously it only required high acclaim + a subcategory you don't watch much — so famous films (Seven Samurai, Black Panther, 12 Angry Men) qualified as long as they sat in an unfamili使用的 subcategory. Now it fetches each movie's **TMDB popularity** (reused from the existing keyword enrichment, no extra API hit) and applies a log-scaled **fame penalty** so blockbusters sink and obscure-acclaimed films rise to the top 15. Added a `Fame Penalty` config knob (default 0.15; 0 restores the old behavior). Penalty is skipped when popularity is unknown (no TMDB key) so it degrades safely. Existing libraries are backfilled with popularity on the next refresh.
+
 ## v1.5.20
 - **Fixed "Because You Watched" playlist title not matching its content.** The list is seeded on the 5 most-recently-watched movies and ranked by best similarity across all 5, but it was *titled* after only the single most-recent watch — so when a more recent watch contributed little, the playlist got named after a movie it wasn't about (e.g. "Because You Watched Disclosure Day" whose picks were all Godfather-style films). The title now reflects the seed that actually *dominates* the final picks (most contributions; ties break to the more recent seed), so the label matches the content. Ranking of picks is unchanged.
 

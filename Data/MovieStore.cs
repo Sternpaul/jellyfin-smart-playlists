@@ -50,6 +50,7 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                     IsClassified INTEGER NOT NULL,
                     DateAdded TEXT NOT NULL,
                     LastUpdated TEXT NOT NULL,
+                    Popularity REAL NULL,
                     CONSTRAINT PK_Movies PRIMARY KEY (ItemId)
                 )");
             EnsureTable(db, @"
@@ -108,7 +109,7 @@ namespace Jellyfin.Plugin.AIRecommender.Data
         // idempotent — adding a column that already exists is a no-op / caught.
         private static void MigrateAddMovieKeywordColumns(AiDbContext db)
         {
-            foreach (var col in new[] { "TmdbId", "Keywords" })
+            foreach (var col in new[] { "TmdbId", "Keywords", "Popularity" })
             {
                 try { db.Database.ExecuteSqlRaw($"ALTER TABLE Movies ADD COLUMN {col} TEXT NULL"); }
                 catch { /* column already exists — ignore */ }
