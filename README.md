@@ -2,416 +2,214 @@
 
 > The Netflix algorithm, from first principles — just better.
 
-A Jellyfin server plugin that solves the "what should I watch" problem for massive movie libraries. It uses **AI to properly classify every movie** (because TMDB's broad "Action/Thriller" tags are useless), then builds **intelligent, self-updating playlists** that learn from your watch history, rotate content, punish rejected movies, and prevent filter bubbles.
+A Jellyfin plugin that solves "what should I watch" for massive libraries. It **uses AI to properly classify every movie** (TMDB's broad "Action/Thriller" tags are useless), then builds **intelligent, self-updating playlists** that learn from your watch history, rotate content, punish rejected movies, and avoid filter bubbles.
 
-**Bring your own AI provider** — supports Google AI, OpenRouter, OpenAI, and Anthropic Claude.
+**Bring your own AI provider** — Google AI, OpenRouter, OpenAI, Anthropic. Works on **all Jellyfin clients** (FireTV, Android TV, iOS, web) — no client changes.
 
-**Works on ALL Jellyfin clients** — including FireTV, Android TV, iOS, and web. No client-side changes needed.
+---
+
+## How it works (the short version)
+
+1. **AI classifies every movie once** — reads the plot and assigns real subcategories, moods, themes, narrative style, and intensity. This is the foundation; everything else builds on it.
+2. **It learns from what you watch** — picks, rejections, and ratings shape per-user taste profiles and a small "affinity" nudge per movie.
+3. **Letterboxd ratings are the dominant signal** — if you set your Letterboxd username, your star ratings pull strongly toward (or away from) films. **No username → zero ratings weight**, your recommendations fall back to taste + learning only.
+4. **Playlists regenerate on a schedule** (default 12h) and after you finish a movie — fresh picks, no staleness.
+
+### The playlists you get (per user, private)
+| Playlist | What it does |
+|---|---|
+| **For You** | Top personalized picks. 75% taste-matched + 25% exploration. **Letterboxd ratings dominate this list when set.** |
+| **Because You Watched [X]** | Movies similar to what you just watched (regenerates after each watch). |
+| **Hidden Gems** | High-acclaim films from subcategories you *don't* already watch much. |
+| **Recently Added** | Unwatched movies, newest first. |
+| **[Subcategory] For You** | Deep dive into a subcategory you love (e.g. "Psychological Thrillers For You"). |
+| **Discover: Hidden World** | Gateway into your least-explored subcategories, bridged to your taste. |
+| **Wild Card** | 100% exploration — least-explored subcategory, high-acclaim only. |
+| **From Your Watchlist** | Your Letterboxd watchlist, filtered to movies in your library. |
+| **Highly Rated by You** | Your top-rated Letterboxd films that are in the library (unwatched preferred). |
+
+A movie appears in **at most one** discovery playlist (For You / Hidden Gems / Discover / Wild Card / Subcategory) so it never shows twice; *Because You Watched* is exempt.
+
+### Learning loop (the punishment mechanic)
+When you **watch a movie from a playlist**, the plugin learns from that one action:
+- **Sibling penalty** — the other movies in that playlist get a rejection penalty and a temporary ban.
+- **Similar-movie reward** — the watched movie's nearest neighbours get a small affinity boost.
+- **Time decay** — penalties/rewards fade exponentially (default 28-day half-life).
+- Only watches that reach `Min Watch % to Learn` (default 50%) count; a glance is ignored.
+
+### Anti-bubble protection
+25% of every playlist is reserved for exploration; a Diversity Cap (default 60%) stops any one subcategory from dominating.
 
 ---
 
 ## 📦 Installation
 
-### Prerequisites
-- Jellyfin Server **10.11.x**
-- .NET 9.0 SDK (for building from source)
-- An API key from one of: [Google AI Studio](https://aistudio.google.com/) (free tier available), [OpenRouter](https://openrouter.ai/), [OpenAI](https://platform.openai.com/), or [Anthropic](https://console.anthropic.com/)
-
-### Method 1 — Self-hosted plugin repository (recommended, auto-updates)
-
-Add the plugin's manifest as a custom repository so Jellyfin shows it in the catalog with proper developer info and one-click updates (no more sideloading):
-
-1. In Jellyfin: **Dashboard → Plugins → Repositories → Add**
+### Method 1 — Self-hosted repository (recommended, auto-updates)
+1. **Dashboard → Plugins → Repositories → Add**
 2. URL: `https://sternpaul.github.io/jellyfin-smart-playlists/repo/manifest.json`
-3. Save, then go to **Catalog** (or restart Jellyfin). "AI Recommender" appears under Available with Developer **Sternpaul** and category **AI Recommender**.
-4. Install it. Future releases show an **Update** button automatically — each tagged version is added to the manifest by the build workflow.
-5. Open **Dashboard → Plugins → AI Recommender**, pick your AI provider, enter your API key, and click **"Classify Library"** (runs once; takes a few minutes for large libraries). Playlists generate automatically after classification.
+3. Save, then open **Catalog** (or restart). "AI Recommender" appears under *Available* (Developer **Sternpaul**).
+4. Install. Future releases show an **Update** button automatically.
+5. **Dashboard → Plugins → AI Recommender** → pick your provider, enter your API key, click **Classify Library** (runs once). Playlists generate automatically.
 
-> The plugin's identity is the fixed GUID `3D3D8BE7-67AB-4F65-9F31-3EAE8764BBA3`. `targetAbi` is `10.11.0.0` (the minimum 10.11 ABI — Jellyfin silently drops a plugin pinned to the exact server build). If you move to a different Jellyfin major version, bump the ABI in `repo/manifest.json` and the `Jellyfin.Model` package to match.
+### Method 2 — Manual (sideload the DLL)
+Download the latest `.dll` from [Releases](../../releases), drop it in your plugin folder (`/config/data/plugins/AIRecommender/`), restart Jellyfin, then classify.
 
-### Method 2 — Manual install (sideload the DLL)
+> Identity is the fixed GUID `3D3D8BE7-67AB-4F65-9F31-3EAE8764BBA3`. `targetAbi` is `10.11.0.0` (the minimum 10.11 ABI — pinning to the exact server build makes Jellyfin silently drop the plugin).
 
-1. Download the latest `.dll` from [Releases](../../releases)
-2. Place it in your Jellyfin plugin directory:
-   ```
-   # Docker (Depends on your mount, usually one of these)
-   /config/plugins/AIRecommender/Jellyfin.Plugin.AIRecommender.dll
-   /config/data/plugins/AIRecommender/Jellyfin.Plugin.AIRecommender.dll
-
-   # Windows
-   C:\Users\{you}\AppData\Local\jellyfin\plugins\AIRecommender\Jellyfin.Plugin.AIRecommender.dll
-
-   # Linux (Native install)
-   /var/lib/jellyfin/plugins/AIRecommender/Jellyfin.Plugin.AIRecommender.dll
-   ```
-3. Restart Jellyfin
-4. Go to **Dashboard → Plugins → AI Recommender**
-5. Select your AI provider and enter your API key
-6. Click **"Classify Library"** — runs once, takes a few minutes for large libraries
-7. Playlists are generated automatically after classification completes
+Prerequisites: Jellyfin **10.11.x**; an API key from [Google AI Studio](https://aistudio.google.com/), [OpenRouter](https://openrouter.ai/), [OpenAI](https://platform.openai.com/), or [Anthropic](https://console.anthropic.com/).
 
 ---
 
-## The Problem
+## Letterboxd ratings (the big one)
+Your **star ratings are the strongest recommendation signal**. Per user, in the plugin config → *Per-User Watchlist Settings*, enter your **public Letterboxd username**. On each refresh the plugin scrapes `letterboxd.com/<you>/films/ratings/`, matches films to your library, and stores them. A 5-star rating contributes up to `RatingWeight` (default **0.50**) to the For You score — far above the smaller taste/affinity nudges — so films you loved rise to the top.
 
-You have thousands of movies. Jellyfin (via TMDB) tags a psychological slow-burn character study and a Fast & Furious movie both as "Action/Thriller". Browsing by genre is meaningless. You end up scrolling endlessly or rewatching the same 20 movies.
-
-## The Solution
-
-1. **AI reads every movie's plot summary** and assigns real subcategories, moods, and themes — once, on first run
-2. **Smart playlists** use these AI classifications to build per-user, rotating recommendations
-3. **The punishment mechanic** keeps playlists fresh — rejected movies get banned temporarily
-4. **Anti-bubble protection** ensures your wide taste is respected, not narrowed
+- **No username → no ratings weight.** Ratings are cleared for that user; recommendations use taste + learning only.
+- **"Highly Rated by You" playlist** is generated when enabled.
+- Scraping is **fail-safe**: a bad/empty username or a Letterboxd markup change is logged and never breaks the rest of the refresh.
+- Honest caveat: this scrapes a public page (no open ratings API), so it's ToS-gray and could break if Letterboxd changes its markup. The watchlist CSV/JSON import path remains the robust alternative.
 
 ---
 
-## 🤖 Supported AI Providers
+## ⚙️ Configuration (summary)
+**Dashboard → Plugins → AI Recommender.** AI provider + key, refresh interval, playlist sizes, diversity, learning rates — all configurable. **Per-user**: Letterboxd username, watchlist URL/CSV, and which bonus playlists to enable.
 
-Pick your provider. Bring your own API key. Switch anytime.
-
-| Provider | Default Model | Best For | Classification Cost (~5K movies) |
-|---|---|---|---|
-| **Google AI** *(default)* | Gemma 4 31B | Free tier available, fast, great quality | ~$0.03 |
-| **OpenRouter** | Any model | Maximum flexibility, access to 200+ models | ~$0.05-0.10 |
-| **OpenAI** | GPT-4o Mini | Strict structured output, reliable | ~$0.15-0.30 |
-| **Anthropic Claude** | Claude Sonnet 4.5 | Best reasoning quality | ~$0.20-0.40 |
-
-All providers work for both **batch classification** (one-time) and **interactive AI chat** (ongoing). You can even use different models for each — e.g., a cheap model for classification and a premium model for chat.
+The full settings tables, technical internals, REST API, cost breakdown, and roadmap are in **[DETAILS](#details)** below.
 
 ---
 
-## ✨ Features
+# DETAILS
 
-### 🧠 AI Movie Classification (One-Time)
+## ✨ Features in depth
 
-On first run, the plugin sends every movie's plot summary to your chosen AI and gets back rich metadata that TMDB never provides:
+### AI Movie Classification (one-time)
+Sends each movie's plot to your AI and returns subcategories, moods, themes, narrative style, accessibility, intensity. After classification, playlists run at **zero ongoing API cost**; new movies are classified incrementally.
 
-| AI-Assigned Field | Example for "Se7en" |
-|---|---|
-| **Subcategories** | Psychological Thriller, Neo-Noir, Crime Thriller |
-| **Mood tags** | dark, suspenseful, disturbing, cerebral |
-| **Themes** | obsession, morality, serial killer, detective |
-| **Narrative style** | mystery-procedural |
-| **Accessibility** | mainstream |
-| **Intensity** | high |
+### Smart Playlists
+Dynamic, per-user, auto-updating. See the table above. "From Your Watchlist" and "Highly Rated by You" apply the same smart scoring but only from your Letterboxd data.
 
-This is what makes the whole system work. After classification, playlists run with **zero ongoing API costs**. New movies added to the library are classified incrementally (pennies).
+### What's Happening (transparency)
+The config page shows, live per user: top taste weights, currently-penalized movies (with cooling time), active novelty boosts, every movie excluded on the last refresh and *why*, taste drift since your oldest snapshot, and recently-surfaced history. Observability only — changes no behavior.
 
-### 🎯 Smart Playlists
+### Dynamic Subcategories
+AI reads each plot and assigns meaningful subcategories (Heist, Neo-Noir, Folk Horror, …) instead of TMDB's flat genres.
 
-Dynamic, per-user playlists that update automatically. These appear as regular playlists in your library on **every Jellyfin client**.
+### Similarity Engine
+Movies compared via AI metadata: Subcategory 30% · Mood 20% · Theme 15% · Director/Cast 10% · Narrative style 10% · Era 5% · Rating 5% · Intensity 5%. Powers *Because You Watched* and exploration slots.
 
-| Playlist | What It Does |
-|---|---|
-| **For You** | Your top 20 personalized picks across all genres. 75% taste-matched, 25% exploration. |
-| **Because You Watched [X]** | 10 movies similar to what you just watched. Regenerates after every movie. |
-| **Hidden Gems** | High-rated movies (≥ 7.0) from subcategories you do NOT already watch much — quality films outside your comfort zone. Ranked by acclaim + learned affinity. |
-| **Recently Added** | All unwatched movies, sorted by date added to library (most recent first). |
-| **[Subcategory] For You** | Deep dives into subcategories you love (e.g., "Psychological Thrillers For You"). |
-| **Discover: Hidden World** | Gateway into your least-explored subcategories, similarity-bridged to your taste (not random). Rotates as your taste shifts. |
-| **Wild Card** | 100% exploration — pulls from your least-explored subcategory, only high-rated (≥ 7.0) films. Ranked by acclaim + learned affinity. |
-| **From Your Watchlist** | Your Letterboxd watchlist filtered to movies in your library, with full smart scoring. |
+### Letterboxd Watchlist Integration
+Import via JSON URL (Radarr-compatible: `imdb_id`, `title`, `release_year`) or CSV export. Matched by IMDB ID, falling back to title + year. Per-user.
 
-All playlists are **private per user** — each user gets their own set, invisible to other users.
+### Anti-Bubble Protection
+25% exploration reserve (configurable 10–50%); Diversity Cap (default 60%); dedicated Wild Card; rotating discovery.
 
-A movie appears in **at most one** of a user's discovery playlists (For You, Hidden Gems, Discover, Wild Card, Subcategory) — once it's placed somewhere, it's excluded from the others so the same film never shows up twice. "Because You Watched" is exempt (it's an intentional similarity list) but still excludes already-watched movies.
+### AI Chat (web client only)
+Natural-language recommendations using your enriched metadata.
 
-### 🚫 The Punishment Mechanic (real, as of v1.3.0)
-
-When you **pick a movie from a playlist**, the plugin learns from that single action:
-
-- **Sibling penalty:** every *other* movie in the playlist you picked from gets a **rejection penalty** (its learned affinity drops) and is **temporarily banned** from your recommendations for a cooling period (`Cooling Period` × refresh interval). They had their chance — they lost.
-- **Similar-movie reward:** the watched movie's nearest neighbours (by the Similarity Engine) get a small **affinity boost**. If one of them was penalized, the penalty is instantly pulled forward / reduced — your interest in that niche just spiked.
-- **Time decay:** both penalties and rewards fade via an exponential half-life (`Affinity Decay Half-Life`, default 28 days). After the cooling period expires, a movie becomes eligible again — but with its (decayed) lower priority if it was rejected.
-- **Where it's written:** interaction signals are written **only when you watch a movie** (off another playlist). Playlist refreshes *read* the learned ratings; they don't write interaction signals. This is what keeps the system honest — it learns from your choices, not from its own rotations.
-- **Completion-weighted:** only a watch that reached `Min Watch % to Learn` (default 50%) counts as a real signal — a quick glance or test below it is ignored (no penalty, no reward). Manual "mark played" with no progress is treated as 0% and ignored. 0 = any "played" counts; 100 = must finish.
-- All knobs are configurable and default to **small nudges** so learning never overrides strong taste-matching.
-- Admins can disable playlist generation per user via name-based tick-boxes in the config page (no GUIDs to copy).
-
-This forces constant freshness — you never see the same stale playlist twice, and the system reacts to what you actually choose.
-
-### 🔍 What's Happening (Transparency)
-The config page now explains every knob in plain language (e.g. *Affinity Rank Weight* is a small additive nudge on top of the fixed 0.7×subcategory + 0.3×mood base score — it does **not** renormalize the other weights toward 1). There is also a read-only **"What's Happening Right Now"** panel per user that shows, live:
-- your **top taste weights** (or "falling back to critical acclaim" if you have no history yet)
-- movies **currently penalized** with cooling time remaining
-- **active novelty boosts**
-- every movie **excluded on the last refresh** and *why* (already watched / not yet AI-classified / over the diversity cap)
-- once a few weeks of data exist, how your taste has **drifted** (subcategories gained, lost, or shifted since your oldest weekly snapshot)
-- a **recently-surfaced history** (what the engine put in front of you, in which playlist, and when)
-
-This is observability only — it changes no behavior, it just shows what the algorithm is doing and why.
-
-### 🌍 Anti-Bubble Protection
-
-Your taste is wide? The plugin respects that.
-
-- **25% of every playlist** is reserved for exploration picks (configurable 10-50%)
-- **Diversity Cap** (configurable, default 60%): no single subcategory may occupy more than this share of a playlist. Set it lower (e.g. 40%) for stricter diversification; higher allows a dominant favorite to show more.
-- A dedicated **Wild Card** playlist always pulls from your least-explored subcategories
-- Discovery playlists rotate to expose you to new areas over time
-- Director affinity gently surfaces more from filmmakers you return to
-
-### 🎭 Dynamic Subcategories
-
-Instead of Jellyfin's flat "Action / Comedy / Drama" genres, the AI reads each movie's plot and assigns meaningful subcategories:
-
-| Genre | Example Subcategories |
-|---|---|
-| Action | Heist, Martial Arts, War, Superhero, Chase/Pursuit, Revenge |
-| Thriller | Psychological, Neo-Noir, Crime, Spy/Espionage, Legal, Techno-Thriller |
-| Comedy | Dark Comedy, Rom-Com, Satire, Slapstick, Buddy, Mockumentary |
-| Drama | Historical, Courtroom, Family, Sports, Biopic, Coming-of-Age |
-| Sci-Fi | Space Opera, Cyberpunk, Time Travel, Hard Sci-Fi, Dystopian, First Contact |
-| Horror | Supernatural, Slasher, Psychological, Body Horror, Folk, Found Footage |
-
-These are assigned by AI reading actual plot summaries — not by TMDB's generic tags. Subcategories you know well get bigger playlists ("For You"). Unfamiliar ones get smaller gateway playlists ("Discover:"). Both rotate so you always see something new.
-
-### 🔍 Similarity Engine
-
-Movies are compared using AI-assigned metadata (not TMDB's broad tags):
-
-| Factor | Weight | What It Compares |
-|---|---|---|
-| Subcategory overlap | 30% | AI-assigned subcategories |
-| Mood overlap | 20% | AI-assigned mood tags (dark, cerebral, etc.) |
-| Theme overlap | 15% | AI-assigned themes (obsession, revenge, etc.) |
-| Director/Cast overlap | 10% | Shared creative talent |
-| Narrative style match | 10% | Same storytelling approach |
-| Era proximity | 5% | Movies from similar decades |
-| Rating proximity | 5% | Similar quality tier |
-| Intensity match | 5% | Similar intensity level |
-
-This powers "Because You Watched" playlists and fills exploration slots with adjacent (not random) content.
-
-### 📋 Letterboxd Watchlist Integration
-
-Got a massive Letterboxd watchlist? Import it and get a smart playlist that only picks from movies on your watchlist that are already in your library.
-
-- **Import via JSON URL** *(recommended)* — point to any URL serving a JSON array (e.g., a Radarr-compatible export with `imdb_id`, `title`, `release_year`). Auto-synced on every playlist refresh.
-- **Import via CSV** — export from Letterboxd (Settings → Import & Export) and upload
-- **Matching by IMDB ID** — most reliable. Falls back to title + year if no IMDB match.
-- The **"From Your Watchlist"** playlist applies ALL the same smart logic (scoring, diversity, punishment, rotation) but only from your watchlist movies
-- Unmatched titles (on watchlist but not in your library) are listed so you can see what's missing
-- Watchlist is re-synced on the same schedule as playlist refresh
-- **Per-user** — each Jellyfin user can configure their own watchlist URL or CSV
-
-### ⭐ Review Nudging (Subtle)
-
-Optionally, the plugin gives a scoring nudge based on critical acclaim and your personal Letterboxd ratings. This is:
-- **Configurable** — set the weight from 0% (disabled) up to 15% via the settings page
-- **Never displayed** to the user — purely a background signal
-- **Never dominant** — even at 15%, it can't override strong taste-matching or diversity rules
-- Helps surface critically acclaimed films slightly more often, without turning every playlist into an "Oscar winners" list
-
-### 💬 AI Chat (Web Client Only)
-
-Ask for recommendations in natural language:
-- *"I want a mind-bending thriller"*
-- *"Something light and funny for date night"*
-- *"Movies like Interstellar but I haven't seen"*
-
-The AI searches your library using enriched metadata, excludes everything you've watched, and returns personalized picks with explanations. Uses the same provider/API key as classification.
-
-### ⚙️ How Playlists Stay Fresh
-
+### How Playlists Stay Fresh
 ```
 User watches a movie
-    │
-    ├── Movie removed from ALL playlists (forever)
-    ├── All other movies in the SOURCE playlist get BANNED (cooling period)
-    ├── Taste profile updated with the new watch
-    ├── Source playlist rebuilt with entirely fresh picks
-    └── Other playlists adjusted (watched movie removed, replacement scored)
-
-Every N hours (configurable, default: 12):
-    │
-    ├── Check for any new watches since last refresh
-    ├── Rotate 30% of each playlist's content with fresh picks
-    ├── Rotate active subcategory playlists
-    ├── Update exploration slots
-    └── Enforce diversity constraints
+    ├── Movie removed from ALL playlists
+    ├── Other movies in the SOURCE playlist get BANNED (cooling period)
+    ├── Taste profile updated
+    ├── Source playlist rebuilt with fresh picks
+    └── Other playlists adjusted
+Every N hours (default 12): rotate 30%, re-check watches, enforce diversity.
 ```
 
----
-
-### Build from Source
-
-To compile the plugin yourself, you must first install the **.NET 9.0 SDK**.
-- **Windows / macOS**: Download the installer from the [official Microsoft .NET download page](https://dotnet.microsoft.com/download/dotnet/9.0).
-- **Linux (Debian/Ubuntu)**: The standard `apt` repositories don't always have the latest .NET versions. The most reliable way is to use Microsoft's official install script:
-  ```bash
-  wget https://dot.net/v1/dotnet-install.sh -O dotnet-install.sh
-  chmod +x ./dotnet-install.sh
-  ./dotnet-install.sh --channel 9.0
-  export DOTNET_ROOT=$HOME/.dotnet
-  export PATH=$PATH:$HOME/.dotnet
-  ```
-
-Once the SDK is installed:
-
-```bash
-git clone https://github.com/Sternpaul/jellyfin-smart-playlists.git
-cd jellyfin-smart-playlists
-dotnet build --configuration Release
-```
-
-The compiled DLL will be in `bin/Release/net9.0/`.
-
-### Docker Volume Note
-
-The plugin stores its SQLite database in the Jellyfin config directory. This works automatically with standard Docker setups where `/config` is a mounted volume. No additional volume mounts needed.
-
----
-
-## ⚙️ Configuration
-
-Access via **Dashboard → Plugins → AI Recommender**.
+## Configuration reference
 
 ### AI Provider Settings
-
 | Setting | Default | Description |
 |---|---|---|
-| **AI Provider** | Google AI | Choose: Google AI, OpenRouter, OpenAI, or Anthropic Claude |
-| **API Key** | *(required)* | Your API key for the selected provider |
-| **Classification Model** | `gemma-4-31b-it` | Model for batch movie classification (provider-specific) |
-| **Chat Model** | *(same as above)* | Model for interactive chat (can differ from classification) |
-| **Custom Endpoint** | *(empty)* | Optional custom API URL for self-hosted or proxy setups |
+| AI Provider | Google AI | Google AI / OpenRouter / OpenAI / Anthropic |
+| API Key | *(required)* | Key for the selected provider |
+| Classification Model | `gemma-4-31b-it` | Batch classification model |
+| Chat Model | *(same)* | Can differ from classification |
+| Custom Endpoint | *(empty)* | Optional self-hosted/proxy URL |
 
 ### Playlist Settings
-
 | Setting | Default | Description |
 |---|---|---|
-| **Playlist Refresh Interval** | 12 hours | How often playlists auto-refresh |
-| **Max Movies Per Playlist** | 20 | Maximum movies in each playlist |
-| **Playlist Rotation %** | 30% | Percentage of movies swapped each refresh cycle |
-| **Diversity Weight** | 25% | Playlist slots reserved for exploration (10-50%) |
-| **Cooling Period** | 2 cycles | How long banned movies stay out after rejection |
-| **Enabled Playlist Types** | All | Toggle individual playlist types on/off |
-| **Review Nudging Weight** | 0% | How much critical acclaim boosts a movie's score (0-15%) |
+| Playlist Refresh Interval | 12h | Auto-refresh cadence |
+| Max Movies Per Playlist | 20 | Cap per playlist |
+| Playlist Rotation % | 30% | Swapped each cycle |
+| Diversity Weight | 25% | Exploration slots (10–50%) |
+| Cooling Period | 2 cycles | Ban duration after rejection |
+| Enabled Playlist Types | All | Toggle types |
+| Rating Weight | 0.50 | **Max contribution of a 5★ Letterboxd rating to For You** (0 disables) |
 
 ### Per-User Settings
-
-Each Jellyfin user can configure their own Letterboxd integration via the plugin page:
-
 | Setting | Default | Description |
 |---|---|---|
-| **Letterboxd Username** | *(empty)* | Public username for automatic watchlist scraping |
-| **Watchlist JSON URL** | *(empty)* | URL to a JSON watchlist file (Radarr-compatible format) |
-| **Watchlist CSV** | *(empty)* | Upload a Letterboxd CSV export instead |
-| **Enable Watchlist Playlist** | Off | Generate the "From Your Watchlist" playlist |
+| Letterboxd Username | *(empty)* | Public handle for ratings scrape |
+| Watchlist JSON URL | *(empty)* | Radarr-compatible watchlist JSON |
+| Watchlist CSV | *(empty)* | Letterboxd CSV export |
+| Enable Watchlist Playlist | Off | "From Your Watchlist" |
+| Enable Ratings Playlist | Off | "Highly Rated by You" |
 
-### 🧠 Dynamic Rating / Learning (v1.3.0)
+### Dynamic Rating / Learning (v1.3.0+)
 | Setting | Default | Description |
 |---|---|---|
-| **Affinity Decay Half-Life** | 28 days | How fast learned movie ratings (and penalties) fade. |
-| **Rejection Penalty** | -0.30 | Affinity drop for other movies in a playlist you picked from (cooling period). |
-| **Similar-Movie Reward** | 0.10 | Affinity rise for movies similar to one you watched. |
-| **Affinity Rank Weight** | 0.15 | Max contribution of learned affinity to ranking (keeps it a small nudge). |
-| **New-Movie Boost Window** | 30 days | How long a freshly-added movie gets a recency nudge in taste playlists. |
-| **New-Movie Boost Weight** | 0.10 | Size of the new-movie recency nudge (capped by Affinity Rank Weight). |
-| **Diversity Cap** | 60% | Max % any one subcategory may occupy in a playlist (anti-bubble). Lower = stricter diversification. |
-| **Director Affinity Bonus** | 0.05 | Small nudge for movies by a director the user watches often. |
-| **Soft Penalty Strength** | 0.50 | 0 = rejected movies hard-banned during cooling; 1 = no penalty; between = graceful sink. |
-| **New-Movie Min Taste-Fit** | 0.30 | For You only boosts a new movie whose taste-fit score is ≥ this (so new films surface because they fit). |
-| **Novelty Bonus** | 0.05 | Nudge for movies not recently surfaced, so the same films don't keep recycling. |
-| **Novelty Half-Life** | 30 days | How fast the novelty nudge fades after a movie appears in a playlist. |
-| **Min Watch % to Learn** | 50% | A watch only counts as a real signal (penalty + reward) if playback reached this %. Below = ignored (no penalty). 0 = any "played" counts; 100 = must finish. |
-| **Decay Reference** | 3/week | "Normal" watch rate. Effective affinity + novelty half-lives scale by your recent weekly rate vs this (faster watchers decay quicker = fresher). Clamped 0.3x–3x. |
+| Affinity Decay Half-Life | 28 days | Fade rate for learned ratings/penalties |
+| Rejection Penalty | -0.30 | Affinity drop for siblings of a watched movie |
+| Similar-Movie Reward | 0.10 | Affinity rise for similar titles |
+| Affinity Rank Weight | 0.15 | Max contribution of learned affinity (small nudge) |
+| New-Movie Boost Window | 30 days | Recency nudge duration |
+| New-Movie Boost Weight | 0.10 | Recency nudge size |
+| Diversity Cap | 60% | Max % any subcategory in a playlist |
+| Director Affinity Bonus | 0.05 | Nudge for recurring directors |
+| Soft Penalty Strength | 0.50 | 0 = hard ban; 1 = no penalty |
+| New-Movie Min Taste-Fit | 0.30 | For You boosts new films only if they fit |
+| Novelty Bonus | 0.05 | Nudge for un-recently-surfaced films |
+| Novelty Half-Life | 30 days | Novelty fade |
+| Min Watch % to Learn | 50% | Watch must reach this % to count as a signal |
+| Decay Reference | 3/week | Watch-rate scaling for half-lives (0.3x–3x) |
 
-The plugin keeps a per-(user, movie) learned rating ("affinity") in the SQLite DB. It is updated **only when you watch a movie** (penalty to siblings + reward to similar titles) and read (with lazy exponential time-decay, tuned to your watch rate) on every refresh to gently nudge ranking. Newly-added movies get a short recency boost **only when they fit your taste** (For You). Movies that haven't been surfaced recently get a small novelty nudge so playlists stay fresh. Every knob is configurable and defaults to a small nudge.
-
-### Provider-Specific Model IDs
-
-| Provider | Classification Model | Chat Model |
+### Provider-specific model IDs
+| Provider | Classification | Chat |
 |---|---|---|
 | Google AI | `gemma-4-31b-it` | `gemma-4-31b-it` |
 | OpenRouter | `google/gemma-4-31b-it` | `google/gemma-4-31b-it` |
 | OpenAI | `gpt-4o-mini` | `gpt-4o` |
 | Anthropic | `claude-sonnet-4-5` | `claude-sonnet-4-5` |
 
----
-
-## 🔌 API Endpoints
-
-The plugin exposes a REST API for custom integrations:
-
+## REST API
+All endpoints require Jellyfin auth (`Authorization` header).
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/api/airecommender/chat` | Natural language AI recommendations |
-| `GET` | `/api/airecommender/playlists/{userId}` | Get all dynamic playlists for a user |
-| `POST` | `/api/airecommender/refresh/{userId}` | Force-refresh playlists for a user |
-| `GET` | `/api/airecommender/taste-profile/{userId}` | View computed taste profile |
-| `GET` | `/api/airecommender/history/{userId}` | Export full watch history |
-| `POST` | `/api/airecommender/classify` | Trigger library classification |
-| `POST` | `/api/airecommender/reindex` | Trigger library reindex |
-| `GET` | `/api/airecommender/status` | Plugin status, classification progress, stats |
+| POST | `/api/airecommender/chat` | NL recommendations |
+| GET | `/api/airecommender/playlists/{userId}` | User's dynamic playlists |
+| POST | `/api/airecommender/refresh/{userId}` | Force refresh |
+| GET | `/api/airecommender/taste-profile/{userId}` | Taste profile |
+| GET | `/api/airecommender/debug/{userId}` | Live "what's happening" snapshot |
+| POST | `/api/airecommender/classify` | Trigger classification |
+| POST | `/api/airecommender/UserConfig/SyncRatings?userId=` | Re-scrape a user's ratings |
 
-All endpoints require Jellyfin authentication via the `Authorization` header.
+## How it works (technical)
+**First run:** index library → AI-classify → compute similarity → export watch history → taste-profile → generate playlists. **Ongoing:** incremental classification of new movies, real-time watch hooks, scheduled refresh (zero API cost), debounced immediate refresh after a watch.
 
----
+**Client compatibility:** Playlists work on every client. AI Chat is web-only.
 
-## 🏗️ How It Works (Technical)
+## Cost
+Classification is a one-time ~$0.03–0.40 (by provider); new movies <$0.01; refresh and chat are pennies. After classification, smart playlists are **free**.
 
-### First Run
-1. **Library Indexing** — Scans your entire movie library and caches metadata (title, year, overview/plot, cast, director, rating) into SQLite
-2. **AI Classification** — Sends plot summaries in batches to your chosen AI provider. The model assigns subcategories, moods, themes, narrative style, accessibility, and intensity for each movie
-3. **Similarity Computation** — Calculates movie-to-movie similarity using AI-assigned metadata and stores top-50 similar movies per film
-4. **Watch History Export** — Scans all user accounts for watched movies and builds the exclusion list
-5. **Taste Profiling** — Computes subcategory weights, mood preferences, era preferences per user
-6. **Playlist Generation** — Creates all dynamic playlists for each user
+## Build from source
+Requires .NET 9.0 SDK:
+```bash
+git clone https://github.com/Sternpaul/jellyfin-smart-playlists.git
+cd jellyfin-smart-playlists
+dotnet build --configuration Release
+```
+DLL lands in `bin/Release/net9.0/`. The SQLite DB lives in the Jellyfin config dir (`/config/data/plugins/configurations/airecommender.db`) — persists across updates.
 
-### Ongoing
-- **Incremental classification** — New library additions are automatically sent to the AI for classification
-- **Real-time watch tracking** — Hooks into Jellyfin's playback events to catch watches as they happen
-- **Scheduled refresh** — Playlists regenerate on a configurable interval (zero API cost)
-- **Immediate refresh** — When a user finishes a movie, their playlists update (debounced)
+## Roadmap
+- [x] AI classification, similarity engine, taste profiling
+- [x] Playlist engine + punishment mechanic + scheduled refresh
+- [x] Letterboxd watchlist import (CSV/JSON) + watchlist playlist
+- [x] Per-user Letterboxd **ratings** as dominant signal + "Highly Rated by You"
+- [x] Self-hosted plugin repository with auto-update
+- [x] Transparency / "what's happening" panel
+- [ ] Richer ratings coverage (CSV export import as robust alternative to scraping)
 
-### Client Compatibility
-
-| Client | Playlists | AI Chat |
-|---|---|---|
-| Web Browser | ✅ | ✅ |
-| FireTV / Android TV | ✅ | ❌ |
-| iOS / Android Mobile | ✅ | ❌ |
-| Kodi + Jellyfin Plugin | ✅ | ❌ |
-
-Playlists are standard Jellyfin playlists — they work everywhere. The AI chat UI is a web-only plugin page.
-
----
-
-## 💰 Cost
-
-| Operation | When | Google AI | OpenRouter | OpenAI | Anthropic |
-|---|---|---|---|---|---|
-| **Classification** | Once | ~$0.03 | ~$0.05-0.10 | ~$0.15-0.30 | ~$0.20-0.40 |
-| **New movie** | On add | < $0.001 | < $0.001 | < $0.01 | < $0.01 |
-| **Playlist refresh** | Every 12h | Free | Free | Free | Free |
-| **AI chat query** | Each ask | ~$0.001 | ~$0.001-0.01 | ~$0.005-0.02 | ~$0.005-0.02 |
-
-After initial classification, smart playlists run at **zero cost**.
-
----
-
-## 🗺️ Roadmap
-
-- [x] Plugin scaffolding and configuration
-- [x] AI provider abstraction (Google AI, OpenRouter, OpenAI, Anthropic)
-- [x] Movie indexer (batch + incremental)
-- [x] AI movie classifier (batch classification + critical acclaim scoring)
-- [x] Similarity engine (AI-assigned tags)
-- [x] Watch history export and real-time tracking
-- [x] Taste profiler
-- [x] Playlist engine with punishment mechanic
-- [x] Scheduled tasks and auto-refresh
-- [x] Letterboxd watchlist import (CSV + scraping) + watchlist playlist
-- [x] Review nudging (critical acclaim + personal ratings)
-- [x] Admin configuration page (provider picker, model selector, per-user Letterboxd)
-- [x] REST API endpoints
-- [ ] AI chat recommendation engine
-- [ ] Chat UI page
-
----
-
-## 📄 License
-
-MIT License — see [LICENSE](LICENSE) for details.
+## License
+MIT — see [LICENSE](LICENSE).
