@@ -2,6 +2,12 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.5.25
+- **Fixed three bugs reported from user logs:**
+  1. **`no such column: u.EnableRatingsPlaylist` crash.** The `UserWatchlists` table DDL predated v1.5.17 and was missing `RatingsJsonUrl` + `EnableRatingsPlaylist`; no migration added them, so every load/save of the per-user watchlist/ratings config threw and dropped the save. Added an idempotent ALTER migration (and the columns to the fresh-install DDL).
+  2. **New movies never got classified.** The incremental `ItemAdded` handler saved metadata but never triggered classification, so freshly-added movies sat unclassified until the next 2am daily task. Added a 20s debounced classification trigger on add.
+  3. **"Generate Playlists" button hung on "running" with no logs.** It called `_taskManager.Execute` (fire-and-forget) and returned immediately, with no completion signal and swallowed errors. Now it awaits the refresh per user inside the request and returns success/error, so the UI reflects real progress and failures are visible.
+
 ## v1.5.24
 - **Fixed a crash on upgraded databases (regression from v1.5.21).** `Popularity` is a non-nullable `double` in the model but the column was added as NULL, so every pre-v1.5.21 row had NULL there. `GetAllMoviesAsync` → `GetDouble` then threw "The data is NULL at ordinal 14", killing the index/classify task on existing installs. Root cause: `MovieStore.MigrateAddMovieKeywordColumns` added `Popularity` nullable and never backfilled. Fix: backfill NULLs to 0 at migration time, and make the column `REAL NOT NULL DEFAULT 0` for fresh installs.
 
