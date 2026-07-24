@@ -13,6 +13,7 @@ using MediaBrowser.Model.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.AIRecommender.Api
 {
@@ -29,6 +30,7 @@ namespace Jellyfin.Plugin.AIRecommender.Api
         private readonly IUserManager _userManager;
         private readonly MovieStore _movieStore;
         private readonly ITaskManager _taskManager;
+        private readonly ILogger<AIRecommenderController> _logger;
 
         public AIRecommenderController(
             AIProviderFactory aiProviderFactory,
@@ -37,7 +39,8 @@ namespace Jellyfin.Plugin.AIRecommender.Api
             PlaylistEngine playlistEngine,
             IUserManager userManager,
             MovieStore movieStore,
-            ITaskManager taskManager)
+            ITaskManager taskManager,
+            ILogger<AIRecommenderController> logger)
         {
             _aiProviderFactory = aiProviderFactory;
             _letterboxdService = letterboxdService;
@@ -46,6 +49,7 @@ namespace Jellyfin.Plugin.AIRecommender.Api
             _userManager = userManager;
             _movieStore = movieStore;
             _taskManager = taskManager;
+            _logger = logger;
         }
 
         [HttpPost("Chat")]
@@ -132,15 +136,33 @@ namespace Jellyfin.Plugin.AIRecommender.Api
         }
         
         [HttpPost("RefreshPlaylists")]
-        public ActionResult RefreshAllPlaylists()
+        public async Task<ActionResult> RefreshAllPlaylists(CancellationToken cancellationToken)
         {
-            var task = _taskManager.ScheduledTasks.FirstOrDefault(t => t.Name == "AI Recommender - Refresh Playlists");
-            if (task != null)
+            // v1.5.25: run the refresh synchronously within the request (awaited) so the
+            // config-page "Generate Playlists" button reflects real progress and any error
+            // is surfaced instead of hanging on "running" forever. Previously this called
+            // _taskManager.Execute (fire-and-forget), which returned immediately while the
+            // task ran on a hidden background thread with no completion signal.
+            try
             {
-                _taskManager.Execute(task, new MediaBrowser.Model.Tasks.TaskOptions());
-                return NoContent();
+                var users = _userManager.GetUsers().ToArray();
+                int refreshed = 0;
+                foreach (var user in users)
+                {
+                    if (cancellationToken.IsCancellationRequested) break;
+                    var idProp = user.GetType().GetProperty("Id");
+                    if (idProp == null) continue;
+                    if (idProp.GetValue(user) is not Guid userId) continue;
+                    await _playlistEngine.RefreshUserPlaylistsAsync(userId, cancellationToken);
+                    refreshed++;
+                }
+                return Ok(new { Success = true, Message = $"Refreshed playlists for {refreshed} user(s)." });
             }
-            return NotFound("Task not found");
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Manual playlist refresh failed.");
+                return Ok(new { Success = false, Message = ex.Message });
+            }
         }
         
         [HttpGet("UserWatchlistConfig")]

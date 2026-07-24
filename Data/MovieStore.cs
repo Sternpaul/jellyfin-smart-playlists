@@ -60,6 +60,8 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                     JsonUrl TEXT NULL,
                     CsvData TEXT NULL,
                     EnableWatchlistPlaylist INTEGER NOT NULL,
+                    RatingsJsonUrl TEXT NULL,
+                    EnableRatingsPlaylist INTEGER NOT NULL DEFAULT 0,
                     LastSynced TEXT NOT NULL,
                     MatchedItemIds TEXT NULL,
                     CONSTRAINT PK_UserWatchlists PRIMARY KEY (UserId)
@@ -102,9 +104,20 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                     CONSTRAINT PK_UserRatings PRIMARY KEY (UserId, ItemId)
                 )");
             MigrateAddMovieKeywordColumns(db);
+            MigrateAddUserWatchlistColumns(db);
         }
 
-        // v1.5.14: add TmdbId + Keywords columns to the Movies table on existing
+        // v1.5.25: add the v1.5.17 ratings columns to the UserWatchlists table on
+        // existing databases. Without this, EF queries/inserts of EnableRatingsPlaylist
+        // (and RatingsJsonUrl) throw "no such column" and the per-user watchlist/ratings
+        // config page can't load or save. ALTER is idempotent (caught if column exists).
+        private static void MigrateAddUserWatchlistColumns(AiDbContext db)
+        {
+            try { db.Database.ExecuteSqlRaw("ALTER TABLE UserWatchlists ADD COLUMN RatingsJsonUrl TEXT NULL"); }
+            catch { /* column already exists — ignore */ }
+            try { db.Database.ExecuteSqlRaw("ALTER TABLE UserWatchlists ADD COLUMN EnableRatingsPlaylist INTEGER NOT NULL DEFAULT 0"); }
+            catch { /* column already exists — ignore */ }
+        }
         // databases (the CREATE TABLE above only affects fresh installs). ALTER is
         // idempotent — adding a column that already exists is a no-op / caught.
         private static void MigrateAddMovieKeywordColumns(AiDbContext db)
