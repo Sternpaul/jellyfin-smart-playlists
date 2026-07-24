@@ -486,10 +486,11 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         {
             var now = DateTime.UtcNow;
             // "Hidden Gems" = high acclaim AND unfamiliar to the user (subcategories
-            // the user does NOT already watch a lot). This is the opposite of the
-            // familiar "For You" — it surfaces quality films outside the comfort zone.
+            // the user does NOT already watch a lot) AND genuinely obscure (low TMDB
+            // popularity). This is the opposite of the familiar "For You" — it surfaces
+            // quality films outside the comfort zone.
             //
-            // v1.5.21: "hidden" also means genuinely obscure, not just genre-unfamiliar.
+            // v1.5.21: "hidden" also requires obscurity, not just genre-unfamiliarity.
             // Acclaimed blockbusters (e.g. Seven Samurai, Black Panther) used to qualify
             // because they sat in an unfamili使用的 subcategory. A log-scaled TMDB
             // popularity penalty now pushes famous films down so obscure-acclaimed films

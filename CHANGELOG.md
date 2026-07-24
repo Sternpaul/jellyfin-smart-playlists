@@ -2,6 +2,9 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.5.23
+- **Hidden Gems description now reflects the dual "hidden" definition.** "Hidden" = high acclaim AND outside your watched subcategories AND genuinely obscure (low TMDB popularity). The prior wording framed popularity only as a "push down"; it is in fact a defining criterion alongside subcategory-unfamiliarity. Code behavior unchanged (v1.5.21 fame-penalty soft-rank still applies). Docs + code comment only.
+
 ## v1.5.22
 - **README accuracy pass.** Audited every playlist description against the actual generator code. No behavioral change — pure docs. Fixed two false claims about "From Your Watchlist" (it is the raw matched watchlist in match order, *not* re-scored by the taste engine; only "Highly Rated by You" uses smart ranking). Also softened "Letterboxd ratings dominate" → "weighted heavily" on For You to match the scoring math. Verified all other rows (Recently Added, Subcategory For You, Discover, Wild Card, Highly Rated by You, Because You Watched) are accurate.
 
