@@ -196,7 +196,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 await GenerateBecauseYouWatchedPlaylistAsync(userId, unwatchedMovies, cancellationToken);
                 
             if (_config.EnableHiddenGems)
-                await GenerateHiddenGemsPlaylistAsync(userId, unwatchedMovies, profile, affinities, cancellationToken);
+                await GenerateHiddenGemsPlaylistAsync(userId, unwatchedMovies, tasteProfile, affinities, cancellationToken);
                 
             if (_config.EnableRecentlyAdded)
                 await GenerateRecentlyAddedPlaylistAsync(userId, unwatchedMovies, cancellationToken);
@@ -294,9 +294,11 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 if (sub != null && counts.TryGetValue(sub, out int c) && c >= cap)
                 {
                     // Over cap: try to swap for a different-subcat movie from the pool.
-                    var swap = poolLeft.FirstOrDefault(m => PrimarySubcategory(m) == null
-                        || !counts.ContainsKey(PrimarySubcategory(m))
-                        || counts[PrimarySubcategory(m)] < cap);
+                    var swap = poolLeft.FirstOrDefault(m =>
+                    {
+                        var psub = PrimarySubcategory(m);
+                        return psub == null || !counts.ContainsKey(psub) || counts[psub] < cap;
+                    });
                     if (swap != null)
                     {
                         poolLeft.Remove(swap);
@@ -651,6 +653,17 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             // Fraction of the window still left (1 at ban start -> 0 at expiry).
             double frac = Clamp(totalWindow.TotalDays / Math.Max(1.0, _config.CoolingPeriodCycles * _config.PlaylistRefreshHours), 0.0, 1.0);
             return -frac * (1.0 - _config.SoftPenaltyStrength); // negative nudge
+        }
+
+        // Small recency nudge so freshly-added movies surface beyond "Recently Added".
+        private double GetNewMovieBoost(MovieMetadata movie, DateTime now)
+        {
+            if (_config.NewMovieBoostDays <= 0) return 0.0;
+            var ageDays = (now - movie.DateAdded).TotalDays;
+            if (ageDays < 0 || ageDays > _config.NewMovieBoostDays) return 0.0;
+            // Linear falloff across the window, capped by AffinityRankWeight.
+            var factor = 1.0 - (ageDays / _config.NewMovieBoostDays);
+            return Clamp(_config.NewMovieBoostWeight * factor, 0.0, _config.AffinityRankWeight);
         }
 
         // For You: a new movie only gets the recency boost if it actually fits the
