@@ -2,6 +2,9 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.5.20
+- **Fixed "Because You Watched" playlist title not matching its content.** The list is seeded on the 5 most-recently-watched movies and ranked by best similarity across all 5, but it was *titled* after only the single most-recent watch — so when a more recent watch contributed little, the playlist got named after a movie it wasn't about (e.g. "Because You Watched Disclosure Day" whose picks were all Godfather-style films). The title now reflects the seed that actually *dominates* the final picks (most contributions; ties break to the more recent seed), so the label matches the content. Ranking of picks is unchanged.
+
 ## v1.5.19
 - **Fixed the release workflow's manifest auto-update (the part that kept failing to land).** Root cause: the checkout step ran on the release *tag* (detached HEAD), and the manifest push used `git push --force-with-lease origin HEAD:main` from that detached HEAD — the lease can't verify a remote it never fetched, so every retry failed silently and the manifest never updated. It also based the edit on the tag's `repo/manifest.json`, which would have dropped prior versions. The step now checks out `main` first and does a clean fast-forward push. No plugin code change — this is a CI/release fix. The previous 1.5.17/1.5.18 manifest entries were added by hand in the interim.
 

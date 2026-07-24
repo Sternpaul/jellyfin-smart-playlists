@@ -433,6 +433,12 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             // falling back to DateAdded when the played date is unknown), not just the
             // single most-recently-indexed one. Recommendations are ranked by the best
             // similarity across all 5 seeds so the playlist reflects recent taste.
+            //
+            // The playlist is titled after the seed that actually *dominates* the final
+            // picks (count of top picks it contributed), NOT merely the most-recently
+            // watched seed — otherwise the label can describe a movie the list isn't
+            // really about (e.g. titled after the last watch while the picks are all
+            // similar to an older seed). Ties break toward the more recent seed.
             var watchedWithDates = await _watchHistoryService.GetWatchedMoviesWithDatesAsync(userId, cancellationToken);
             if (!watchedWithDates.Any()) return;
 
@@ -442,17 +448,20 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 .Select(w => w.Movie)
                 .ToList();
 
-            var mostRecent = recentSeeds.First();
-
-            // Best similarity per unwatched movie across the 5 recent seeds.
+            // Best similarity per unwatched movie across the 5 recent seeds, remembering
+            // which seed produced that best score.
             var bestSim = new Dictionary<Guid, double>();
+            var bestSeed = new Dictionary<Guid, MovieMetadata>();
             foreach (var seed in recentSeeds)
             {
                 foreach (var m in unwatched)
                 {
                     var sim = _similarityEngine.CalculateSimilarity(seed, m);
                     if (!bestSim.TryGetValue(m.ItemId, out double current) || sim > current)
+                    {
                         bestSim[m.ItemId] = sim;
+                        bestSeed[m.ItemId] = seed;
+                    }
                 }
             }
 
@@ -462,7 +471,15 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 .Select(kv => kv.Key)
                 .ToList();
 
-            await CreateOrUpdateJellyfinPlaylistAsync(userId, $"Because You Watched {mostRecent.Title}", picks, cancellationToken);
+            // Name the playlist after the seed that contributed the most of the chosen
+            // picks (most-recent seed wins ties), so the title matches the content.
+            var anchor = picks
+                .GroupBy(itemId => bestSeed[itemId])
+                .OrderByDescending(g => g.Count())
+                .ThenByDescending(g => recentSeeds.IndexOf(g.Key))
+                .First().Key;
+
+            await CreateOrUpdateJellyfinPlaylistAsync(userId, $"Because You Watched {anchor.Title}", picks, cancellationToken);
         }
         
         private async Task<List<Guid>> GenerateHiddenGemsPlaylistAsync(Guid userId, List<MovieMetadata> unwatched, TasteProfile profile, Dictionary<Guid, MovieAffinity> affinities, HashSet<Guid> claimed, CancellationToken cancellationToken)

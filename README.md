@@ -22,7 +22,7 @@ A Jellyfin plugin that solves "what should I watch" for massive libraries. It **
 | Playlist | What it does |
 |---|---|
 | **For You** | Top personalized picks. 75% taste-matched + 25% exploration. **Letterboxd ratings dominate this list when set.** |
-| **Because You Watched [X]** | Movies similar to what you just watched (regenerates after each watch). |
+| **Because You Watched [X]** | Movies similar to what you recently watched (regenerates after each watch). Seeded on your 5 most-recent watches, named after the one the picks are actually about. |
 | **Hidden Gems** | High-acclaim films from subcategories you *don't* already watch much. |
 | **Recently Added** | Unwatched movies, newest first. |
 | **[Subcategory] For You** | Deep dive into a subcategory you love (e.g. "Psychological Thrillers For You"). |
