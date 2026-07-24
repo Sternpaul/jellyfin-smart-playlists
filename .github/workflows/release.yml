@@ -103,6 +103,12 @@ jobs:
         PY
         )
 
+        # The checkout action lands on the *tag* (detached HEAD). We must operate on
+        # main, not the tag, so the manifest edit is based on the live main branch and
+        # the push is a clean fast-forward (no --force, no detached-HEAD lease failure).
+        git fetch origin main
+        git checkout -B main origin/main
+
         python3 - <<PY
         import json, os
         manifest_path = "repo/manifest.json"
@@ -120,7 +126,7 @@ jobs:
             "checksum": os.environ["checksum"],
             "timestamp": os.environ["timestamp"],
         }
-        # Replace if version already exists, else prepend.
+        # Replace if version already exists (re-run safety), else prepend.
         versions = plugin.setdefault("versions", [])
         for i, v in enumerate(versions):
             if v.get("version") == os.environ["ver_no_prefix"]:
@@ -132,23 +138,32 @@ jobs:
             json.dump(manifest, f, indent=2, ensure_ascii=False)
             f.write("\n")
         print("Updated manifest with version", os.environ["ver_no_prefix"])
+        # Sanity: print the top version we are about to publish.
+        with open(manifest_path, encoding="utf-8") as f:
+            top = json.load(f)
+        print("manifest top now:", next(p for p in top if p.get("guid") == GUID)["versions"][0]["version"])
         PY
 
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
         git add repo/manifest.json
-        git commit -m "repo: add ${version} to manifest" || echo "no manifest change"
+        if git diff --cached --quiet; then
+          echo "manifest unchanged; nothing to push"
+          exit 0
+        fi
+        git commit -m "repo: add ${version} to manifest"
         # Contract: this job is the ONLY writer of `main` for repo/manifest.json.
         # Releases are cut by pushing the TAG only (never `git push origin main` from
-        # local) so there is no concurrent `main` push to race against. Retry+rebase
-        # loop handles any transient conflict; --force-with-lease refuses to clobber a
-        # remote that moved again (then we rebase and retry).
+        # local) so there is no concurrent `main` push to race against. We operate on
+        # the live main branch, so a plain fast-forward push suffices (no force, no
+        # lease tricks that fail from a detached HEAD).
         for i in 1 2 3 4 5; do
-          git pull --rebase origin main || true
-          if git push --force-with-lease origin HEAD:main; then
+          if git push origin main; then
             echo "manifest pushed on attempt $i"
             break
           fi
-          echo "push attempt $i failed; retrying after rebase"
+          echo "push attempt $i failed; rebasing and retrying"
+          git fetch origin main
+          git rebase origin/main || true
           sleep 5
         done
