@@ -56,7 +56,8 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 {
                     var jsonResponse = await provider.ClassifyMoviesAsync(batch, cancellationToken);
                     _logger.LogInformation("Raw AI response (first 2000 chars): {Response}", jsonResponse?.Length > 2000 ? jsonResponse.Substring(0, 2000) : jsonResponse);
-                    ProcessClassificationResult(jsonResponse, batch);
+                    if (!string.IsNullOrEmpty(jsonResponse))
+                        ProcessClassificationResult(jsonResponse, batch);
                     
                     // Save batch to DB
                     await _movieStore.SaveMoviesAsync(batch, cancellationToken);
@@ -71,8 +72,13 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             _logger.LogInformation("Classification complete.");
         }
 
-        private void ProcessClassificationResult(string jsonResponse, List<MovieMetadata> batch)
+        private void ProcessClassificationResult(string? jsonResponse, List<MovieMetadata> batch)
         {
+            if (string.IsNullOrEmpty(jsonResponse))
+            {
+                _logger.LogWarning("Classification returned an empty response; skipping batch.");
+                return;
+            }
             try
             {
                 var jsonToParse = jsonResponse.Trim();
@@ -116,7 +122,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 int index = 0;
                 foreach (var element in moviesArray.EnumerateArray())
                 {
-                    MovieMetadata movie = null;
+                    MovieMetadata? movie = null;
 
                     // 1. Try matching by ItemId or Id property
                     if (TryGetPropertyIgnoreCase(element, "ItemId", out var idProp) || TryGetPropertyIgnoreCase(element, "id", out idProp))

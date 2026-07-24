@@ -42,7 +42,10 @@ namespace Jellyfin.Plugin.AIRecommender.Tasks
             {
                 if (cancellationToken.IsCancellationRequested) break;
                 
-                var userId = (Guid)user.GetType().GetProperty("Id").GetValue(user);
+                var idProp = user.GetType().GetProperty("Id");
+                if (idProp == null) continue;
+                var idVal = idProp.GetValue(user);
+                if (idVal is not Guid userId) continue;
                 await _playlistEngine.RefreshUserPlaylistsAsync(userId, cancellationToken);
                 
                 current++;
