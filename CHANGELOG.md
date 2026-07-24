@@ -2,6 +2,12 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.5.26
+- **Manual "Classify Library" / "Generate Playlists" buttons now report real results** (were fire-and-forget "Task Started" with no feedback). The index/classify button runs the index + classification synchronously in the request and returns how many movies were processed and how many remain unclassified; the Generate button already awaited and now surfaces per-run success/errors. The config page shows these messages instead of "Task Started".
+- **TMDB keyword enrichment can no longer abort playlist generation.** It ran under the request's cancellation token, so cancelling the button (tab close / timeout) or a slow TMDB call cancelled the EF DB write and killed the whole refresh before any playlist was built. Enrichment now uses its own 3-minute timeout, a 10s per-movie budget, and a non-cancellable DB save, and any failure is logged and the refresh continues.
+- **Newly-added movies get a more reliable incremental classify.** The 20s debounced classify after an `ItemAdded` now retries up to 3 times (30s apart) so a transient AI/rate-limit error doesn't leave new movies permanently unclassified.
+- **Index now logs library-vs-DB counts** ("Library scan: N movies in Jellyfin, M in recommender DB") so it's visible whether new movies are being detected.
+
 ## v1.5.25
 - **Fixed three bugs reported from user logs:**
   1. **`no such column: u.EnableRatingsPlaylist` crash.** The `UserWatchlists` table DDL predated v1.5.17 and was missing `RatingsJsonUrl` + `EnableRatingsPlaylist`; no migration added them, so every load/save of the per-user watchlist/ratings config threw and dropped the save. Added an idempotent ALTER migration (and the columns to the fresh-install DDL).

@@ -42,6 +42,8 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         {
             _logger.LogInformation("Starting full library index for AI Recommender...");
             
+            var newOrUpdatedMovies = new List<MovieMetadata>();
+
             var allMovies = _libraryManager.GetItemList(new InternalItemsQuery
             {
                 IncludeItemTypes = new[] { Jellyfin.Data.Enums.BaseItemKind.Movie },
@@ -49,9 +51,10 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 Recursive = true
             }).OfType<Movie>().ToList();
 
-            var newOrUpdatedMovies = new List<MovieMetadata>();
             var existingMovies = await _movieStore.GetAllMoviesAsync(cancellationToken);
             var existingDict = existingMovies.ToDictionary(m => m.ItemId);
+
+            _logger.LogInformation("Library scan: {LibraryCount} movies in Jellyfin, {DbCount} in recommender DB.", allMovies.Count, existingDict.Count);
 
             foreach (var movie in allMovies)
             {
@@ -67,7 +70,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     };
                     newOrUpdatedMovies.Add(metadata);
                 }
-                
+
                 // Always sync basic metadata in case it changed in Jellyfin
                 UpdateMetadataFromJellyfinItem(movie, metadata);
             }
@@ -142,8 +145,21 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     };
                     _classifyTimer.Elapsed += async (s, e) =>
                     {
-                        try { await _movieClassifier.ClassifyPendingMoviesAsync(CancellationToken.None); }
-                        catch (Exception ex) { _logger.LogWarning(ex, "Debounced classification after add failed."); }
+                        // v1.5.26: retry up to 3 times so a transient AI/rate-limit error
+                        // doesn't leave newly-added movies permanently unclassified.
+                        for (int attempt = 1; attempt <= 3; attempt++)
+                        {
+                            try
+                            {
+                                await _movieClassifier.ClassifyPendingMoviesAsync(CancellationToken.None);
+                                return;
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogWarning(ex, "Debounced classification after add failed (attempt {Attempt}/3).", attempt);
+                                if (attempt < 3) await Task.Delay(TimeSpan.FromSeconds(30));
+                            }
+                        }
                     };
                 }
                 _classifyTimer.Stop();   // reset the window on each new add

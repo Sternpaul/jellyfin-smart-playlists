@@ -30,6 +30,8 @@ namespace Jellyfin.Plugin.AIRecommender.Api
         private readonly IUserManager _userManager;
         private readonly MovieStore _movieStore;
         private readonly ITaskManager _taskManager;
+        private readonly MovieIndexer _movieIndexer;
+        private readonly MovieClassifier _movieClassifier;
         private readonly ILogger<AIRecommenderController> _logger;
 
         public AIRecommenderController(
@@ -40,6 +42,8 @@ namespace Jellyfin.Plugin.AIRecommender.Api
             IUserManager userManager,
             MovieStore movieStore,
             ITaskManager taskManager,
+            MovieIndexer movieIndexer,
+            MovieClassifier movieClassifier,
             ILogger<AIRecommenderController> logger)
         {
             _aiProviderFactory = aiProviderFactory;
@@ -49,6 +53,8 @@ namespace Jellyfin.Plugin.AIRecommender.Api
             _userManager = userManager;
             _movieStore = movieStore;
             _taskManager = taskManager;
+            _movieIndexer = movieIndexer;
+            _movieClassifier = movieClassifier;
             _logger = logger;
         }
 
@@ -124,15 +130,32 @@ namespace Jellyfin.Plugin.AIRecommender.Api
         }
         
         [HttpPost("ClassifyLibrary")]
-        public ActionResult ClassifyLibrary()
+        public async Task<ActionResult> ClassifyLibrary(CancellationToken cancellationToken)
         {
-            var task = _taskManager.ScheduledTasks.FirstOrDefault(t => t.Name == "AI Recommender - Index & Classify Library");
-            if (task != null)
+            // v1.5.26: run the index + classify synchronously within the request (awaited)
+            // and report real counts. Previously this called _taskManager.Execute
+            // (fire-and-forget), so the config-page "Classify Library" button returned
+            // "Task Started" with no result and no visibility into whether new movies
+            // were actually picked up or classified.
+            try
             {
-                _taskManager.Execute(task, new MediaBrowser.Model.Tasks.TaskOptions());
-                return NoContent();
+                var before = await _movieStore.GetUnclassifiedMoviesAsync(cancellationToken);
+                await _movieIndexer.IndexLibraryAsync(cancellationToken);
+                await _movieClassifier.ClassifyPendingMoviesAsync(cancellationToken);
+                var after = await _movieStore.GetUnclassifiedMoviesAsync(cancellationToken);
+                return Ok(new
+                {
+                    Success = true,
+                    Indexed = before.Count - after.Count,
+                    StillUnclassified = after.Count,
+                    Message = $"Indexed & classified. {before.Count - after.Count} movies processed; {after.Count} still unclassified."
+                });
             }
-            return NotFound("Task not found");
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Manual index/classify failed.");
+                return Ok(new { Success = false, Message = ex.Message });
+            }
         }
         
         [HttpPost("RefreshPlaylists")]

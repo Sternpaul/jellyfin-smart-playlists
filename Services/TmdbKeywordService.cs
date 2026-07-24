@@ -57,12 +57,15 @@ namespace Jellyfin.Plugin.AIRecommender.Services
 
             foreach (var movie in movies)
             {
-                if (cancellationToken.IsCancellationRequested) break;
+                // Per-movie budget so a single slow TMDB call can't stall the whole loop.
+                using var perMovieCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                perMovieCts.CancelAfter(TimeSpan.FromSeconds(10));
+                var ct = perMovieCts.Token;
 
                 int? tmdbId = movie.TmdbId;
                 if (tmdbId == null && !string.IsNullOrWhiteSpace(movie.ImdbId))
                 {
-                    tmdbId = await ResolveTmdbIdFromImdbAsync(apiKey, movie.ImdbId, cancellationToken);
+                    tmdbId = await ResolveTmdbIdFromImdbAsync(apiKey, movie.ImdbId, ct);
                     if (tmdbId != null) movie.TmdbId = tmdbId;
                 }
                 if (tmdbId == null) continue;
@@ -75,7 +78,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 if (string.IsNullOrWhiteSpace(movie.Keywords) || movie.Keywords == "[]")
                 {
                     var keywords = entry.Keywords
-                        ?? await FetchKeywordsAsync(apiKey, tmdbId.Value, cancellationToken);
+                        ?? await FetchKeywordsAsync(apiKey, tmdbId.Value, ct);
                     entry.Keywords = keywords ?? new List<string>();
                     movie.Keywords = JsonSerializer.Serialize(entry.Keywords);
                     movie.LastUpdated = DateTime.UtcNow;
@@ -93,7 +96,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     }
                     else
                     {
-                        var popularity = await FetchPopularityAsync(apiKey, movie.ImdbId, tmdbId.Value, cancellationToken);
+                        var popularity = await FetchPopularityAsync(apiKey, movie.ImdbId, tmdbId.Value, ct);
                         if (popularity.HasValue && popularity.Value > 0)
                         {
                             movie.Popularity = popularity.Value;
@@ -107,11 +110,11 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 cache[tmdbId.Value] = entry;
                 await SaveCacheAsync(cache);
 
-                await Task.Delay(50, cancellationToken); // be polite to TMDB
+                await Task.Delay(50, CancellationToken.None); // be polite to TMDB
             }
 
             if (changed.Any())
-                await _movieStore.SaveMoviesAsync(changed, cancellationToken);
+                await _movieStore.SaveMoviesAsync(changed, CancellationToken.None);
 
             _logger.LogInformation("TMDB keyword enrichment complete: {Count} movies updated.", changed.Count);
         }
