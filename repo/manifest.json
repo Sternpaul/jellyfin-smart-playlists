@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.5.14.0",
+        "changelog": "- **TMDB keywords as a precision signal.** Curated, objective tags (e.g. `serial killer`, `neo-noir`, `self-fulfilling prophecy`) are fetched per movie (TMDB id resolved from the already-stored IMDB id; cached in `tmdb_keywords_cache.json`) and added as a configurable overlap term in **For You** taste-matching (`KeywordWeight`, default 0.10) and the **Because You Watched** similarity engine. More reliable than the LLM's subjective themes, and fetched at refresh time — no re-classification needed. Add a TMDB v3 API key in the plugin config to enable; blank disables it.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.14/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "df7f8c8e85d24496385995028451ef67",
+        "timestamp": "2026-07-24T18:34:44Z"
+      },
+      {
         "version": "1.5.13.0",
         "changelog": "No Letterboxd username = zero ratings weight (stale ratings cleared on refresh). README overhaul: concise overview up top, full config/technical detail moved to a DETAILS section; corrected stale ratings description.",
         "targetAbi": "10.11.0.0",
