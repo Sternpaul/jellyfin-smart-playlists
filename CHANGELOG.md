@@ -2,6 +2,9 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.5.24
+- **Fixed a crash on upgraded databases (regression from v1.5.21).** `Popularity` is a non-nullable `double` in the model but the column was added as NULL, so every pre-v1.5.21 row had NULL there. `GetAllMoviesAsync` → `GetDouble` then threw "The data is NULL at ordinal 14", killing the index/classify task on existing installs. Root cause: `MovieStore.MigrateAddMovieKeywordColumns` added `Popularity` nullable and never backfilled. Fix: backfill NULLs to 0 at migration time, and make the column `REAL NOT NULL DEFAULT 0` for fresh installs.
+
 ## v1.5.23
 - **Hidden Gems description now reflects the dual "hidden" definition.** "Hidden" = high acclaim AND outside your watched subcategories AND genuinely obscure (low TMDB popularity). The prior wording framed popularity only as a "push down"; it is in fact a defining criterion alongside subcategory-unfamiliarity. Code behavior unchanged (v1.5.21 fame-penalty soft-rank still applies). Docs + code comment only.
 

@@ -50,7 +50,7 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                     IsClassified INTEGER NOT NULL,
                     DateAdded TEXT NOT NULL,
                     LastUpdated TEXT NOT NULL,
-                    Popularity REAL NULL,
+                    Popularity REAL NOT NULL DEFAULT 0,
                     CONSTRAINT PK_Movies PRIMARY KEY (ItemId)
                 )");
             EnsureTable(db, @"
@@ -114,6 +114,14 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                 try { db.Database.ExecuteSqlRaw($"ALTER TABLE Movies ADD COLUMN {col} TEXT NULL"); }
                 catch { /* column already exists — ignore */ }
             }
+
+            // v1.5.24: Popularity is a non-nullable double in the model but the column
+            // was historically added as NULL, so every pre-v1.5.21 row has NULL there.
+            // EF cannot materialize a double from NULL (GetDouble throws "data is NULL"),
+            // which crashed the index task on upgraded databases. Backfill NULLs to 0
+            // (the "unknown popularity → no fame penalty" sentinel). Create+drop-safe.
+            try { db.Database.ExecuteSqlRaw("UPDATE Movies SET Popularity = 0 WHERE Popularity IS NULL"); }
+            catch { /* column missing or already populated — ignore */ }
         }
 
         private static void EnsureTable(AiDbContext db, string sql)
