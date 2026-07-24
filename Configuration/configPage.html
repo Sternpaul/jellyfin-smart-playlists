@@ -307,9 +307,9 @@
                         </label>
 
                         <div class="inputContainer" style="margin-top: 16px;">
-                            <label class="inputLabel inputLabelUnfocused" for="RatingsUsername">Letterboxd Username (for ratings):</label>
-                            <input type="text" id="RatingsUsername" name="RatingsUsername" is="emby-input" />
-                            <div class="fieldDescription">Your public Letterboxd handle. The plugin scrapes your ratings and uses them as the <b>dominant</b> weight. Blank = no ratings weight for this user.</div>
+                            <label class="inputLabel inputLabelUnfocused" for="RatingsJsonUrl">Ratings JSON URL:</label>
+                            <input type="text" id="RatingsJsonUrl" name="RatingsJsonUrl" is="emby-input" />
+                            <div class="fieldDescription">URL to a JSON export of your Letterboxd ratings (each entry needs <b>imdb_id</b> + <b>rating</b>). Example: your letterboxd-lists repo's <code>public/ratings.json</code> raw GitHub URL. The plugin fetches it on refresh and matches films to your library by IMDB id. Blank = no ratings weight for this user.</div>
                         </div>
 
                         <label class="checkboxContainer">
@@ -552,7 +552,7 @@
                     .then(function(res) {
                         document.querySelector('#WatchlistJsonUrl').value = res.JsonUrl || "";
                         document.querySelector('#EnableWatchlistPlaylist').checked = res.EnableWatchlistPlaylist;
-                        document.querySelector('#RatingsUsername').value = res.RatingsUsername || "";
+                        document.querySelector('#RatingsJsonUrl').value = res.RatingsJsonUrl || "";
                         document.querySelector('#EnableRatingsPlaylist').checked = res.EnableRatingsPlaylist;
                         settingsBlock.style.display = 'block';
                         Dashboard.hideLoadingMsg();
@@ -560,7 +560,7 @@
                     .catch(function() {
                         document.querySelector('#WatchlistJsonUrl').value = "";
                         document.querySelector('#EnableWatchlistPlaylist').checked = false;
-                        document.querySelector('#RatingsUsername').value = "";
+                        document.querySelector('#RatingsJsonUrl').value = "";
                         document.querySelector('#EnableRatingsPlaylist').checked = false;
                         settingsBlock.style.display = 'block';
                         Dashboard.hideLoadingMsg();
@@ -575,7 +575,7 @@
                     UserId: userId,
                     JsonUrl: document.querySelector('#WatchlistJsonUrl').value,
                     EnableWatchlistPlaylist: document.querySelector('#EnableWatchlistPlaylist').checked,
-                    RatingsUsername: document.querySelector('#RatingsUsername').value.trim(),
+                    RatingsJsonUrl: document.querySelector('#RatingsJsonUrl').value.trim(),
                     EnableRatingsPlaylist: document.querySelector('#EnableRatingsPlaylist').checked
                 };
                 

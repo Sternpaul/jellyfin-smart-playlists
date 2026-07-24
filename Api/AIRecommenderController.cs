@@ -180,7 +180,7 @@ namespace Jellyfin.Plugin.AIRecommender.Api
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         public async Task<ActionResult> SyncRatings([FromQuery][Required] Guid userId, CancellationToken cancellationToken)
         {
-            await _letterboxdService.ScrapeRatingsAsync(userId, cancellationToken);
+            await _letterboxdService.FetchRatingsFromJsonAsync(userId, cancellationToken);
             return NoContent();
         }
 

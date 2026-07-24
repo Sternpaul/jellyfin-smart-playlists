@@ -62,12 +62,12 @@ Prerequisites: Jellyfin **10.11.x**; an API key from [Google AI Studio](https://
 ---
 
 ## Letterboxd ratings (the big one)
-Your **star ratings are the strongest recommendation signal**. Per user, in the plugin config → *Per-User Watchlist Settings*, enter your **public Letterboxd username**. On each refresh the plugin scrapes `letterboxd.com/<you>/films/ratings/`, matches films to your library, and stores them. A 5-star rating contributes up to `RatingWeight` (default **0.50**) to the For You score — far above the smaller taste/affinity nudges — so films you loved rise to the top.
+Your **star ratings are the strongest recommendation signal**. Per user, in the plugin config → *Per-User Watchlist Settings*, point **Ratings JSON URL** at a JSON export of your Letterboxd ratings — each entry needs an `imdb_id` and a `rating` (0.5–5.0). The simplest source is your own `letterboxd-lists` repo: the raw GitHub URL of `public/ratings.json`. On each refresh the plugin fetches that JSON and matches films to your library by IMDB id (exact), then stores them. A 5-star rating contributes up to `RatingWeight` (default **0.50**) to the For You score — far above the smaller taste/affinity nudges — so films you loved rise to the top.
 
-- **No username → no ratings weight.** Ratings are cleared for that user; recommendations use taste + learning only.
+- No scraping. The plugin never touches Letterboxd's HTML; it just reads your JSON file. Re-run your external scraper / re-push the JSON whenever your ratings change, and the next refresh picks it up.
+- **No URL → no ratings weight.** Ratings are cleared for that user; recommendations use taste + learning only.
 - **"Highly Rated by You" playlist** is generated when enabled.
-- Scraping is **fail-safe**: a bad/empty username or a Letterboxd markup change is logged and never breaks the rest of the refresh.
-- Honest caveat: this scrapes a public page (no open ratings API), so it's ToS-gray and could break if Letterboxd changes its markup. The watchlist CSV/JSON import path remains the robust alternative.
+- Fetching is **fail-safe**: a bad/empty URL or an unreachable file is logged and never breaks the rest of the refresh.
 
 ---
 

@@ -263,12 +263,12 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             // If no username is configured, clear any stale ratings so NO ratings weight
             // is ever applied for this user.
             var userRatingsConfig = await _movieStore.GetUserWatchlistConfigAsync(userId, cancellationToken);
-            if (string.IsNullOrWhiteSpace(userRatingsConfig?.RatingsUsername))
+            if (string.IsNullOrWhiteSpace(userRatingsConfig?.RatingsJsonUrl))
                 await _movieStore.SaveUserRatingsAsync(userId, Array.Empty<UserRating>(), cancellationToken);
             else
             {
-                try { await _letterboxdService.ScrapeRatingsAsync(userId, cancellationToken); }
-                catch (Exception ex) { _logger.LogWarning(ex, "Ratings scrape failed for {UserId}; continuing without ratings.", userId); }
+                try { await _letterboxdService.FetchRatingsFromJsonAsync(userId, cancellationToken); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Ratings fetch failed for {UserId}; continuing without ratings.", userId); }
             }
             var ratings = await _movieStore.GetUserRatingsAsync(userId, cancellationToken);
 
