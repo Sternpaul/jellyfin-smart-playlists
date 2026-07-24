@@ -141,5 +141,62 @@ namespace Jellyfin.Plugin.AIRecommender.Data
             }
             await db.SaveChangesAsync(cancellationToken);
         }
+
+        // ---- TasteSnapshot (v1.5.4) ----
+
+        public async Task SaveTasteSnapshotAsync(TasteSnapshot snapshot, CancellationToken cancellationToken = default)
+        {
+            using var db = GetContext();
+            db.TasteSnapshots.Add(snapshot);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        public async Task<TasteSnapshot?> GetLatestTasteSnapshotAsync(Guid userId, CancellationToken cancellationToken = default)
+        {
+            using var db = GetContext();
+            return await db.TasteSnapshots
+                .Where(t => t.UserId == userId.ToString())
+                .OrderByDescending(t => t.SnapshotAt)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        public async Task<TasteSnapshot?> GetOldestTasteSnapshotAsync(Guid userId, CancellationToken cancellationToken = default)
+        {
+            using var db = GetContext();
+            return await db.TasteSnapshots
+                .Where(t => t.UserId == userId.ToString())
+                .OrderBy(t => t.SnapshotAt)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        // ---- SurfaceHistory (v1.5.5) ----
+
+        public async Task RecordSurfaceHistoryAsync(Guid userId, IEnumerable<Guid> itemIds, string playlistType, CancellationToken cancellationToken = default)
+        {
+            var uid = userId.ToString();
+            var now = DateTime.UtcNow;
+            using var db = GetContext();
+            foreach (var itemId in itemIds)
+            {
+                db.SurfaceHistory.Add(new SurfaceHistory
+                {
+                    UserId = uid,
+                    ItemId = itemId.ToString(),
+                    PlaylistType = playlistType,
+                    SurfacedAt = now
+                });
+            }
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        public async Task<List<SurfaceHistory>> GetRecentSurfaceHistoryAsync(Guid userId, int limit, CancellationToken cancellationToken = default)
+        {
+            using var db = GetContext();
+            return await db.SurfaceHistory
+                .Where(s => s.UserId == userId.ToString())
+                .OrderByDescending(s => s.SurfacedAt)
+                .Take(limit)
+                .ToListAsync(cancellationToken);
+        }
     }
 }

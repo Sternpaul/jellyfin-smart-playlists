@@ -226,6 +226,9 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             var tasteProfile = await _watchHistoryService.GetUserTasteProfileAsync(userId, cancellationToken);
             var (unwatchedMovies, affinities) = await GetUnwatchedClassifiedMoviesAsync(userId, cancellationToken);
 
+            // v1.5.4: periodically snapshot the taste profile so the config page can
+            // show how tastes drift over time (weekly, at most).
+            await MaybeSaveTasteSnapshotAsync(userId, tasteProfile, cancellationToken);
             // v1.5.3: compute this user's consumption-rate decay factor. Faster watchers
             // get shorter effective half-lives (fresher playlists); slow watchers slower.
             ComputeDecayFactor(userId, cancellationToken);
@@ -788,6 +791,37 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             }
         }
 
+        // v1.5.4: snapshot the taste profile weekly (at most) so the config page can
+        // show taste drift. Skips if a snapshot exists within the last 7 days.
+        private async Task MaybeSaveTasteSnapshotAsync(Guid userId, TasteProfile profile, CancellationToken cancellationToken)
+        {
+            try
+            {
+                var latest = await _movieStore.GetLatestTasteSnapshotAsync(userId, cancellationToken);
+                if (latest != null && (DateTime.UtcNow - latest.SnapshotAt).TotalDays < 7)
+                    return;
+
+                var snap = new TasteSnapshot
+                {
+                    UserId = userId.ToString(),
+                    SnapshotAt = DateTime.UtcNow,
+                    SubcategoryWeightsJson = JsonSerializer.Serialize(
+                        (profile.SubcategoryPreferences ?? new Dictionary<string, double>())
+                            .OrderByDescending(kv => kv.Value).Take(10)
+                            .ToDictionary(kv => kv.Key, kv => Math.Round(kv.Value, 3))),
+                    MoodWeightsJson = JsonSerializer.Serialize(
+                        (profile.MoodPreferences ?? new Dictionary<string, double>())
+                            .OrderByDescending(kv => kv.Value).Take(10)
+                            .ToDictionary(kv => kv.Key, kv => Math.Round(kv.Value, 3)))
+                };
+                await _movieStore.SaveTasteSnapshotAsync(snap, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to save taste snapshot for {UserId}", userId);
+            }
+        }
+
         // Returns unwatched, classified movies + the user's affinity map. Penalized
         // movies are NOT excluded — they're softly pushed down in ranking instead.
         private async Task<(List<MovieMetadata> Movies, Dictionary<Guid, MovieAffinity> Affinities)>
@@ -909,6 +943,9 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 .Select(kv => new { ItemId = kv.Key, Title = byId[kv.Key].Title, Reasons = kv.Value })
                 .ToList();
 
+            // v1.5.4: taste drift — compare the oldest stored snapshot to the current profile.
+            var tasteDrift = await GetTasteDriftAsync(userId, profile, cancellationToken);
+
             return new
             {
                 GeneratedAt = now,
@@ -917,8 +954,45 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 ActivePenalties = penalties,
                 ActiveBoosts = boosts,
                 ExclusionCount = exclusions.Count,
-                Exclusions = exclusionView
+                Exclusions = exclusionView,
+                TasteDrift = tasteDrift
             };
+        }
+
+        // v1.5.4: compute drift between the oldest stored taste snapshot and the current profile.
+        private async Task<object> GetTasteDriftAsync(Guid userId, TasteProfile profile, CancellationToken cancellationToken)
+        {
+            try
+            {
+                var oldest = await _movieStore.GetOldestTasteSnapshotAsync(userId, cancellationToken);
+                if (oldest == null)
+                    return new { Available = false, Reason = "No snapshots yet (taken weekly on refresh)." };
+
+                var prevSubs = JsonSerializer.Deserialize<Dictionary<string, double>>(oldest.SubcategoryWeightsJson) ?? new Dictionary<string, double>();
+                var curSubs = profile.SubcategoryPreferences ?? new Dictionary<string, double>();
+                var gained = curSubs.Keys.Where(k => !prevSubs.ContainsKey(k)).ToList();
+                var lost = prevSubs.Keys.Where(k => !curSubs.ContainsKey(k)).ToList();
+                var shifted = curSubs.Keys
+                    .Where(k => prevSubs.ContainsKey(k) && Math.Abs(curSubs[k] - prevSubs[k]) > 0.05)
+                    .OrderByDescending(k => Math.Abs(curSubs[k] - prevSubs[k]))
+                    .Take(10)
+                    .Select(k => new { Subcategory = k, From = Math.Round(prevSubs[k], 3), To = Math.Round(curSubs[k], 3), Delta = Math.Round(curSubs[k] - prevSubs[k], 3) })
+                    .ToList();
+
+                return new
+                {
+                    Available = true,
+                    SnapshotAt = oldest.SnapshotAt,
+                    Gained = gained,
+                    Lost = lost,
+                    Shifted = shifted
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to compute taste drift for {UserId}", userId);
+                return new { Available = false, Reason = "Error computing drift." };
+            }
         }
 
         private async Task CreateOrUpdateJellyfinPlaylistAsync(Guid userId, string name, List<Guid> itemIds, CancellationToken cancellationToken)

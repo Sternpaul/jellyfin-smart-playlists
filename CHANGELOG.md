@@ -2,6 +2,9 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.5.4
+- **Taste-drift view:** the engine now snapshots each user's taste profile weekly (new `TasteSnapshots` table). The "What's Happening" debug panel shows which subcategories you've **gained**, **lost**, or **shifted** since your oldest snapshot — so you can watch your taste evolve over time.
+
 ## v1.5.3
 - **Consumption-rate-tuned decay:** a user's effective affinity + novelty half-lives now scale by how fast they actually watch (recent weekly rate vs `Decay Reference`). Fast watchers decay quicker (fresher playlists); slow watchers slower. Clamped 0.3x–3x. Default reference 3/week (your stated rate).
 

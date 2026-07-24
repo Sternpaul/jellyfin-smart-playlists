@@ -15,6 +15,8 @@ namespace Jellyfin.Plugin.AIRecommender.Data
         public DbSet<MovieMetadata> Movies { get; set; }
         public DbSet<UserWatchlistConfig> UserWatchlists { get; set; }
         public DbSet<MovieAffinity> Affinities { get; set; }
+        public DbSet<TasteSnapshot> TasteSnapshots { get; set; }
+        public DbSet<SurfaceHistory> SurfaceHistory { get; set; }
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
@@ -31,6 +33,12 @@ namespace Jellyfin.Plugin.AIRecommender.Data
 
             modelBuilder.Entity<MovieAffinity>()
                 .HasKey(a => new { a.UserId, a.ItemId });
+
+            modelBuilder.Entity<TasteSnapshot>()
+                .HasKey(t => t.Id);
+
+            modelBuilder.Entity<SurfaceHistory>()
+                .HasKey(s => s.Id);
         }
     }
 }

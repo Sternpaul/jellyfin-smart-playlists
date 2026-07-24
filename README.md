@@ -93,6 +93,7 @@ The config page now explains every knob in plain language (e.g. *Affinity Rank W
 - movies **currently penalized** with cooling time remaining
 - **active novelty boosts**
 - every movie **excluded on the last refresh** and *why* (already watched / not yet AI-classified / over the diversity cap)
+- once a few weeks of data exist, how your taste has **drifted** (subcategories gained, lost, or shifted since your oldest weekly snapshot)
 
 This is observability only — it changes no behavior, it just shows what the algorithm is doing and why.
 
