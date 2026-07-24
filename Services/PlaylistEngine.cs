@@ -257,7 +257,8 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                         + CalculateReviewNudge(m)
                         + (hasTaste ? 0.0 : m.CriticalAcclaimScore / 10.0)
                         + Clamp(GetEffectiveAffinity(affinities, m.ItemId) * _config.AffinityRankWeight, -_config.AffinityRankWeight, _config.AffinityRankWeight)
-                        + GetNewMovieBoost(m, now)
+                        + GetNewMovieBoostByFit(m, profile, now)
+                        + GetNoveltyBonus(affinities, m.ItemId, now)
                         + GetSoftPenalty(affinities, m.ItemId, now)
             }).OrderByDescending(x => x.Score).ToList();
 
@@ -652,15 +653,30 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             return -frac * (1.0 - _config.SoftPenaltyStrength); // negative nudge
         }
 
-        // Small recency nudge so freshly-added movies surface beyond "Recently Added".
-        private double GetNewMovieBoost(MovieMetadata movie, DateTime now)
+        // For You: a new movie only gets the recency boost if it actually fits the
+        // user's taste (gated by NewMovieBoostMinFit) — so fresh additions surface
+        // BECAUSE they fit, not merely because they are new (#4).
+        private double GetNewMovieBoostByFit(MovieMetadata movie, TasteProfile profile, DateTime now)
         {
-            if (_config.NewMovieBoostDays <= 0) return 0.0;
-            var ageDays = (now - movie.DateAdded).TotalDays;
-            if (ageDays < 0 || ageDays > _config.NewMovieBoostDays) return 0.0;
-            // Linear falloff across the window, capped by AffinityRankWeight.
-            var factor = 1.0 - (ageDays / _config.NewMovieBoostDays);
-            return Clamp(_config.NewMovieBoostWeight * factor, 0.0, _config.AffinityRankWeight);
+            if (_config.NewMovieBoostDays <= 0 || _config.NewMovieBoostMinFit <= 0) return GetNewMovieBoost(movie, now);
+            var fit = ScoreMovieAgainstProfile(movie, profile);
+            if (fit < _config.NewMovieBoostMinFit) return 0.0; // doesn't fit -> no boost
+            return GetNewMovieBoost(movie, now);
+        }
+
+        // Novelty nudge (#6): movies not recently surfaced in playlists get a small
+        // bonus that decays over NoveltyHalfLifeDays after they appear. Keeps the
+        // same films from recycling to the top every refresh.
+        private double GetNoveltyBonus(Dictionary<Guid, MovieAffinity> affinities, Guid itemId, DateTime now)
+        {
+            if (_config.NoveltyBonus <= 0 || _config.NoveltyHalfLifeDays <= 0) return 0.0;
+            if (!affinities.TryGetValue(itemId, out var row) || row == null || string.IsNullOrEmpty(row.LastSurfaced))
+                return _config.NoveltyBonus; // never surfaced -> full novelty nudge
+            if (!DateTime.TryParse(row.LastSurfaced, out var surfaced)) return _config.NoveltyBonus;
+            var ageDays = (now - surfaced).TotalDays;
+            if (ageDays < 0) ageDays = 0;
+            // Exponential decay: full nudge just after surfacing -> 0 after several half-lives.
+            return _config.NoveltyBonus * Math.Exp(-ageDays / _config.NoveltyHalfLifeDays);
         }
 
         // Returns unwatched, classified movies + the user's affinity map. Penalized
@@ -711,6 +727,16 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 
                 var result = _playlistManager.CreatePlaylist(req);
                 _logger.LogInformation("Created playlist '{Name}' for user {UserId} with {Count} items (Result Id: {ResultId}).", name, userId, itemIds.Count, result.Id);
+
+                // Record surfacing for novelty tracking (so the same films don't recycle).
+                try
+                {
+                    await _movieStore.MarkSurfacedAsync(userId, itemIds, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to record surfaced movies for playlist '{Name}'.", name);
+                }
             }
             else
             {

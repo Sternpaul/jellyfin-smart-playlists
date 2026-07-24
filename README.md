@@ -283,8 +283,11 @@ Each Jellyfin user can configure their own Letterboxd integration via the plugin
 | **Diversity Cap** | 60% | Max % any one subcategory may occupy in a playlist (anti-bubble). Lower = stricter diversification. |
 | **Director Affinity Bonus** | 0.05 | Small nudge for movies by a director the user watches often. |
 | **Soft Penalty Strength** | 0.50 | 0 = rejected movies hard-banned during cooling; 1 = no penalty; between = graceful sink. |
+| **New-Movie Min Taste-Fit** | 0.30 | For You only boosts a new movie whose taste-fit score is ≥ this (so new films surface because they fit). |
+| **Novelty Bonus** | 0.05 | Nudge for movies not recently surfaced, so the same films don't keep recycling. |
+| **Novelty Half-Life** | 30 days | How fast the novelty nudge fades after a movie appears in a playlist. |
 
-The plugin keeps a per-(user, movie) learned rating ("affinity") in the SQLite DB. It is updated **only when you watch a movie** (penalty to siblings + reward to similar titles) and read (with lazy exponential time-decay) on every refresh to gently nudge ranking. Newly-added movies also get a short recency boost so they surface beyond "Recently Added". Every knob is configurable and defaults to a small nudge.
+The plugin keeps a per-(user, movie) learned rating ("affinity") in the SQLite DB. It is updated **only when you watch a movie** (penalty to siblings + reward to similar titles) and read (with lazy exponential time-decay) on every refresh to gently nudge ranking. Newly-added movies get a short recency boost **only when they fit your taste** (For You). Movies that haven't been surfaced recently get a small novelty nudge so playlists stay fresh. Every knob is configurable and defaults to a small nudge.
 
 ### Provider-Specific Model IDs
 

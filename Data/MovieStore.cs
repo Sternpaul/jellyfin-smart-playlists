@@ -112,7 +112,31 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                 {
                     existing.Affinity = row.Affinity;
                     existing.PenaltyUntil = row.PenaltyUntil;
+                    existing.LastSurfaced = row.LastSurfaced;
                     existing.LastUpdated = row.LastUpdated;
+                }
+            }
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        // Records that the given movies were just surfaced in playlists (for novelty tracking).
+        public async Task MarkSurfacedAsync(Guid userId, IEnumerable<Guid> itemIds, CancellationToken cancellationToken = default)
+        {
+            var nowIso = DateTime.UtcNow.ToString("o");
+            var uid = userId.ToString();
+            using var db = GetContext();
+            foreach (var itemId in itemIds)
+            {
+                var key = itemId.ToString();
+                var existing = await db.Affinities
+                    .FindAsync(new object[] { uid, key }, cancellationToken);
+                if (existing == null)
+                {
+                    db.Affinities.Add(new MovieAffinity { UserId = uid, ItemId = key, LastSurfaced = nowIso });
+                }
+                else
+                {
+                    existing.LastSurfaced = nowIso;
                 }
             }
             await db.SaveChangesAsync(cancellationToken);

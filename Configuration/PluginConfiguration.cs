@@ -52,6 +52,11 @@ namespace Jellyfin.Plugin.AIRecommender.Configuration
         public double DirectorAffinityBonus { get; set; } = 0.05;  // small nudge for movies by a director the user watches
         public double SoftPenaltyStrength { get; set; } = 0.50;  // 0=hard ban during cooling, 1=no penalty; graceful sink
 
+        // v1.4.1 tuning
+        public double NewMovieBoostMinFit { get; set; } = 0.30;  // For You only boosts new movies that fit taste at/above this score
+        public double NoveltyBonus { get; set; } = 0.05;          // nudge for movies not recently surfaced in playlists
+        public int NoveltyHalfLifeDays { get; set; } = 30;        // days; how fast the novelty nudge fades after a movie is surfaced
+
         // User Exclusions
         // User GUIDs (as strings) for whom playlist generation is skipped entirely.
         public List<string> DisabledUserIds { get; set; } = new();

@@ -133,6 +133,21 @@
                         <input type="number" id="SoftPenaltyStrength" name="SoftPenaltyStrength" is="emby-input" step="0.05" min="0" max="1" />
                         <div class="fieldDescription">0 = rejected movies are hard-banned during cooling; 1 = no penalty. Between = graceful sink. Default: 0.50.</div>
                     </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="NewMovieBoostMinFit">New-Movie Min Taste-Fit:</label>
+                        <input type="number" id="NewMovieBoostMinFit" name="NewMovieBoostMinFit" is="emby-input" step="0.05" min="0" max="1" />
+                        <div class="fieldDescription">For You only boosts a new movie if its taste-fit score is >= this. 0 = boost any new movie. Default: 0.30.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="NoveltyBonus">Novelty Bonus:</label>
+                        <input type="number" id="NoveltyBonus" name="NoveltyBonus" is="emby-input" step="0.05" min="0" max="1" />
+                        <div class="fieldDescription">Nudge for movies not recently surfaced (prevents recycling). Decays over Novelty Half-Life. Default: 0.05.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="NoveltyHalfLifeDays">Novelty Half-Life (days):</label>
+                        <input type="number" id="NoveltyHalfLifeDays" name="NoveltyHalfLifeDays" is="emby-input" min="1" />
+                        <div class="fieldDescription">How fast the novelty nudge fades after a movie appears. Default: 30.</div>
+                    </div>
 
                     <div class="sectionTitleContainer"><h2 class="sectionTitle">✅ Enabled Playlists</h2></div>
                     
@@ -265,6 +280,9 @@
                     document.querySelector('#DiversityCapPercent').value = (config.DiversityCapPercent !== undefined && config.DiversityCapPercent !== null) ? config.DiversityCapPercent : 60;
                     document.querySelector('#DirectorAffinityBonus').value = (config.DirectorAffinityBonus !== undefined && config.DirectorAffinityBonus !== null) ? config.DirectorAffinityBonus : 0.05;
                     document.querySelector('#SoftPenaltyStrength').value = (config.SoftPenaltyStrength !== undefined && config.SoftPenaltyStrength !== null) ? config.SoftPenaltyStrength : 0.50;
+                    document.querySelector('#NewMovieBoostMinFit').value = (config.NewMovieBoostMinFit !== undefined && config.NewMovieBoostMinFit !== null) ? config.NewMovieBoostMinFit : 0.30;
+                    document.querySelector('#NoveltyBonus').value = (config.NoveltyBonus !== undefined && config.NoveltyBonus !== null) ? config.NoveltyBonus : 0.05;
+                    document.querySelector('#NoveltyHalfLifeDays').value = config.NoveltyHalfLifeDays || 30;
                     document.querySelector('#DisabledUserIds').value = (config.DisabledUserIds || []).join(', ');
                     
                     document.querySelector('#EnableForYou').checked = config.EnableForYou !== false;
@@ -411,6 +429,11 @@
                     if (isNaN(config.DirectorAffinityBonus)) config.DirectorAffinityBonus = 0.05;
                     config.SoftPenaltyStrength = parseFloat(document.querySelector('#SoftPenaltyStrength').value);
                     if (isNaN(config.SoftPenaltyStrength)) config.SoftPenaltyStrength = 0.50;
+                    config.NewMovieBoostMinFit = parseFloat(document.querySelector('#NewMovieBoostMinFit').value);
+                    if (isNaN(config.NewMovieBoostMinFit)) config.NewMovieBoostMinFit = 0.30;
+                    config.NoveltyBonus = parseFloat(document.querySelector('#NoveltyBonus').value);
+                    if (isNaN(config.NoveltyBonus)) config.NoveltyBonus = 0.05;
+                    config.NoveltyHalfLifeDays = parseInt(document.querySelector('#NoveltyHalfLifeDays').value, 10) || 30;
                     config.DisabledUserIds = (document.querySelector('#DisabledUserIds').value || '')
                         .split(',')
                         .map(function (s) { return s.trim(); })

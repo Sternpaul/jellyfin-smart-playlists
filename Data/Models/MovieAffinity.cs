@@ -20,6 +20,11 @@ namespace Jellyfin.Plugin.AIRecommender.Data.Models
         /// Null = no active ban.</summary>
         public string? PenaltyUntil { get; set; }
 
+        /// <summary>ISO datetime when this movie last appeared in one of the user's
+        /// recommendation playlists. Null = never surfaced. Used for novelty tracking
+        /// so the same films don't keep recycling to the top.</summary>
+        public string? LastSurfaced { get; set; }
+
         public string LastUpdated { get; set; } = DateTime.UtcNow.ToString("o");
     }
 }
