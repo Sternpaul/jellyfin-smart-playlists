@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.5.19.0",
+        "changelog": "- **Fixed the release workflow's manifest auto-update (the part that kept failing to land).** Root cause: the checkout step ran on the release *tag* (detached HEAD), and the manifest push used `git push --force-with-lease origin HEAD:main` from that detached HEAD — the lease can't verify a remote it never fetched, so every retry failed silently and the manifest never updated. It also based the edit on the tag's `repo/manifest.json`, which would have dropped prior versions. The step now checks out `main` first and does a clean fast-forward push. No plugin code change — this is a CI/release fix. The previous 1.5.17/1.5.18 manifest entries were added by hand in the interim.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.19/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "6bd4b1da501a9b90dd546f03129bc86b",
+        "timestamp": "2026-07-24T20:14:20Z"
+      },
+      {
         "version": "1.5.18.0",
         "changelog": "Documentation: README now documents the exact JSON/CSV shapes for the ratings feed and watchlist import, plus matching rules. CHANGELOG reworded to be vendor-neutral ahead of external users. (Code unchanged from 1.5.17.)",
         "targetAbi": "10.11.0.0",
