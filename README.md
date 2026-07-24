@@ -89,10 +89,10 @@ This forces constant freshness — you never see the same stale playlist twice, 
 Your taste is wide? The plugin respects that.
 
 - **25% of every playlist** is reserved for exploration picks (configurable 10-50%)
-- No single subcategory can dominate more than 40% of any playlist
-- If multiple playlists start looking too similar, the system forces diversification
+- **Diversity Cap** (configurable, default 60%): no single subcategory may occupy more than this share of a playlist. Set it lower (e.g. 40%) for stricter diversification; higher allows a dominant favorite to show more.
 - A dedicated **Wild Card** playlist always pulls from your least-explored subcategories
 - Discovery playlists rotate to expose you to new areas over time
+- Director affinity gently surfaces more from filmmakers you return to
 
 ### 🎭 Dynamic Subcategories
 
@@ -280,6 +280,9 @@ Each Jellyfin user can configure their own Letterboxd integration via the plugin
 | **Affinity Rank Weight** | 0.15 | Max contribution of learned affinity to ranking (keeps it a small nudge). |
 | **New-Movie Boost Window** | 30 days | How long a freshly-added movie gets a recency nudge in taste playlists. |
 | **New-Movie Boost Weight** | 0.10 | Size of the new-movie recency nudge (capped by Affinity Rank Weight). |
+| **Diversity Cap** | 60% | Max % any one subcategory may occupy in a playlist (anti-bubble). Lower = stricter diversification. |
+| **Director Affinity Bonus** | 0.05 | Small nudge for movies by a director the user watches often. |
+| **Soft Penalty Strength** | 0.50 | 0 = rejected movies hard-banned during cooling; 1 = no penalty; between = graceful sink. |
 
 The plugin keeps a per-(user, movie) learned rating ("affinity") in the SQLite DB. It is updated **only when you watch a movie** (penalty to siblings + reward to similar titles) and read (with lazy exponential time-decay) on every refresh to gently nudge ranking. Newly-added movies also get a short recency boost so they surface beyond "Recently Added". Every knob is configurable and defaults to a small nudge.
 

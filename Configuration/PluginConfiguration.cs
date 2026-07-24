@@ -47,6 +47,11 @@ namespace Jellyfin.Plugin.AIRecommender.Configuration
         public int NewMovieBoostDays { get; set; } = 30;           // window (days) a fresh movie gets the recency nudge
         public double NewMovieBoostWeight { get; set; } = 0.10;     // size of the recency nudge (capped by AffinityRankWeight)
 
+        // v1.4.0 tuning
+        public int DiversityCapPercent { get; set; } = 60;        // max % any one subcategory may occupy in a playlist (anti-bubble; configurable)
+        public double DirectorAffinityBonus { get; set; } = 0.05;  // small nudge for movies by a director the user watches
+        public double SoftPenaltyStrength { get; set; } = 0.50;  // 0=hard ban during cooling, 1=no penalty; graceful sink
+
         // User Exclusions
         // User GUIDs (as strings) for whom playlist generation is skipped entirely.
         public List<string> DisabledUserIds { get; set; } = new();

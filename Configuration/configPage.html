@@ -118,6 +118,21 @@
                         <input type="number" id="NewMovieBoostWeight" name="NewMovieBoostWeight" is="emby-input" step="0.05" min="0" max="1" />
                         <div class="fieldDescription">Size of the new-movie recency nudge (capped by Affinity Rank Weight). Default: 0.10.</div>
                     </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="DiversityCapPercent">Diversity Cap (%):</label>
+                        <input type="number" id="DiversityCapPercent" name="DiversityCapPercent" is="emby-input" min="20" max="100" />
+                        <div class="fieldDescription">Max % any one subcategory may occupy in a playlist (anti-bubble). Higher = more concentrated. Default: 60 (gentle). Set lower (e.g. 40) for strict diversification.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="DirectorAffinityBonus">Director Affinity Bonus:</label>
+                        <input type="number" id="DirectorAffinityBonus" name="DirectorAffinityBonus" is="emby-input" step="0.05" min="0" max="1" />
+                        <div class="fieldDescription">Small nudge for movies by a director you watch often. Default: 0.05.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="SoftPenaltyStrength">Soft Penalty Strength:</label>
+                        <input type="number" id="SoftPenaltyStrength" name="SoftPenaltyStrength" is="emby-input" step="0.05" min="0" max="1" />
+                        <div class="fieldDescription">0 = rejected movies are hard-banned during cooling; 1 = no penalty. Between = graceful sink. Default: 0.50.</div>
+                    </div>
 
                     <div class="sectionTitleContainer"><h2 class="sectionTitle">✅ Enabled Playlists</h2></div>
                     
@@ -247,6 +262,9 @@
                     document.querySelector('#AffinityRankWeight').value = (config.AffinityRankWeight !== undefined && config.AffinityRankWeight !== null) ? config.AffinityRankWeight : 0.15;
                     document.querySelector('#NewMovieBoostDays').value = config.NewMovieBoostDays || 30;
                     document.querySelector('#NewMovieBoostWeight').value = (config.NewMovieBoostWeight !== undefined && config.NewMovieBoostWeight !== null) ? config.NewMovieBoostWeight : 0.10;
+                    document.querySelector('#DiversityCapPercent').value = (config.DiversityCapPercent !== undefined && config.DiversityCapPercent !== null) ? config.DiversityCapPercent : 60;
+                    document.querySelector('#DirectorAffinityBonus').value = (config.DirectorAffinityBonus !== undefined && config.DirectorAffinityBonus !== null) ? config.DirectorAffinityBonus : 0.05;
+                    document.querySelector('#SoftPenaltyStrength').value = (config.SoftPenaltyStrength !== undefined && config.SoftPenaltyStrength !== null) ? config.SoftPenaltyStrength : 0.50;
                     document.querySelector('#DisabledUserIds').value = (config.DisabledUserIds || []).join(', ');
                     
                     document.querySelector('#EnableForYou').checked = config.EnableForYou !== false;
@@ -387,6 +405,12 @@
                     config.NewMovieBoostDays = parseInt(document.querySelector('#NewMovieBoostDays').value, 10) || 30;
                     config.NewMovieBoostWeight = parseFloat(document.querySelector('#NewMovieBoostWeight').value);
                     if (isNaN(config.NewMovieBoostWeight)) config.NewMovieBoostWeight = 0.10;
+                    config.DiversityCapPercent = parseInt(document.querySelector('#DiversityCapPercent').value, 10);
+                    if (isNaN(config.DiversityCapPercent)) config.DiversityCapPercent = 60;
+                    config.DirectorAffinityBonus = parseFloat(document.querySelector('#DirectorAffinityBonus').value);
+                    if (isNaN(config.DirectorAffinityBonus)) config.DirectorAffinityBonus = 0.05;
+                    config.SoftPenaltyStrength = parseFloat(document.querySelector('#SoftPenaltyStrength').value);
+                    if (isNaN(config.SoftPenaltyStrength)) config.SoftPenaltyStrength = 0.50;
                     config.DisabledUserIds = (document.querySelector('#DisabledUserIds').value || '')
                         .split(',')
                         .map(function (s) { return s.trim(); })
