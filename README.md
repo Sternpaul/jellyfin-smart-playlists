@@ -21,7 +21,7 @@ A Jellyfin plugin that solves "what should I watch" for massive libraries. It **
 ### The playlists you get (per user, private)
 | Playlist | What it does |
 |---|---|
-| **For You** | Top personalized picks. 75% taste-matched + 25% exploration. **Letterboxd ratings dominate this list when set.** |
+| **For You** | Top personalized picks. 75% taste-matched + 25% exploration (configurable). **Letterboxd ratings are weighted heavily** when set. |
 | **Because You Watched [X]** | Movies similar to what you recently watched (regenerates after each watch). Seeded on your 5 most-recent watches, named after the one the picks are actually about. |
 | **Hidden Gems** | High-acclaim films outside the genres you watch most, with famous blockbusters pushed down (TMDB popularity) so genuinely obscure-acclaimed films surface. Tune with the "Fame Penalty" knob. |
 | **Recently Added** | Unwatched movies, newest first. |
@@ -103,7 +103,7 @@ The full settings tables, technical internals, REST API, cost breakdown, and roa
 Sends each movie's plot to your AI and returns subcategories, moods, themes, narrative style, accessibility, intensity. After classification, playlists run at **zero ongoing API cost**; new movies are classified incrementally.
 
 ### Smart Playlists
-Dynamic, per-user, auto-updating. See the table above. "From Your Watchlist" and "Highly Rated by You" apply the same smart scoring but only from your Letterboxd data.
+Dynamic, per-user, auto-updating. See the table above. "Highly Rated by You" applies the same smart ranking (rating-first, unwatched-first) restricted to your Letterboxd ratings. "From Your Watchlist" is the raw list of your watchlist titles matched to your library, in match order — it is intentionally *not* re-scored, so it reflects your curated list rather than the taste engine.
 
 ### What's Happening (transparency)
 The config page shows, live per user: top taste weights, currently-penalized movies (with cooling time), active novelty boosts, every movie excluded on the last refresh and *why*, taste drift since your oldest snapshot, and recently-surfaced history. Observability only — changes no behavior.
@@ -139,7 +139,7 @@ Project Hail Mary,2026,/film/project-hail-mary/
 ```
 Matching is by title (+ year when available); a CSV without IMDB ids is less precise than the JSON path, so JSON is recommended where you have IMDB ids.
 
-The "From Your Watchlist" playlist is built from the matched items using the same smart scoring as the other playlists.
+The "From Your Watchlist" playlist is the raw list of your watchlist titles matched to your library (in match order), not re-scored by the taste engine — it reflects your curated list.
 
 ### Anti-Bubble Protection
 25% exploration reserve (configurable 10–50%); Diversity Cap (default 60%); dedicated Wild Card; rotating discovery.
