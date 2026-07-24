@@ -29,7 +29,6 @@ jobs:
         zip -r Jellyfin.Plugin.AIRecommender.zip Jellyfin.Plugin.AIRecommender.dll
 
     - name: Extract changelog section for this version
-      id: changelog
       run: |
         python3 - <<'PY'
         import os
@@ -52,15 +51,17 @@ jobs:
             elif capturing:
                 out.append(line)
         section = '\n'.join(out).strip() or f"Release {version}"
-        with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as f:
-            f.write("body<<EOF\n")
+        # Debug: confirm what we extracted.
+        print("--- extracted section for %s ---" % version)
+        print(section)
+        print("--- end ---")
+        with open('changelog_section.md', 'w', encoding='utf-8') as f:
             f.write(section + "\n")
-            f.write("EOF\n")
         PY
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
       with:
         files: bin/Release/net9.0/Jellyfin.Plugin.AIRecommender.zip
-        body: ${{ steps.changelog.outputs.body }}
+        body_path: changelog_section.md
         # generate_release_notes left OFF so the curated changelog is shown verbatim.
