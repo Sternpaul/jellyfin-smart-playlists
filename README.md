@@ -199,7 +199,19 @@ Every N hours (configurable, default: 12):
 - .NET 9.0 SDK (for building from source)
 - An API key from one of: [Google AI Studio](https://aistudio.google.com/) (free tier available), [OpenRouter](https://openrouter.ai/), [OpenAI](https://platform.openai.com/), or [Anthropic](https://console.anthropic.com/)
 
-### Install from Release
+### Method 1 — Self-hosted plugin repository (recommended, auto-updates)
+
+Add the plugin's manifest as a custom repository so Jellyfin shows it in the catalog with proper developer info and one-click updates (no more sideloading):
+
+1. In Jellyfin: **Dashboard → Plugins → Repositories → Add**
+2. URL: `https://raw.githubusercontent.com/Sternpaul/jellyfin-smart-playlists/main/repo/manifest.json`
+3. Save, then go to **Catalog** (or restart Jellyfin). "AI Recommender" appears under Available with Developer **Sternpaul** and category **AI Recommender**.
+4. Install it. Future releases show an **Update** button automatically — each tagged version is added to the manifest by the build workflow.
+5. Open **Dashboard → Plugins → AI Recommender**, pick your AI provider, enter your API key, and click **"Classify Library"** (runs once; takes a few minutes for large libraries). Playlists generate automatically after classification.
+
+> The plugin's identity is the fixed GUID `3D3D8BE7-67AB-4F65-9F31-3EAE8764BBA3`. `targetAbi` is `10.11.11.0` (Jellyfin 10.11.x). If you move to a different Jellyfin major version, bump the ABI in `repo/manifest.json` and the `Jellyfin.Model` package to match.
+
+### Method 2 — Manual install (sideload the DLL)
 
 1. Download the latest `.dll` from [Releases](../../releases)
 2. Place it in your Jellyfin plugin directory:
