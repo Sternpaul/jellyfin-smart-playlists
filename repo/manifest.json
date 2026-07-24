@@ -1,0 +1,20 @@
+[
+  {
+    "guid": "3D3D8BE7-67AB-4F65-9F31-3EAE8764BBA3",
+    "name": "AI Recommender",
+    "description": "AI-powered smart playlists and recommendations for Jellyfin (For You, Because You Watched, Hidden Gems, Discover, Wild Card, per-user Letterboxd watchlist). Learns from what you watch.",
+    "overview": "Builds real similarity-ranked playlists that learn from your watch history. Config-page transparency panel shows exactly why each movie is surfaced or excluded. Self-hosted plugin repository.",
+    "owner": "Sternpaul",
+    "category": "AI Recommender",
+    "versions": [
+      {
+        "version": "1.5.7.0",
+        "changelog": "Warning-clean build (0 warnings). XML doc generation off; nullable warnings fixed. No behavior change.",
+        "targetAbi": "10.11.11.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.7/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "",
+        "timestamp": "2026-07-24T00:00:00Z"
+      }
+    ]
+  }
+]

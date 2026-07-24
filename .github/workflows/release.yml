@@ -69,3 +69,64 @@ jobs:
         files: bin/Release/net9.0/Jellyfin.Plugin.AIRecommender.zip
         body_path: changelog_section.md
         # generate_release_notes left OFF so the curated changelog (body_path) is used verbatim.
+
+    - name: Update plugin manifest (self-hosted repo)
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        set -euo pipefail
+        version="${{ github.ref_name }}"
+        ver_no_prefix="${version#v}"
+        zip_path="bin/Release/net9.0/Jellyfin.Plugin.AIRecommender.zip"
+        checksum=$(sha256sum "$zip_path" | awk '{print $1}')
+        timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        source_url="https://github.com/${{ github.repository }}/releases/download/${version}/Jellyfin.Plugin.AIRecommender.zip"
+        changelog=$(python3 - <<'PY'
+        try:
+            txt = open('changelog_section.md', encoding='utf-8').read().strip()
+        except FileNotFoundError:
+            txt = ""
+        # Drop the leading "## vX.Y.Z" header line so the changelog text is clean.
+        lines = txt.splitlines()
+        if lines and lines[0].startswith('## '):
+            lines = lines[1:]
+        print('\n'.join(lines).strip())
+        PY
+        )
+
+        python3 - <<PY
+        import json, os
+        manifest_path = "repo/manifest.json"
+        with open(manifest_path, encoding="utf-8") as f:
+            manifest = json.load(f)
+        GUID = "3D3D8BE7-67AB-4F65-9F31-3EAE8764BBA3"
+        plugin = next((p for p in manifest if p.get("guid") == GUID), None)
+        if plugin is None:
+            raise SystemExit("Plugin GUID not found in manifest.json")
+        new_entry = {
+            "version": os.environ["ver_no_prefix"],
+            "changelog": os.environ["changelog"],
+            "targetAbi": "10.11.11.0",
+            "sourceUrl": os.environ["source_url"],
+            "checksum": os.environ["checksum"],
+            "timestamp": os.environ["timestamp"],
+        }
+        # Replace if version already exists, else prepend.
+        versions = plugin.setdefault("versions", [])
+        for i, v in enumerate(versions):
+            if v.get("version") == os.environ["ver_no_prefix"]:
+                versions[i] = new_entry
+                break
+        else:
+            versions.insert(0, new_entry)
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        print("Updated manifest with version", os.environ["ver_no_prefix"])
+        PY
+
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add repo/manifest.json
+        git commit -m "repo: add ${version} to manifest" || echo "no manifest change"
+        git push origin HEAD:main
