@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.5.22.0",
+        "changelog": "- **README accuracy pass.** Audited every playlist description against the actual generator code. No behavioral change — pure docs. Fixed two false claims about \"From Your Watchlist\" (it is the raw matched watchlist in match order, *not* re-scored by the taste engine; only \"Highly Rated by You\" uses smart ranking). Also softened \"Letterboxd ratings dominate\" → \"weighted heavily\" on For You to match the scoring math. Verified all other rows (Recently Added, Subcategory For You, Discover, Wild Card, Highly Rated by You, Because You Watched) are accurate.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.22/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "cf8b4e8dba7a824cdb7bf8e01ef3c75d",
+        "timestamp": "2026-07-24T21:08:49Z"
+      },
+      {
         "version": "1.5.21.0",
         "changelog": "- **Made \"Hidden Gems\" genuinely hidden.** Previously it only required high acclaim + a subcategory you don't watch much — so famous films (Seven Samurai, Black Panther, 12 Angry Men) qualified as long as they sat in an unfamili使用的 subcategory. Now it fetches each movie's **TMDB popularity** (reused from the existing keyword enrichment, no extra API hit) and applies a log-scaled **fame penalty** so blockbusters sink and obscure-acclaimed films rise to the top 15. Added a `Fame Penalty` config knob (default 0.15; 0 restores the old behavior). Penalty is skipped when popularity is unknown (no TMDB key) so it degrades safely. Existing libraries are backfilled with popularity on the next refresh.",
         "targetAbi": "10.11.0.0",
