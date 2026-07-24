@@ -204,12 +204,12 @@ Every N hours (configurable, default: 12):
 Add the plugin's manifest as a custom repository so Jellyfin shows it in the catalog with proper developer info and one-click updates (no more sideloading):
 
 1. In Jellyfin: **Dashboard → Plugins → Repositories → Add**
-2. URL: `https://raw.githubusercontent.com/Sternpaul/jellyfin-smart-playlists/main/repo/manifest.json`
+2. URL: `https://sternpaul.github.io/jellyfin-smart-playlists/repo/manifest.json`
 3. Save, then go to **Catalog** (or restart Jellyfin). "AI Recommender" appears under Available with Developer **Sternpaul** and category **AI Recommender**.
 4. Install it. Future releases show an **Update** button automatically — each tagged version is added to the manifest by the build workflow.
 5. Open **Dashboard → Plugins → AI Recommender**, pick your AI provider, enter your API key, and click **"Classify Library"** (runs once; takes a few minutes for large libraries). Playlists generate automatically after classification.
 
-> The plugin's identity is the fixed GUID `3D3D8BE7-67AB-4F65-9F31-3EAE8764BBA3`. `targetAbi` is `10.11.11.0` (Jellyfin 10.11.x). If you move to a different Jellyfin major version, bump the ABI in `repo/manifest.json` and the `Jellyfin.Model` package to match.
+> The plugin's identity is the fixed GUID `3D3D8BE7-67AB-4F65-9F31-3EAE8764BBA3`. `targetAbi` is `10.11.0.0` (the minimum 10.11 ABI — Jellyfin silently drops a plugin pinned to the exact server build). If you move to a different Jellyfin major version, bump the ABI in `repo/manifest.json` and the `Jellyfin.Model` package to match.
 
 ### Method 2 — Manual install (sideload the DLL)
 
