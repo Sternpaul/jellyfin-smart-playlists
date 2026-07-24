@@ -39,6 +39,14 @@ namespace Jellyfin.Plugin.AIRecommender.Configuration
         public int TasteDecayHalfLifeDays { get; set; } = 120; // days; exponential decay of older watches in the taste profile
         public int ReviewNudgingWeight { get; set; } = 0; // percentage, 0-15
 
+        // Dynamic Rating / Learning (v1.3.0) — all SMALL nudges, fully configurable.
+        public int AffinityDecayHalfLifeDays { get; set; } = 28;   // days; half-life for affinity/penalty decay (lazy, at read)
+        public double PunishmentPenalty { get; set; } = -0.30;        // affinity drop for siblings of a watched movie
+        public double RewardBoost { get; set; } = 0.10;            // affinity rise for movies similar to a watched movie
+        public double AffinityRankWeight { get; set; } = 0.15;     // max contribution of affinity to a 0..1 ranking score
+        public int NewMovieBoostDays { get; set; } = 30;           // window (days) a fresh movie gets the recency nudge
+        public double NewMovieBoostWeight { get; set; } = 0.10;     // size of the recency nudge (capped by AffinityRankWeight)
+
         // User Exclusions
         // User GUIDs (as strings) for whom playlist generation is skipped entirely.
         public List<string> DisabledUserIds { get; set; } = new();

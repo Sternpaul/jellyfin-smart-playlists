@@ -14,6 +14,7 @@ namespace Jellyfin.Plugin.AIRecommender.Data
 
         public DbSet<MovieMetadata> Movies { get; set; }
         public DbSet<UserWatchlistConfig> UserWatchlists { get; set; }
+        public DbSet<MovieAffinity> Affinities { get; set; }
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
@@ -27,6 +28,9 @@ namespace Jellyfin.Plugin.AIRecommender.Data
 
             modelBuilder.Entity<UserWatchlistConfig>()
                 .HasKey(u => u.UserId);
+
+            modelBuilder.Entity<MovieAffinity>()
+                .HasKey(a => new { a.UserId, a.ItemId });
         }
     }
 }

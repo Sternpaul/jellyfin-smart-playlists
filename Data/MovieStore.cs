@@ -80,5 +80,42 @@ namespace Jellyfin.Plugin.AIRecommender.Data
             }
             await db.SaveChangesAsync(cancellationToken);
         }
+
+        // ---- MovieAffinity (dynamic per-user, per-movie rating) ----
+
+        public async Task<Dictionary<Guid, MovieAffinity>> GetAffinitiesAsync(Guid userId, CancellationToken cancellationToken = default)
+        {
+            using var db = GetContext();
+            var rows = await db.Affinities
+                .Where(a => a.UserId == userId.ToString())
+                .ToListAsync(cancellationToken);
+
+            var result = new Dictionary<Guid, MovieAffinity>();
+            foreach (var r in rows)
+                if (Guid.TryParse(r.ItemId, out var gid))
+                    result[gid] = r;
+            return result;
+        }
+
+        public async Task UpsertAffinitiesAsync(IEnumerable<MovieAffinity> rows, CancellationToken cancellationToken = default)
+        {
+            using var db = GetContext();
+            foreach (var row in rows)
+            {
+                var existing = await db.Affinities
+                    .FindAsync(new object[] { row.UserId, row.ItemId }, cancellationToken);
+                if (existing == null)
+                {
+                    db.Affinities.Add(row);
+                }
+                else
+                {
+                    existing.Affinity = row.Affinity;
+                    existing.PenaltyUntil = row.PenaltyUntil;
+                    existing.LastUpdated = row.LastUpdated;
+                }
+            }
+            await db.SaveChangesAsync(cancellationToken);
+        }
     }
 }

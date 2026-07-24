@@ -87,6 +87,38 @@
                         <div class="fieldDescription">How quickly older watches lose influence on your taste profile. A movie watched this many days ago counts half as much as one watched today. Higher = slower change (more stable taste). Default 120 (gentle).</div>
                     </div>
                     
+                    <div class="sectionTitleContainer"><h2 class="sectionTitle">⚙️ Dynamic Rating / Learning</h2></div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="AffinityDecayHalfLifeDays">Affinity Decay Half-Life (days):</label>
+                        <input type="number" id="AffinityDecayHalfLifeDays" name="AffinityDecayHalfLifeDays" is="emby-input" min="1" max="365" />
+                        <div class="fieldDescription">How fast learned movie ratings (and penalties) fade. Default: 28.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="PunishmentPenalty">Rejection Penalty:</label>
+                        <input type="number" id="PunishmentPenalty" name="PunishmentPenalty" is="emby-input" step="0.05" min="-1" max="0" />
+                        <div class="fieldDescription">Affinity drop for other movies in a playlist you picked from (cooling period). Default: -0.30.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="RewardBoost">Similar-Movie Reward:</label>
+                        <input type="number" id="RewardBoost" name="RewardBoost" is="emby-input" step="0.05" min="0" max="1" />
+                        <div class="fieldDescription">Affinity rise for movies similar to one you watched. Default: 0.10.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="AffinityRankWeight">Affinity Rank Weight:</label>
+                        <input type="number" id="AffinityRankWeight" name="AffinityRankWeight" is="emby-input" step="0.05" min="0" max="1" />
+                        <div class="fieldDescription">Max contribution of learned affinity to ranking (keeps it a small nudge). Default: 0.15.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="NewMovieBoostDays">New-Movie Boost Window (days):</label>
+                        <input type="number" id="NewMovieBoostDays" name="NewMovieBoostDays" is="emby-input" min="0" max="365" />
+                        <div class="fieldDescription">How long a freshly-added movie gets a recency nudge in taste playlists. Default: 30.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="NewMovieBoostWeight">New-Movie Boost Weight:</label>
+                        <input type="number" id="NewMovieBoostWeight" name="NewMovieBoostWeight" is="emby-input" step="0.05" min="0" max="1" />
+                        <div class="fieldDescription">Size of the new-movie recency nudge (capped by Affinity Rank Weight). Default: 0.10.</div>
+                    </div>
+
                     <div class="sectionTitleContainer"><h2 class="sectionTitle">✅ Enabled Playlists</h2></div>
                     
                     <label class="checkboxContainer">
@@ -209,6 +241,12 @@
                     document.querySelector('#DiversityWeight').value = config.DiversityWeight || 25;
                     document.querySelector('#ReviewNudgingWeight').value = config.ReviewNudgingWeight || 0;
                     document.querySelector('#TasteDecayHalfLifeDays').value = config.TasteDecayHalfLifeDays || 120;
+                    document.querySelector('#AffinityDecayHalfLifeDays').value = config.AffinityDecayHalfLifeDays || 28;
+                    document.querySelector('#PunishmentPenalty').value = (config.PunishmentPenalty !== undefined && config.PunishmentPenalty !== null) ? config.PunishmentPenalty : -0.30;
+                    document.querySelector('#RewardBoost').value = (config.RewardBoost !== undefined && config.RewardBoost !== null) ? config.RewardBoost : 0.10;
+                    document.querySelector('#AffinityRankWeight').value = (config.AffinityRankWeight !== undefined && config.AffinityRankWeight !== null) ? config.AffinityRankWeight : 0.15;
+                    document.querySelector('#NewMovieBoostDays').value = config.NewMovieBoostDays || 30;
+                    document.querySelector('#NewMovieBoostWeight').value = (config.NewMovieBoostWeight !== undefined && config.NewMovieBoostWeight !== null) ? config.NewMovieBoostWeight : 0.10;
                     document.querySelector('#DisabledUserIds').value = (config.DisabledUserIds || []).join(', ');
                     
                     document.querySelector('#EnableForYou').checked = config.EnableForYou !== false;
@@ -339,6 +377,16 @@
                     config.DiversityWeight = parseInt(document.querySelector('#DiversityWeight').value, 10);
                     config.ReviewNudgingWeight = parseInt(document.querySelector('#ReviewNudgingWeight').value, 10);
                     config.TasteDecayHalfLifeDays = parseInt(document.querySelector('#TasteDecayHalfLifeDays').value, 10) || 120;
+                    config.AffinityDecayHalfLifeDays = parseInt(document.querySelector('#AffinityDecayHalfLifeDays').value, 10) || 28;
+                    config.PunishmentPenalty = parseFloat(document.querySelector('#PunishmentPenalty').value);
+                    if (isNaN(config.PunishmentPenalty)) config.PunishmentPenalty = -0.30;
+                    config.RewardBoost = parseFloat(document.querySelector('#RewardBoost').value);
+                    if (isNaN(config.RewardBoost)) config.RewardBoost = 0.10;
+                    config.AffinityRankWeight = parseFloat(document.querySelector('#AffinityRankWeight').value);
+                    if (isNaN(config.AffinityRankWeight)) config.AffinityRankWeight = 0.15;
+                    config.NewMovieBoostDays = parseInt(document.querySelector('#NewMovieBoostDays').value, 10) || 30;
+                    config.NewMovieBoostWeight = parseFloat(document.querySelector('#NewMovieBoostWeight').value);
+                    if (isNaN(config.NewMovieBoostWeight)) config.NewMovieBoostWeight = 0.10;
                     config.DisabledUserIds = (document.querySelector('#DisabledUserIds').value || '')
                         .split(',')
                         .map(function (s) { return s.trim(); })

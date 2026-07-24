@@ -72,13 +72,17 @@ Dynamic, per-user playlists that update automatically. These appear as regular p
 
 All playlists are **private per user** — each user gets their own set, invisible to other users.
 
-### 🚫 The Punishment Mechanic
+### 🚫 The Punishment Mechanic (real, as of v1.3.0)
 
-When you pick a movie from a playlist, **every other movie in that playlist gets banned** from it temporarily. They had their chance — they lost. The playlist rebuilds with entirely fresh picks.
+When you **pick a movie from a playlist**, the plugin learns from that single action:
 
-- After a cooling period (default: 2 refresh cycles), they become eligible again, but with a **lower priority penalty**
-- **Penalty Recovery:** The penalty isn't permanent. It fades out over 4 weeks (time-based decay). Additionally, if you watch a closely related movie, the penalty is instantly reduced because your interest in that niche just spiked.
-- This forces constant freshness — you never see the same stale playlist twice
+- **Sibling penalty:** every *other* movie in the playlist you picked from gets a **rejection penalty** (its learned affinity drops) and is **temporarily banned** from your recommendations for a cooling period (`Cooling Period` × refresh interval). They had their chance — they lost.
+- **Similar-movie reward:** the watched movie's nearest neighbours (by the Similarity Engine) get a small **affinity boost**. If one of them was penalized, the penalty is instantly pulled forward / reduced — your interest in that niche just spiked.
+- **Time decay:** both penalties and rewards fade via an exponential half-life (`Affinity Decay Half-Life`, default 28 days). After the cooling period expires, a movie becomes eligible again — but with its (decayed) lower priority if it was rejected.
+- **Where it's written:** interaction signals are written **only when you watch a movie** (off another playlist). Playlist refreshes *read* the learned ratings; they don't write interaction signals. This is what keeps the system honest — it learns from your choices, not from its own rotations.
+- All knobs are configurable and default to **small nudges** so learning never overrides strong taste-matching.
+
+This forces constant freshness — you never see the same stale playlist twice, and the system reacts to what you actually choose.
 
 ### 🌍 Anti-Bubble Protection
 
@@ -266,6 +270,18 @@ Each Jellyfin user can configure their own Letterboxd integration via the plugin
 | **Watchlist JSON URL** | *(empty)* | URL to a JSON watchlist file (Radarr-compatible format) |
 | **Watchlist CSV** | *(empty)* | Upload a Letterboxd CSV export instead |
 | **Enable Watchlist Playlist** | Off | Generate the "From Your Watchlist" playlist |
+
+### 🧠 Dynamic Rating / Learning (v1.3.0)
+| Setting | Default | Description |
+|---|---|---|
+| **Affinity Decay Half-Life** | 28 days | How fast learned movie ratings (and penalties) fade. |
+| **Rejection Penalty** | -0.30 | Affinity drop for other movies in a playlist you picked from (cooling period). |
+| **Similar-Movie Reward** | 0.10 | Affinity rise for movies similar to one you watched. |
+| **Affinity Rank Weight** | 0.15 | Max contribution of learned affinity to ranking (keeps it a small nudge). |
+| **New-Movie Boost Window** | 30 days | How long a freshly-added movie gets a recency nudge in taste playlists. |
+| **New-Movie Boost Weight** | 0.10 | Size of the new-movie recency nudge (capped by Affinity Rank Weight). |
+
+The plugin keeps a per-(user, movie) learned rating ("affinity") in the SQLite DB. It is updated **only when you watch a movie** (penalty to siblings + reward to similar titles) and read (with lazy exponential time-decay) on every refresh to gently nudge ranking. Newly-added movies also get a short recency boost so they surface beyond "Recently Added". Every knob is configurable and defaults to a small nudge.
 
 ### Provider-Specific Model IDs
 

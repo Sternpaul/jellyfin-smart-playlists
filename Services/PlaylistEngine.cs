@@ -61,18 +61,113 @@ namespace Jellyfin.Plugin.AIRecommender.Services
 
         private async Task HandlePunishmentAndRebuildAsync(Guid userId, Guid watchedMovieId, CancellationToken cancellationToken)
         {
-            _logger.LogInformation("Applying punishment for UserId {UserId}, watched MovieId {MovieId}", userId, watchedMovieId);
-            
-            // 1. Identify which playlists this movie was in.
-            // 2. Add all OTHER movies in those playlists to the PunishmentRecord with _config.CoolingPeriodCycles.
-            // 3. Rebuild those specific playlists with fresh content.
-            
-            // For MVP: Since watched movies are naturally filtered out by GetUnwatchedClassifiedMoviesAsync(),
-            // a simple playlist refresh will achieve 90% of the value by removing the watched item and rotating the playlist.
-            // A full DB-backed punishment matrix for collateral damage (cooling period for siblings) will be added in a future phase.
-            
+            _logger.LogInformation("Applying dynamic rating update for UserId {UserId}, watched MovieId {MovieId}", userId, watchedMovieId);
+
+            // Load the user's current affinities (or start empty).
+            var affinities = await _movieStore.GetAffinitiesAsync(userId, cancellationToken);
+            var now = DateTime.UtcNow;
+            var penaltyUntilIso = now.AddHours(_config.CoolingPeriodCycles * _config.PlaylistRefreshHours)
+                                      .ToString("o");
+
+            // 1. Find which playlists the watched movie currently lives in (the "source" playlists).
+            var sourcePlaylistMovies = GetMoviesInPlaylistsContaining(userId, watchedMovieId);
+            var changed = new List<MovieAffinity>();
+
+            // 2. PUNISH siblings: every OTHER movie in a source playlist gets a penalty
+            //    (lower affinity) and a temporary ban via PenaltyUntil (cooling period).
+            foreach (var siblingId in sourcePlaylistMovies.Where(id => id != watchedMovieId))
+            {
+                var row = GetOrCreateAffinity(affinities, userId, siblingId);
+                row.Affinity = Clamp(row.Affinity + _config.PunishmentPenalty, -1.0, 1.0);
+                row.PenaltyUntil = penaltyUntilIso;
+                row.LastUpdated = now.ToString("o");
+                changed.Add(row);
+            }
+
+            // 3. REWARD similar movies: the watched movie's nearest neighbours get a small
+            //    boost (and any active penalty is pulled forward / reduced) — implements the
+            //    "watch a related movie -> penalty reduced" behaviour from the README.
+            var allMovies = await _movieStore.GetAllMoviesAsync(cancellationToken);
+            var watchedMovie = allMovies.FirstOrDefault(m => m.ItemId == watchedMovieId);
+            if (watchedMovie != null)
+            {
+                var neighbours = allMovies
+                    .Where(m => m.ItemId != watchedMovieId && m.IsClassified)
+                    .Select(m => new { M = m, Sim = _similarityEngine.CalculateSimilarity(watchedMovie, m) })
+                    .Where(x => x.Sim > 0.0)
+                    .OrderByDescending(x => x.Sim)
+                    .Take(25)
+                    .ToList();
+
+                foreach (var n in neighbours)
+                {
+                    var row = GetOrCreateAffinity(affinities, userId, n.M.ItemId);
+                    row.Affinity = Clamp(row.Affinity + _config.RewardBoost, -1.0, 1.0);
+                    // Reduce an active penalty if present (pull it forward toward now).
+                    if (!string.IsNullOrEmpty(row.PenaltyUntil) &&
+                        DateTime.TryParse(row.PenaltyUntil, out var pu) && pu > now)
+                    {
+                        row.PenaltyUntil = now.AddHours(
+                            Math.Max(0, (pu - now).TotalHours / 2.0)).ToString("o");
+                    }
+                    row.LastUpdated = now.ToString("o");
+                    changed.Add(row);
+                }
+            }
+
+            if (changed.Any())
+                await _movieStore.UpsertAffinitiesAsync(changed, cancellationToken);
+
+            // 4. Rebuild the user's playlists (refresh READS the new affinities).
             await RefreshUserPlaylistsAsync(userId, cancellationToken);
         }
+
+        // Returns the ItemIds of all OTHER movies sharing a playlist with the given movie,
+        // limited to playlists owned by the user.
+        private HashSet<Guid> GetMoviesInPlaylistsContaining(Guid userId, Guid movieId)
+        {
+            var result = new HashSet<Guid>();
+            var playlists = _libraryManager.GetItemList(new InternalItemsQuery
+            {
+                IncludeItemTypes = new[] { Jellyfin.Data.Enums.BaseItemKind.Playlist },
+                IsVirtualItem = false,
+                Recursive = true
+            }).OfType<Playlist>().Where(p => p.OwnerUserId == userId).ToList();
+
+            foreach (var pl in playlists)
+            {
+                // A playlist's children are items whose ParentId is the playlist.
+                var childIds = _libraryManager.GetItemList(new InternalItemsQuery
+                {
+                    ParentId = pl.Id,
+                    IsVirtualItem = false,
+                    Recursive = false
+                }).Select(i => i.Id).ToHashSet();
+
+                if (childIds.Contains(movieId))
+                {
+                    foreach (var id in childIds)
+                        if (id != movieId) result.Add(id);
+                }
+            }
+            return result;
+        }
+
+        private static MovieAffinity GetOrCreateAffinity(Dictionary<Guid, MovieAffinity> dict, Guid userId, Guid itemId)
+        {
+            if (dict.TryGetValue(itemId, out var existing)) return existing;
+            var fresh = new MovieAffinity
+            {
+                UserId = userId.ToString(),
+                ItemId = itemId.ToString(),
+                Affinity = 0.0,
+                PenaltyUntil = null,
+                LastUpdated = DateTime.UtcNow.ToString("o")
+            };
+            dict[itemId] = fresh;
+            return fresh;
+        }
+
 
         public async Task RefreshUserPlaylistsAsync(Guid userId, CancellationToken cancellationToken = default)
         {
@@ -92,10 +187,10 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             _logger.LogInformation("Refreshing playlists for user {UserId}", userId);
             
             var tasteProfile = await _watchHistoryService.GetUserTasteProfileAsync(userId, cancellationToken);
-            var unwatchedMovies = await GetUnwatchedClassifiedMoviesAsync(userId, cancellationToken);
+            var (unwatchedMovies, affinities) = await GetUnwatchedClassifiedMoviesAsync(userId, cancellationToken);
             
             if (_config.EnableForYou)
-                await GenerateForYouPlaylistAsync(userId, tasteProfile, unwatchedMovies, cancellationToken);
+                await GenerateForYouPlaylistAsync(userId, tasteProfile, unwatchedMovies, affinities, cancellationToken);
 
             if (_config.EnableBecauseYouWatched)
                 await GenerateBecauseYouWatchedPlaylistAsync(userId, unwatchedMovies, cancellationToken);
@@ -143,14 +238,15 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             await Task.CompletedTask;
         }
 
-        private async Task GenerateForYouPlaylistAsync(Guid userId, TasteProfile profile, List<MovieMetadata> unwatched, CancellationToken cancellationToken)
+        private async Task GenerateForYouPlaylistAsync(Guid userId, TasteProfile profile, List<MovieMetadata> unwatched, Dictionary<Guid, MovieAffinity> affinities, CancellationToken cancellationToken)
         {
+            var now = DateTime.UtcNow;
             // 75% taste-matched, 25% exploration (from _config.DiversityWeight)
             int totalSize = _config.MaxMoviesPerPlaylist;
             int exploreSize = (int)(totalSize * (_config.DiversityWeight / 100.0));
             int tasteSize = totalSize - exploreSize;
 
-            // Score movies based on taste profile + review nudging.
+            // Score movies based on taste profile + review nudging + dynamic affinity/new-movie nudge.
             // If the user has no watch history yet, the taste profile is empty, so
             // fall back to critical acclaim so "For You" still surfaces quality picks.
             bool hasTaste = profile.SubcategoryPreferences.Any() || profile.MoodPreferences.Any();
@@ -160,6 +256,8 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 Score = (hasTaste ? ScoreMovieAgainstProfile(m, profile) : 0.0)
                         + CalculateReviewNudge(m)
                         + (hasTaste ? 0.0 : m.CriticalAcclaimScore / 10.0)
+                        + Clamp(GetEffectiveAffinity(affinities, m.ItemId) * _config.AffinityRankWeight, -_config.AffinityRankWeight, _config.AffinityRankWeight)
+                        + GetNewMovieBoost(m, now)
             }).OrderByDescending(x => x.Score).ToList();
 
             var tastePicks = scoredMovies.Take(tasteSize).Select(x => x.Movie.ItemId).ToList();
@@ -360,13 +458,58 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             return normalizedAcclaim * maxWeight;
         }
 
-        private async Task<List<MovieMetadata>> GetUnwatchedClassifiedMoviesAsync(Guid userId, CancellationToken cancellationToken)
+        // ---- Dynamic rating helpers (v1.3.0) ----
+
+        private static double Clamp(double v, double min, double max)
+            => v < min ? min : (v > max ? max : v);
+
+        // Effective affinity after lazy time-decay. Never writes — pure read-time computation.
+        private double GetEffectiveAffinity(Dictionary<Guid, MovieAffinity> affinities, Guid itemId)
         {
+            if (!affinities.TryGetValue(itemId, out var row) || row == null) return 0.0;
+            if (row.LastUpdated == null) return row.Affinity;
+            if (!DateTime.TryParse(row.LastUpdated, out var updated)) return row.Affinity;
+            var ageDays = (DateTime.UtcNow - updated).TotalDays;
+            if (ageDays <= 0) return row.Affinity;
+            return row.Affinity * Math.Exp(-ageDays / Math.Max(1.0, _config.AffinityDecayHalfLifeDays));
+        }
+
+        // A movie is excluded from recommendations while its cooling-period ban is active.
+        private bool IsPenalized(Dictionary<Guid, MovieAffinity> affinities, Guid itemId, DateTime now)
+        {
+            if (!affinities.TryGetValue(itemId, out var row) || string.IsNullOrEmpty(row?.PenaltyUntil)) return false;
+            return DateTime.TryParse(row.PenaltyUntil, out var until) && until > now;
+        }
+
+        // Small recency nudge so freshly-added movies surface beyond "Recently Added".
+        private double GetNewMovieBoost(MovieMetadata movie, DateTime now)
+        {
+            if (_config.NewMovieBoostDays <= 0) return 0.0;
+            var ageDays = (now - movie.DateAdded).TotalDays;
+            if (ageDays < 0 || ageDays > _config.NewMovieBoostDays) return 0.0;
+            // Linear falloff across the window, capped by AffinityRankWeight.
+            var factor = 1.0 - (ageDays / _config.NewMovieBoostDays);
+            return Clamp(_config.NewMovieBoostWeight * factor, 0.0, _config.AffinityRankWeight);
+        }
+
+        // Returns unwatched, classified movies EXCLUDING any currently penalized
+        // (cooling-period ban active), plus the user's affinity map for scoring.
+        private async Task<(List<MovieMetadata> Movies, Dictionary<Guid, MovieAffinity> Affinities)>
+            GetUnwatchedClassifiedMoviesAsync(Guid userId, CancellationToken cancellationToken)
+        {
+            var now = DateTime.UtcNow;
+            var affinities = await _movieStore.GetAffinitiesAsync(userId, cancellationToken);
             var watched = await _watchHistoryService.GetWatchedMoviesAsync(userId, cancellationToken);
             var watchedIds = watched.Select(m => m.ItemId).ToHashSet();
-            
+
             var all = await _movieStore.GetAllMoviesAsync(cancellationToken);
-            return all.Where(m => m.IsClassified && !watchedIds.Contains(m.ItemId)).ToList();
+            var result = all
+                .Where(m => m.IsClassified
+                            && !watchedIds.Contains(m.ItemId)
+                            && !IsPenalized(affinities, m.ItemId, now))
+                .ToList();
+
+            return (result, affinities);
         }
 
         private async Task CreateOrUpdateJellyfinPlaylistAsync(Guid userId, string name, List<Guid> itemIds, CancellationToken cancellationToken)
