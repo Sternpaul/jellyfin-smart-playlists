@@ -122,8 +122,9 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             _logger.LogInformation("Finished refreshing playlists for user {UserId}", userId);
         }
 
-        // Deletes only the recommendation playlists this plugin created for a user,
-        // identified by their known name patterns. User-created playlists are left alone.
+        // Deletes ALL playlists owned by a user (complete wipe) before regenerating,
+        // so the user starts from a totally clean slate. User-created playlists are
+        // also removed, as intended for this deployment.
         private async Task DeleteUserRecommendationPlaylistsAsync(Guid userId, CancellationToken cancellationToken)
         {
             var allPlaylists = _libraryManager.GetItemList(new InternalItemsQuery
@@ -133,26 +134,13 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 Recursive = true
             }).OfType<Playlist>().ToList();
 
-            foreach (var playlist in allPlaylists.Where(p => p.OwnerUserId == userId && IsRecommendationPlaylistName(p.Name)))
+            foreach (var playlist in allPlaylists.Where(p => p.OwnerUserId == userId))
             {
-                _logger.LogInformation("Deleting recommendation playlist '{Name}' for disabled user {UserId}.", playlist.Name, userId);
+                _logger.LogInformation("Deleting playlist '{Name}' for user {UserId} (clean slate).", playlist.Name, userId);
                 _libraryManager.DeleteItem(playlist, new MediaBrowser.Controller.Library.DeleteOptions { DeleteFileLocation = true });
             }
 
             await Task.CompletedTask;
-        }
-
-        private static bool IsRecommendationPlaylistName(string name)
-        {
-            if (string.IsNullOrEmpty(name)) return false;
-            return name == "For You"
-                || name.StartsWith("Because You Watched", StringComparison.OrdinalIgnoreCase)
-                || name == "Hidden Gems"
-                || name == "Recently Added"
-                || name == "Discover: Hidden World"
-                || name == "Wild Card"
-                || name == "From Your Watchlist"
-                || name.EndsWith("For You", StringComparison.OrdinalIgnoreCase);
         }
 
         private async Task GenerateForYouPlaylistAsync(Guid userId, TasteProfile profile, List<MovieMetadata> unwatched, CancellationToken cancellationToken)
