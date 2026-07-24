@@ -78,7 +78,7 @@ jobs:
         version="${{ github.ref_name }}"
         ver_no_prefix="${version#v}"
         zip_path="bin/Release/net9.0/Jellyfin.Plugin.AIRecommender.zip"
-        checksum=$(sha256sum "$zip_path" | awk '{print $1}')
+        checksum=$(md5sum "$zip_path" | awk '{print $1}')
         timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
         source_url="https://github.com/${{ github.repository }}/releases/download/${version}/Jellyfin.Plugin.AIRecommender.zip"
         changelog=$(python3 - <<'PY'
