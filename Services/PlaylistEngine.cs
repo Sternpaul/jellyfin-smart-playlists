@@ -511,6 +511,18 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 // Surface movies from those subcats, ranked by acclaim + learned affinity +
                 // new-movie nudge, so they're adjacent to taste, not random.
                 var discovered = DiscoverPicks(unwatched.Where(m => !claimed.Contains(m.ItemId)).ToList(), profile, affinities, 8);
+                if (!discovered.Any())
+                {
+                    // Fallback: nothing in the least-familiar subcats is unwatched, so
+                    // surface the top-acclaim unwatched films instead — Discover must
+                    // always exist (CreateOrUpdateJellyfinPlaylistAsync skips empties).
+                    discovered = unwatched
+                        .Where(m => !claimed.Contains(m.ItemId) && m.IsClassified)
+                        .OrderByDescending(m => m.CriticalAcclaimScore)
+                        .Take(8)
+                        .Select(m => m.ItemId)
+                        .ToList();
+                }
                 if (discovered.Any())
                     await CreateOrUpdateJellyfinPlaylistAsync(userId, "Discover: Hidden World", discovered, cancellationToken);
                 picks.AddRange(discovered);
@@ -576,6 +588,18 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 .Take(10)
                 .Select(x => x.M.ItemId)
                 .ToList();
+
+            if (!wildPicks.Any())
+            {
+                // Fallback: relax to any high-acclaim unwatched film (no subcat match) so
+                // Wild Card always exists when the strict pool is exhausted/claimed.
+                wildPicks = unwatched
+                    .Where(m => !claimed.Contains(m.ItemId) && m.IsClassified && m.CriticalAcclaimScore >= 7)
+                    .OrderByDescending(m => m.CriticalAcclaimScore)
+                    .Take(10)
+                    .Select(m => m.ItemId)
+                    .ToList();
+            }
 
             await CreateOrUpdateJellyfinPlaylistAsync(userId, "Wild Card", wildPicks, cancellationToken);
             return wildPicks;
