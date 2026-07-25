@@ -1,3 +1,13 @@
+# ============================================================================
+# RELEASE WORKFLOW — Tag-Only Trigger
+#
+# This workflow EXCLUSIVELY owns repo/manifest.json. It runs on tag pushes,
+# builds the plugin, creates a GitHub Release, then appends the new version
+# to the manifest and pushes main. See CONTRIBUTING.md for the full contract.
+#
+# DO NOT edit repo/manifest.json manually or push main concurrently with a
+# tag push — the workflow's git push will fail as non-fast-forward.
+# ============================================================================
 name: Build and Release
 
 on:
@@ -152,11 +162,10 @@ jobs:
           exit 0
         fi
         git commit -m "repo: add ${version} to manifest"
-        # Contract: this job is the ONLY writer of `main` for repo/manifest.json.
-        # Releases are cut by pushing the TAG only (never `git push origin main` from
-        # local) so there is no concurrent `main` push to race against. We operate on
-        # the live main branch, so a plain fast-forward push suffices (no force, no
-        # lease tricks that fail from a detached HEAD).
+        # Contract: this workflow is the ONLY writer of repo/manifest.json.
+        # See CONTRIBUTING.md for the release flow rules. The retry loop below
+        # handles the case where main was pushed (source consolidation) between
+        # the checkout and this push — it rebases the manifest commit on top.
         for i in 1 2 3 4 5; do
           if git push origin main; then
             echo "manifest pushed on attempt $i"
