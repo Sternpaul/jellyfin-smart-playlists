@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.5.34.0",
+        "changelog": "- **FIXED the root cause of empty playlists (the real one).** `MovieIndexer.IndexLibraryAsync` built a `metadata` object for every library movie but never added it to the `newOrUpdatedMovies` list, so `SaveMoviesAsync` was never called — the full Index logged \"Library indexing complete\" having written 0 rows. The recommender DB stayed empty, so every playlist generation skipped with \"no items.\" Fix: `newOrUpdatedMovies.Add(metadata);` inside the index loop (MovieIndexer.cs). This is the actual bug behind \"0 movies in DB\"; the v1.5.32/v1.5.33 WAL/connection-string work was necessary plumbing but downstream of this. After installing, run Index & Classify Library then Refresh Playlists — the log should show `Indexed 1735 new/updated movies.` and `SaveMoviesAsync committed. DB now has 1735 movie rows.`",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.34/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "be03276f243dba1a7841afcb811665df",
+        "timestamp": "2026-07-25T22:09:22Z"
+      },
+      {
         "version": "1.5.33.0",
         "changelog": "- **CRITICAL FIX for v1.5.32 (plugin failed to start).** v1.5.32 set `Journal Mode=Delete` in the SQLite connection string (`Data Source=...;Journal Mode=Delete`). Microsoft.Data.Sqlite does NOT support journal-mode keywords in the connection string — it throws `System.ArgumentException: Connection string keyword 'journal mode' is not supported` when the connection opens. Because `MovieStore` opens a connection during construction (`EnsureCreated()`), this crashed both scheduled tasks (AutoRefreshPlaylistsTask, LibraryIndexingTask) at Jellyfin startup, so the plugin never worked. Fix: removed the keyword from the connection string (now just `Data Source={path}`). The journal mode is still switched to DELETE the correct way — via `PRAGMA journal_mode=DELETE` + `PRAGMA wal_checkpoint(TRUNCATE)` in `MovieStore.InitializeDatabase()`, which was already present and correct in v1.5.32 but never executed because the bad connection string threw first. (Corrected the v1.5.32 CHANGELOG note that claimed the keyword was valid.) Build verified clean.",
         "targetAbi": "10.11.0.0",
