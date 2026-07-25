@@ -1,0 +1,220 @@
+[
+  {
+    "guid": "3D3D8BE7-67AB-4F65-9F31-3EAE8764BBA3",
+    "name": "AI Recommender",
+    "description": "AI-powered smart playlists and recommendations for Jellyfin (For You, Because You Watched, Hidden Gems, Discover, Wild Card, per-user Letterboxd watchlist). Learns from what you watch.",
+    "overview": "Builds real similarity-ranked playlists that learn from your watch history. Config-page transparency panel shows exactly why each movie is surfaced or excluded. Self-hosted plugin repository (served via GitHub Pages).",
+    "owner": "Sternpaul",
+    "category": "AI Recommender",
+    "versions": [
+      {
+        "version": "1.5.32.0",
+        "changelog": "- **Fixed the root cause of empty playlists on Docker (bind-mount SQLite WAL durability bug).** EF Core's SQLite provider defaults to WAL (Write-Ahead Logging), which writes to `-wal`/`-shm` sidecar files. On Docker bind-mounts these sidecar files can be invisible to new connections, so the Index task would write 1735 movies to the WAL while the Refresh task (opening a fresh connection) read 0 from the base `.db` file. Fix: (1) on startup, `PRAGMA wal_checkpoint(TRUNCATE)` flushes any data stuck in an existing WAL file into the main DB (rescuing rows that would otherwise be lost); (2) `PRAGMA journal_mode=DELETE` switches to a traditional rollback journal so WAL sidecar files are never created again; (3) the connection string now includes `Journal Mode=Delete` so every new EF context opens in DELETE mode. The Jellyfin log now shows `SQLite journal mode set to: delete` at startup, and `SaveMoviesAsync committed. DB now has N movie rows.` after every index write.\n- **Consolidated v1.5.20–v1.5.29 code changes** (these were shipped via tag-only pushes but never landed on main):\n  - v1.5.20: \"Because You Watched\" playlist title now matches the dominant seed (the movie that contributed the most picks), not just the most-recently watched.\n  - v1.5.21: Hidden Gems fame penalty — TMDB popularity pushes blockbusters down so genuinely obscure-acclaimed films rise. New `FamePenaltyWeight` config knob (default 0.15, 0 = off).\n  - v1.5.24: Fixed NULL Popularity crash on upgraded DBs (backfill NULLs to 0).\n  - v1.5.25: Fixed `no such column: EnableRatingsPlaylist` crash; new-movie classify trigger (20s debounced); Generate button feedback.\n  - v1.5.26: Index/classify button reports real results; TMDB enrichment can't abort playlist generation (3-minute timeout, non-cancellable DB save); library-vs-DB count logging.\n  - v1.5.27: Reverted buttons to scheduled tasks (fixes loading-circle/cancel spam); quieted TMDB per-movie logging; fixed classified-but-empty subcategories never re-sent to AI.\n  - v1.5.28: Fixed index crash on duplicate ItemId rows (one-time DB repair + UNIQUE index); orphan pruning for deleted movies; stoppable refresh task.\n  - v1.5.29: Fixed DB ballooning (Jellyfin re-assigns ItemId on re-scan; indexer now deduplicates by ImdbId and syncs the row's ItemId to the current GUID; `SaveMoviesAsync` upserts by ImdbId). Fixed orphan-prune `DbUpdateConcurrencyException` (replaced EF RemoveRange with raw SQL).\n- **Removed diagnostic Warning logs** from v1.5.30/v1.5.31 (DIAG ForYou, DIAG Unwatched). Replaced with a permanent Info-level log: `Playlist input for {UserId}: N movies in DB, M watched, K eligible`.\n- **Added startup diagnostics**: `AI Recommender DB path: ...` logged at plugin load, confirming which database file is in use.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.32/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "6cbd8f5716e6eef47636424f6917bb56",
+        "timestamp": "2026-07-25T21:25:23Z"
+      },
+      {
+        "version": "1.5.31.0",
+        "changelog": "- **Diagnostic build (temporary), continued.** Added `DIAG Unwatched` Warning log to `GetUnwatchedClassifiedMoviesAsync` printing `all` (DB movie count), `watchedIds` (count excluded as watched), `result` (unwatched/eligible count), and `unclassifiedExcluded` (= all − watched − result). This isolates whether the empty generator input is caused by a zero DB read, a watch-state join marking everything played, or an `IsClassified=false` flag. No behavioral change to generation.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.31/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "acfe5266b4d4d4bb792e3be70130137a",
+        "timestamp": "2026-07-25T20:55:04Z"
+      },
+      {
+        "version": "1.5.30.0",
+        "changelog": "- **Diagnostic build (temporary).** Added `DIAG ForYou` Warning logs to `GenerateForYouPlaylistAsync` that print `unwatched.Count`, `claimed.Count`, `scoredMovies.Count`, `hasTaste`, `tasteSize`, `exploreSize`, and `finalPicks.Count` at runtime. Purpose: root-cause why playlists were \"Skipped … because there were no items\" for enabled users even though the debug snapshot reported 1699 eligible, unclassified movies. These log lines will be removed once the cause is confirmed. (No behavioral change to generation.)",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.30/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "ea4f1df31b150981a3320ad3128a7ec4",
+        "timestamp": "2026-07-25T17:33:33Z"
+      },
+      {
+        "version": "1.5.29.0",
+        "changelog": "- **Root cause of the ballooning DB (and stalled playlist generation): Jellyfin re-assigns `ItemId` whenever a movie is re-added/re-scanned, so the indexer treated each re-add as a brand-new movie and inserted another row.** The library of ~1700 films accumulated 3367 rows (same film stored up to 4× under different GUIDs, in mixed casing). Playlist similarity then ran O(n²) over the bloated table, which is what made refresh stall and \"fail with nothing created.\" The previous (v1.5.28) dedup keyed on `ItemId` — but every phantom row already had a *distinct* ItemId, so it deleted nothing.\n  - **v1.5.29 fix:** the one-time startup repair now dedups by **ImdbId** (the real stable identity) — keep one row per ImdbId — plus one row per `(Title, ReleaseYear)` for movies with no ImdbId, then normalizes `ItemId` casing across `Movies`/`Affinities`/`SurfaceHistory`/`UserRatings`. The indexer now reuses the existing row by ImdbId and *syncs the row's ItemId* to Jellyfin's current GUID instead of inserting a duplicate. `SaveMoviesAsync` upserts by ImdbId too. Net effect: re-adding a movie updates its row; the DB can no longer grow on every refresh.\n  - Verified against the live DB: 3367 → **1699 rows** (1686 titles), 0 remaining duplicate ImdbIds. The deduped file was returned to the user.\n- **Fixed the orphan-prune `DbUpdateConcurrencyException`** (the `Orphan pruning failed; continuing` warning). The EF `RemoveRange` path threw against this DB; replaced with raw SQL `DELETE ... WHERE LOWER(ItemId) IN (...)`.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.29/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "51723bbede5d00d58f1858224c523b41",
+        "timestamp": "2026-07-24T22:46:40Z"
+      },
+      {
+        "version": "1.5.28.0",
+        "changelog": "- **Fixed the Index & Classify crash (\"An item with the same key has already been added\").** Your `airecommender.db` had duplicate `ItemId` rows — from a database created before the `PRIMARY KEY (ItemId)` constraint existed (`CREATE TABLE IF NOT EXISTS` is a no-op on pre-existing tables, so upgraded DBs never got the PK, and `SaveMoviesAsync` let duplicates in). `IndexLibraryAsync` blew up at `ToDictionary(ItemId)` in ~0 seconds, so the Classify Library button never ran. Now: (1) startup runs a one-time repair that collapses duplicate rows (keeps the latest) and adds a `UNIQUE` index so dups can't recur; (2) the index no longer throws on dups; (3) `SaveMoviesAsync` is a true upsert so it can't create dups going forward.\n- **Fixed the DB being far larger than your real library (the \"3328 but I don't have that many\" mystery).** The index only ever *added* rows — `OnItemRemoved` was a no-op — so movies you deleted from Jellyfin stayed in the DB as orphans, and TMDB enrichment counted those rows (hence 3328). The index now prunes rows whose `ItemId` isn't in the current Jellyfin library. Next Classify Library run will shrink the DB to match your real movie count.\n- **Made the Refresh task stoppable.** v1.5.26's enrichment timeout CTS was not linked to the task's cancellation token, so clicking Stop couldn't abort the enrichment loop. Now it's linked (with a 3-minute hard cap) and a Stop request is logged instead of hanging.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.28/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "53198f816f4d28261379b86c0280c9d0",
+        "timestamp": "2026-07-24T22:27:55Z"
+      },
+      {
+        "version": "1.5.27.0",
+        "changelog": "- **Reverted the config-page buttons to fire-and-forget scheduled tasks (fixes v1.5.26 regression).** v1.5.26 ran Index/Classify and Playlist Refresh *inside the HTTP request*, which caused a forever loading circle, no way to stop the job, and — when the browser closed the tab — the request's cancellation token aborted every in-flight TMDB HTTP call and EF save at once, producing 2000+ `TaskCanceledException` spam. The buttons now trigger the real Jellyfin scheduled tasks again: progress is visible and the job is stoppable from Dashboard > Scheduled Tasks.\n- **Quieted TMDB enrichment logging.** Per-movie TMDB failures now log at Debug (message only, no stack trace) instead of Warning + full exception, so transient TMDB hiccups stop flooding the log.\n- **Fixed \"classified but never sent to OpenRouter\" (real pre-existing bug).** `MovieClassifier.ProcessClassificationResult` marked every batch movie `IsClassified = true` unconditionally — including movies the AI returned with **empty `Subcategories`**. Those movies got flagged classified with no usable tags and were never re-sent for classification. Now a movie is only marked classified when it actually received non-empty subcategories; movies that came back empty stay unclassified and get re-sent on the next run. (Same fix applied to the text-fallback parse path.)",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.27/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "12b1faa3ecc9a9b9673da06960081155",
+        "timestamp": "2026-07-24T22:15:48Z"
+      },
+      {
+        "version": "1.5.26.0",
+        "changelog": "- **Manual \"Classify Library\" / \"Generate Playlists\" buttons now report real results** (were fire-and-forget \"Task Started\" with no feedback). The index/classify button runs the index + classification synchronously in the request and returns how many movies were processed and how many remain unclassified; the Generate button already awaited and now surfaces per-run success/errors. The config page shows these messages instead of \"Task Started\".\n- **TMDB keyword enrichment can no longer abort playlist generation.** It ran under the request's cancellation token, so cancelling the button (tab close / timeout) or a slow TMDB call cancelled the EF DB write and killed the whole refresh before any playlist was built. Enrichment now uses its own 3-minute timeout, a 10s per-movie budget, and a non-cancellable DB save, and any failure is logged and the refresh continues.\n- **Newly-added movies get a more reliable incremental classify.** The 20s debounced classify after an `ItemAdded` now retries up to 3 times (30s apart) so a transient AI/rate-limit error doesn't leave new movies permanently unclassified.\n- **Index now logs library-vs-DB counts** (\"Library scan: N movies in Jellyfin, M in recommender DB\") so it's visible whether new movies are being detected.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.26/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "b374c9ed2578609f7b3e72bdf2810975",
+        "timestamp": "2026-07-24T21:59:42Z"
+      },
+      {
+        "version": "1.5.25.0",
+        "changelog": "- **Fixed three bugs reported from user logs:**\n  1. **`no such column: u.EnableRatingsPlaylist` crash.** The `UserWatchlists` table DDL predated v1.5.17 and was missing `RatingsJsonUrl` + `EnableRatingsPlaylist`; no migration added them, so every load/save of the per-user watchlist/ratings config threw and dropped the save. Added an idempotent ALTER migration (and the columns to the fresh-install DDL).\n  2. **New movies never got classified.** The incremental `ItemAdded` handler saved metadata but never triggered classification, so freshly-added movies sat unclassified until the next 2am daily task. Added a 20s debounced classification trigger on add.\n  3. **\"Generate Playlists\" button hung on \"running\" with no logs.** It called `_taskManager.Execute` (fire-and-forget) and returned immediately, with no completion signal and swallowed errors. Now it awaits the refresh per user inside the request and returns success/error, so the UI reflects real progress and failures are visible.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.25/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "d190d90ddcab806747ad5ffee00252c0",
+        "timestamp": "2026-07-24T21:48:33Z"
+      },
+      {
+        "version": "1.5.24.0",
+        "changelog": "- **Fixed a crash on upgraded databases (regression from v1.5.21).** `Popularity` is a non-nullable `double` in the model but the column was added as NULL, so every pre-v1.5.21 row had NULL there. `GetAllMoviesAsync` → `GetDouble` then threw \"The data is NULL at ordinal 14\", killing the index/classify task on existing installs. Root cause: `MovieStore.MigrateAddMovieKeywordColumns` added `Popularity` nullable and never backfilled. Fix: backfill NULLs to 0 at migration time, and make the column `REAL NOT NULL DEFAULT 0` for fresh installs.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.24/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "4b6dd8340c9d216ae4d35ef387d7699d",
+        "timestamp": "2026-07-24T21:24:17Z"
+      },
+      {
+        "version": "1.5.23.0",
+        "changelog": "- **Hidden Gems description now reflects the dual \"hidden\" definition.** \"Hidden\" = high acclaim AND outside your watched subcategories AND genuinely obscure (low TMDB popularity). The prior wording framed popularity only as a \"push down\"; it is in fact a defining criterion alongside subcategory-unfamiliarity. Code behavior unchanged (v1.5.21 fame-penalty soft-rank still applies). Docs + code comment only.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.23/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "533abb8ed8a2e77da3d824ef5d08bcc0",
+        "timestamp": "2026-07-24T21:13:33Z"
+      },
+      {
+        "version": "1.5.22.0",
+        "changelog": "- **README accuracy pass.** Audited every playlist description against the actual generator code. No behavioral change — pure docs. Fixed two false claims about \"From Your Watchlist\" (it is the raw matched watchlist in match order, *not* re-scored by the taste engine; only \"Highly Rated by You\" uses smart ranking). Also softened \"Letterboxd ratings dominate\" → \"weighted heavily\" on For You to match the scoring math. Verified all other rows (Recently Added, Subcategory For You, Discover, Wild Card, Highly Rated by You, Because You Watched) are accurate.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.22/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "cf8b4e8dba7a824cdb7bf8e01ef3c75d",
+        "timestamp": "2026-07-24T21:08:49Z"
+      },
+      {
+        "version": "1.5.21.0",
+        "changelog": "- **Made \"Hidden Gems\" genuinely hidden.** Previously it only required high acclaim + a subcategory you don't watch much — so famous films (Seven Samurai, Black Panther, 12 Angry Men) qualified as long as they sat in an unfamili使用的 subcategory. Now it fetches each movie's **TMDB popularity** (reused from the existing keyword enrichment, no extra API hit) and applies a log-scaled **fame penalty** so blockbusters sink and obscure-acclaimed films rise to the top 15. Added a `Fame Penalty` config knob (default 0.15; 0 restores the old behavior). Penalty is skipped when popularity is unknown (no TMDB key) so it degrades safely. Existing libraries are backfilled with popularity on the next refresh.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.21/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "73ed848d3a52affb0764149ec2e04364",
+        "timestamp": "2026-07-24T21:01:20Z"
+      },
+      {
+        "version": "1.5.20.0",
+        "changelog": "- **Fixed \"Because You Watched\" playlist title not matching its content.** The list is seeded on the 5 most-recently-watched movies and ranked by best similarity across all 5, but it was *titled* after only the single most-recent watch — so when a more recent watch contributed little, the playlist got named after a movie it wasn't about (e.g. \"Because You Watched Disclosure Day\" whose picks were all Godfather-style films). The title now reflects the seed that actually *dominates* the final picks (most contributions; ties break to the more recent seed), so the label matches the content. Ranking of picks is unchanged.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.20/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "bad98b7f2ebe1b3cb179b254fe96d05d",
+        "timestamp": "2026-07-24T20:52:40Z"
+      },
+      {
+        "version": "1.5.19.0",
+        "changelog": "- **Fixed the release workflow's manifest auto-update (the part that kept failing to land).** Root cause: the checkout step ran on the release *tag* (detached HEAD), and the manifest push used `git push --force-with-lease origin HEAD:main` from that detached HEAD — the lease can't verify a remote it never fetched, so every retry failed silently and the manifest never updated. It also based the edit on the tag's `repo/manifest.json`, which would have dropped prior versions. The step now checks out `main` first and does a clean fast-forward push. No plugin code change — this is a CI/release fix. The previous 1.5.17/1.5.18 manifest entries were added by hand in the interim.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.19/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "6bd4b1da501a9b90dd546f03129bc86b",
+        "timestamp": "2026-07-24T20:14:20Z"
+      },
+      {
+        "version": "1.5.18.0",
+        "changelog": "Documentation: README now documents the exact JSON/CSV shapes for the ratings feed and watchlist import, plus matching rules. CHANGELOG reworded to be vendor-neutral ahead of external users. (Code unchanged from 1.5.17.)",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.18/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "cd20fa25a428e5849ffc6068e3c7452c",
+        "timestamp": "2026-07-24T22:30:00Z"
+      },
+      {
+        "version": "1.5.17.0",
+        "changelog": "Ratings now load from a JSON export instead of scraping Letterboxd. The per-user config field changed from 'Letterboxd Username' to 'Ratings JSON URL'; matching is exact by IMDB id. ToS-clean and fail-safe.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.17/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "43c80cda6dc28a4bebb17d55350e1242",
+        "timestamp": "2026-07-24T22:00:00Z"
+      },
+      {
+        "version": "1.5.16.0",
+        "changelog": "- **Fixed DI crash on the per-user config page.** `WatchHistoryService` depends on `TasteProfiler`, which was never registered in the dependency-injection container, so opening a user's watchlist/ratings config (and the `UserWatchlistConfig` endpoints) threw `Unable to resolve service for type 'TasteProfiler'`. Registered it. This was introduced in the v1.5.14 keyword work (TasteProfiler gained use by WatchHistoryService). No other unregistered services were found.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.16/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "e2191d11d287a4c379cbe84167cd5a1f",
+        "timestamp": "2026-07-24T19:04:55Z"
+      },
+      {
+        "version": "1.5.15.0",
+        "changelog": "Config page readability overhaul: clear sections, plain-English descriptions with defaults, a 'how the score is built' explainer, and three controls surfaced that were missing from the UI (Letterboxd Ratings Weight, TMDB Keyword Weight, Custom Endpoint). Every weight now shows '0 = off'.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.15/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "b0cee6a36ffbba0b40bba2f8088012fe",
+        "timestamp": "2026-07-24T20:30:00Z"
+      },
+      {
+        "version": "1.5.14.0",
+        "changelog": "- **TMDB keywords as a precision signal.** Curated, objective tags (e.g. `serial killer`, `neo-noir`, `self-fulfilling prophecy`) are fetched per movie (TMDB id resolved from the already-stored IMDB id; cached in `tmdb_keywords_cache.json`) and added as a configurable overlap term in **For You** taste-matching (`KeywordWeight`, default 0.10) and the **Because You Watched** similarity engine. More reliable than the LLM's subjective themes, and fetched at refresh time — no re-classification needed. Add a TMDB v3 API key in the plugin config to enable; blank disables it.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.14/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "df7f8c8e85d24496385995028451ef67",
+        "timestamp": "2026-07-24T18:34:44Z"
+      },
+      {
+        "version": "1.5.13.0",
+        "changelog": "No Letterboxd username = zero ratings weight (stale ratings cleared on refresh). README overhaul: concise overview up top, full config/technical detail moved to a DETAILS section; corrected stale ratings description.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.13/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "423c15fc3200c0ae1451076c68c807e2",
+        "timestamp": "2026-07-24T19:00:00Z"
+      },
+      {
+        "version": "1.5.12.0",
+        "changelog": "- **Letterboxd ratings are now the dominant recommendation signal.** Each user can enter their public Letterboxd username in the per-user config; the plugin scrapes their ratings page (`letterboxd.com/<user>/films/ratings/`), matches films to the library (reusing the lenient matcher), and stores per-user ratings. A 5-star rating contributes up to `RatingWeight` (default 0.50) to the For You score, dwarfing the smaller taste/affinity nudges. Added a \"Highly Rated by You\" playlist (top-rated library films, unwatched preferred). Scraping is fail-safe (errors logged, never break refresh) and cached wholesale per refresh. Note: scraping is ToS-gray (no open ratings API) and may break if Letterboxd changes its page markup.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.12/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "94da6f7e2354f50408485009b4ece787",
+        "timestamp": "2026-07-24T18:00:41Z"
+      },
+      {
+        "version": "1.5.11.0",
+        "changelog": "From Your Watchlist playlist now generates (ImportMethod was never set on save). Lenient watchlist title matching (normalize case/year/punctuation + substring fallback).",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.11/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "95e08c3e60b031648c490d84974bfc78",
+        "timestamp": "2026-07-24T18:00:00Z"
+      },
+      {
+        "version": "1.5.10.0",
+        "changelog": "Discover and Wild Card playlists now always appear (fallback when strict filters empty).",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.10/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "cbe6a95323224414931dd11e3ca1d1f9",
+        "timestamp": "2026-07-24T17:00:00Z"
+      },
+      {
+        "version": "1.5.9.0",
+        "changelog": "User exclusions now take effect immediately on save (purge disabled users' playlists). Debug panel capped at 50 entries each for penalties/boosts so it doesn't fail on large libraries.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.9/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "db1b8a5c91170a3e9ffa994b9e5f07db",
+        "timestamp": "2026-07-24T16:00:00Z"
+      },
+      {
+        "version": "1.5.8.0",
+        "changelog": "Fixed no-such-table:Affinities crash on existing databases.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.8/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "9ab1ed6228b5545fb2e77fb776d0b803",
+        "timestamp": "2026-07-24T13:58:35Z"
+      },
+      {
+        "version": "1.5.7.0",
+        "changelog": "Warning-clean build (0 warnings). XML doc generation off; nullable warnings fixed. No behavior change.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.7/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "555752e4cd8adbbd322d4ef8e1c1efd8",
+        "timestamp": "2026-07-24T00:00:00Z"
+      }
+    ]
+  }
+]
