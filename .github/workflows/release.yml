@@ -1,12 +1,13 @@
 # ============================================================================
 # RELEASE WORKFLOW — Tag-Only Trigger
 #
-# This workflow EXCLUSIVELY owns repo/manifest.json. It runs on tag pushes,
-# builds the plugin, creates a GitHub Release, then appends the new version
-# to the manifest and pushes main. See CONTRIBUTING.md for the full contract.
+# Builds the plugin, creates a GitHub Release, and publishes the Jellyfin
+# plugin manifest to GitHub Pages (gh-pages branch).
 #
-# DO NOT edit repo/manifest.json manually or push main concurrently with a
-# tag push — the workflow's git push will fail as non-fast-forward.
+# The manifest lives on gh-pages, NOT main. This means:
+# - Push main whenever you want (it's just source code)
+# - No race conditions between developer pushes and workflow pushes
+# - The workflow is the sole writer of gh-pages
 # ============================================================================
 name: Build and Release
 
@@ -19,7 +20,7 @@ jobs:
   build-and-release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Needed to create a release
+      contents: write # Needed to create a release and push gh-pages
 
     steps:
     - name: Checkout repository
@@ -78,17 +79,15 @@ jobs:
       with:
         files: bin/Release/net9.0/Jellyfin.Plugin.AIRecommender.zip
         body_path: changelog_section.md
-        # generate_release_notes left OFF so the curated changelog (body_path) is used verbatim.
 
-    - name: Update plugin manifest (self-hosted repo)
+    - name: Update plugin manifest on gh-pages
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         set -euo pipefail
         version="${{ github.ref_name }}"
         ver_no_prefix="${version#v}"
-        # Normalize to a 4-part version (e.g. 1.5.9 -> 1.5.9.0) so it matches the
-        # assembly Version in the .csproj and Jellyfin's version comparison.
+        # Normalize to a 4-part version (e.g. 1.5.9 -> 1.5.9.0)
         case "$ver_no_prefix" in
           *.*.*.*) ;;
           *.*.*) ver_no_prefix="${ver_no_prefix}.0" ;;
@@ -105,7 +104,6 @@ jobs:
             txt = open('changelog_section.md', encoding='utf-8').read().strip()
         except FileNotFoundError:
             txt = ""
-        # Drop the leading "## vX.Y.Z" header line so the changelog text is clean.
         lines = txt.splitlines()
         if lines and lines[0].startswith('## '):
             lines = lines[1:]
@@ -113,12 +111,22 @@ jobs:
         PY
         )
 
-        # The checkout action lands on the *tag* (detached HEAD). We must operate on
-        # main, not the tag, so the manifest edit is based on the live main branch and
-        # the push is a clean fast-forward (no --force, no detached-HEAD lease failure).
-        git fetch origin main
-        git checkout -B main origin/main
+        # Fetch gh-pages (or create it if it doesn't exist yet).
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        if git fetch origin gh-pages 2>/dev/null; then
+          git checkout gh-pages
+        else
+          # First release: create an orphan gh-pages branch with just the manifest.
+          git checkout --orphan gh-pages
+          git rm -rf .
+          mkdir -p repo
+          echo '[]' > repo/manifest.json
+          git add repo/manifest.json
+          git commit -m "Initialize gh-pages with empty manifest"
+        fi
 
+        # Update the manifest JSON.
         python3 - <<PY
         import json, os
         manifest_path = "repo/manifest.json"
@@ -127,7 +135,16 @@ jobs:
         GUID = "3D3D8BE7-67AB-4F65-9F31-3EAE8764BBA3"
         plugin = next((p for p in manifest if p.get("guid") == GUID), None)
         if plugin is None:
-            raise SystemExit("Plugin GUID not found in manifest.json")
+            plugin = {
+                "guid": GUID,
+                "name": "AI Recommender",
+                "description": "AI-powered smart playlists and recommendations for Jellyfin.",
+                "overview": "Builds real similarity-ranked playlists that learn from your watch history.",
+                "owner": "Sternpaul",
+                "category": "AI Recommender",
+                "versions": []
+            }
+            manifest.append(plugin)
         new_entry = {
             "version": os.environ["ver_no_prefix"],
             "changelog": os.environ["changelog"],
@@ -136,7 +153,6 @@ jobs:
             "checksum": os.environ["checksum"],
             "timestamp": os.environ["timestamp"],
         }
-        # Replace if version already exists (re-run safety), else prepend.
         versions = plugin.setdefault("versions", [])
         for i, v in enumerate(versions):
             if v.get("version") == os.environ["ver_no_prefix"]:
@@ -148,31 +164,12 @@ jobs:
             json.dump(manifest, f, indent=2, ensure_ascii=False)
             f.write("\n")
         print("Updated manifest with version", os.environ["ver_no_prefix"])
-        # Sanity: print the top version we are about to publish.
-        with open(manifest_path, encoding="utf-8") as f:
-            top = json.load(f)
-        print("manifest top now:", next(p for p in top if p.get("guid") == GUID)["versions"][0]["version"])
         PY
 
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
         git add repo/manifest.json
         if git diff --cached --quiet; then
           echo "manifest unchanged; nothing to push"
           exit 0
         fi
-        git commit -m "repo: add ${version} to manifest"
-        # Contract: this workflow is the ONLY writer of repo/manifest.json.
-        # See CONTRIBUTING.md for the release flow rules. The retry loop below
-        # handles the case where main was pushed (source consolidation) between
-        # the checkout and this push — it rebases the manifest commit on top.
-        for i in 1 2 3 4 5; do
-          if git push origin main; then
-            echo "manifest pushed on attempt $i"
-            break
-          fi
-          echo "push attempt $i failed; rebasing and retrying"
-          git fetch origin main
-          git rebase origin/main || true
-          sleep 5
-        done
+        git commit -m "manifest: add ${version}"
+        git push origin gh-pages
