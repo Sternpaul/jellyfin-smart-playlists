@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.5.31.0",
+        "changelog": "- **Diagnostic build (temporary), continued.** Added `DIAG Unwatched` Warning log to `GetUnwatchedClassifiedMoviesAsync` printing `all` (DB movie count), `watchedIds` (count excluded as watched), `result` (unwatched/eligible count), and `unclassifiedExcluded` (= all − watched − result). This isolates whether the empty generator input is caused by a zero DB read, a watch-state join marking everything played, or an `IsClassified=false` flag. No behavioral change to generation.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.31/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "acfe5266b4d4d4bb792e3be70130137a",
+        "timestamp": "2026-07-25T20:55:04Z"
+      },
+      {
         "version": "1.5.30.0",
         "changelog": "- **Diagnostic build (temporary).** Added `DIAG ForYou` Warning logs to `GenerateForYouPlaylistAsync` that print `unwatched.Count`, `claimed.Count`, `scoredMovies.Count`, `hasTaste`, `tasteSize`, `exploreSize`, and `finalPicks.Count` at runtime. Purpose: root-cause why playlists were \"Skipped … because there were no items\" for enabled users even though the debug snapshot reported 1699 eligible, unclassified movies. These log lines will be removed once the cause is confirmed. (No behavioral change to generation.)",
         "targetAbi": "10.11.0.0",
