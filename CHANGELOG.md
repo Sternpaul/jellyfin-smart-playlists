@@ -2,6 +2,9 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.5.31
+- **Diagnostic build (temporary), continued.** Added `DIAG Unwatched` Warning log to `GetUnwatchedClassifiedMoviesAsync` printing `all` (DB movie count), `watchedIds` (count excluded as watched), `result` (unwatched/eligible count), and `unclassifiedExcluded` (= all − watched − result). This isolates whether the empty generator input is caused by a zero DB read, a watch-state join marking everything played, or an `IsClassified=false` flag. No behavioral change to generation.
+
 ## v1.5.30
 - **Diagnostic build (temporary).** Added `DIAG ForYou` Warning logs to `GenerateForYouPlaylistAsync` that print `unwatched.Count`, `claimed.Count`, `scoredMovies.Count`, `hasTaste`, `tasteSize`, `exploreSize`, and `finalPicks.Count` at runtime. Purpose: root-cause why playlists were "Skipped … because there were no items" for enabled users even though the debug snapshot reported 1699 eligible, unclassified movies. These log lines will be removed once the cause is confirmed. (No behavioral change to generation.)
 

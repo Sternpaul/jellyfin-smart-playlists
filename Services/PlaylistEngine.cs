@@ -1023,6 +1023,8 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                         if (!existing.ContainsKey(kv.Key)) existing[kv.Key] = kv.Value;
             }
 
+            _logger.LogWarning("DIAG Unwatched: all={ALL} watchedIds={WID} result(unwatched)={RES} unclassifiedExcluded={UC}", all.Count, watchedIds.Count, result.Count, all.Count - watchedIds.Count - result.Count);
+
             return (result, affinities);
         }
 
