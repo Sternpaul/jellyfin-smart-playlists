@@ -2,6 +2,9 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.5.30
+- **Diagnostic build (temporary).** Added `DIAG ForYou` Warning logs to `GenerateForYouPlaylistAsync` that print `unwatched.Count`, `claimed.Count`, `scoredMovies.Count`, `hasTaste`, `tasteSize`, `exploreSize`, and `finalPicks.Count` at runtime. Purpose: root-cause why playlists were "Skipped … because there were no items" for enabled users even though the debug snapshot reported 1699 eligible, unclassified movies. These log lines will be removed once the cause is confirmed. (No behavioral change to generation.)
+
 ## v1.5.29
 - **Root cause of the ballooning DB (and stalled playlist generation): Jellyfin re-assigns `ItemId` whenever a movie is re-added/re-scanned, so the indexer treated each re-add as a brand-new movie and inserted another row.** The library of ~1700 films accumulated 3367 rows (same film stored up to 4× under different GUIDs, in mixed casing). Playlist similarity then ran O(n²) over the bloated table, which is what made refresh stall and "fail with nothing created." The previous (v1.5.28) dedup keyed on `ItemId` — but every phantom row already had a *distinct* ItemId, so it deleted nothing.
   - **v1.5.29 fix:** the one-time startup repair now dedups by **ImdbId** (the real stable identity) — keep one row per ImdbId — plus one row per `(Title, ReleaseYear)` for movies with no ImdbId, then normalizes `ItemId` casing across `Movies`/`Affinities`/`SurfaceHistory`/`UserRatings`. The indexer now reuses the existing row by ImdbId and *syncs the row's ItemId* to Jellyfin's current GUID instead of inserting a duplicate. `SaveMoviesAsync` upserts by ImdbId too. Net effect: re-adding a movie updates its row; the DB can no longer grow on every refresh.
