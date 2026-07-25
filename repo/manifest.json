@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.5.36.0",
+        "changelog": "- **Moved TMDB keyword enrichment into the Index task (per user request).** Keywords are stable library metadata, so they now run during \"Index & Classify Library\" (failure-swallowed, like the classifier) and are NOT fetched during playlist refresh at all. This keeps refresh fast (no TMDB round-trips per user) and matches the design intent: indexing gathers all data. `MovieIndexer` now takes `TmdbKeywordService` and enriches after prune. `EnrichKeywordsOnceAsync` was removed from the refresh path.\n- (v1.5.35 also shipped: fixed `SaveMoviesAsync` key-overwrite crash that broke Index + enrichment, and the 14-min per-user enrichment; those fixes are retained here with enrichment relocated to the index.)",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.36/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "536edac0e8d248af247221bfd5a237be",
+        "timestamp": "2026-07-25T22:51:31Z"
+      },
+      {
         "version": "1.5.35.0",
         "changelog": "- **FIXED Index crash + TMDB enrichment concurrency crash (v1.5.34 regression).** `MovieStore.SaveMoviesAsync` used `CurrentValues.SetValues(movie)`, which tried to overwrite the primary key `ItemId` and threw `InvalidOperationException` / `DbUpdateConcurrencyException`. Now normalizes `ItemId` to lowercase and never modifies the key on update (sets `movie.ItemId = existing.ItemId` before `SetValues`; normalizes on insert). This unblocks \"Index & Classify Library\" and stops the per-user enrichment exceptions.\n- **FIXED 14-minute refresh.** TMDB keyword enrichment was inside `RefreshUserPlaylistsAsync`, so it ran once PER USER (loading all 1699 rows + hitting TMDB each time). Moved it to `EnrichKeywordsOnceAsync`, called once per refresh before the user loop. Refresh now enriches the shared DB a single time.",
         "targetAbi": "10.11.0.0",
