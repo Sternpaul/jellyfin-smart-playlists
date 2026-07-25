@@ -103,6 +103,12 @@ namespace Jellyfin.Plugin.AIRecommender.Services
 
                 // Always sync basic metadata in case it changed in Jellyfin
                 UpdateMetadataFromJellyfinItem(movie, metadata);
+
+                // CRITICAL: actually queue the row for persistence. Without this the
+                // full index builds metadata for every movie and discards it, so
+                // SaveMoviesAsync is never called and the DB stays empty (0 rows) —
+                // which makes every playlist generation skip with "no items".
+                newOrUpdatedMovies.Add(metadata);
             }
 
             if (newOrUpdatedMovies.Any())
