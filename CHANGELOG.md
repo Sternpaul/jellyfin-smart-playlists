@@ -2,6 +2,10 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.5.36
+- **Moved TMDB keyword enrichment into the Index task (per user request).** Keywords are stable library metadata, so they now run during "Index & Classify Library" (failure-swallowed, like the classifier) and are NOT fetched during playlist refresh at all. This keeps refresh fast (no TMDB round-trips per user) and matches the design intent: indexing gathers all data. `MovieIndexer` now takes `TmdbKeywordService` and enriches after prune. `EnrichKeywordsOnceAsync` was removed from the refresh path.
+- (v1.5.35 also shipped: fixed `SaveMoviesAsync` key-overwrite crash that broke Index + enrichment, and the 14-min per-user enrichment; those fixes are retained here with enrichment relocated to the index.)
+
 ## v1.5.35
 - **FIXED Index crash + TMDB enrichment concurrency crash (v1.5.34 regression).** `MovieStore.SaveMoviesAsync` used `CurrentValues.SetValues(movie)`, which tried to overwrite the primary key `ItemId` and threw `InvalidOperationException` / `DbUpdateConcurrencyException`. Now normalizes `ItemId` to lowercase and never modifies the key on update (sets `movie.ItemId = existing.ItemId` before `SetValues`; normalizes on insert). This unblocks "Index & Classify Library" and stops the per-user enrichment exceptions.
 - **FIXED 14-minute refresh.** TMDB keyword enrichment was inside `RefreshUserPlaylistsAsync`, so it ran once PER USER (loading all 1699 rows + hitting TMDB each time). Moved it to `EnrichKeywordsOnceAsync`, called once per refresh before the user loop. Refresh now enriches the shared DB a single time.

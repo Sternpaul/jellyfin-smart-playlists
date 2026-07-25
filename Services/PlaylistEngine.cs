@@ -209,35 +209,6 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             }
         }
 
-        // v1.5.35: TMDB keyword enrichment, run ONCE per refresh (not per user). It writes
-        // to the shared DB, so repeating it for every user just wasted TMDB calls and made
-        // the refresh take ~14 min for 2 users. Failures are swallowed so keyword absence
-        // never breaks playlist generation. The 3-minute cap + per-movie 10s budget prevent
-        // a pathological TMDB stall from hanging the refresh.
-        public async Task EnrichKeywordsOnceAsync(CancellationToken cancellationToken = default)
-        {
-            if (string.IsNullOrWhiteSpace(_config.TmdbApiKey))
-            {
-                _logger.LogInformation("TMDB keyword enrichment skipped: no TMDB API key configured.");
-                return;
-            }
-            try
-            {
-                using var enrichCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                enrichCts.CancelAfter(TimeSpan.FromMinutes(3));
-                var allMovies = await _movieStore.GetAllMoviesAsync(enrichCts.Token);
-                await _tmdbKeywordService.EnrichKeywordsAsync(_config.TmdbApiKey, allMovies, enrichCts.Token);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                _logger.LogInformation("TMDB keyword enrichment cancelled (task stop requested). Continuing to build playlists.");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "TMDB keyword enrichment failed; continuing without keywords. (Playlist generation is unaffected.)");
-            }
-        }
-
         public async Task RefreshUserPlaylistsAsync(Guid userId, CancellationToken cancellationToken = default)
         {
             _currentUserId = userId; // v1.5.3: for read-time decay helpers

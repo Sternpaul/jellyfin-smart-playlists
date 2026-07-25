@@ -20,17 +20,20 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         private readonly MovieStore _movieStore;
         private readonly ILogger<MovieIndexer> _logger;
         private readonly MovieClassifier _movieClassifier;
+        private readonly TmdbKeywordService _tmdbKeywordService;
 
         public MovieIndexer(
             ILibraryManager libraryManager,
             MovieStore movieStore,
             ILogger<MovieIndexer> logger,
-            MovieClassifier movieClassifier)
+            MovieClassifier movieClassifier,
+            TmdbKeywordService tmdbKeywordService)
         {
             _libraryManager = libraryManager;
             _movieStore = movieStore;
             _logger = logger;
             _movieClassifier = movieClassifier;
+            _tmdbKeywordService = tmdbKeywordService;
             
             // Hook into library events for incremental indexing
             _libraryManager.ItemAdded += OnItemAdded;
@@ -131,6 +134,28 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Orphan pruning failed; continuing.");
+            }
+
+            // v1.5.36: TMDB keyword enrichment belongs in the INDEX, not playlist refresh —
+            // keywords are stable metadata we gather while "indexing the library", and
+            // running them per-user at refresh time wasted TMDB calls and made refresh slow.
+            // Failure-swallowed so a TMDB hiccup never aborts the index.
+            try
+            {
+                var apiKey = Plugin.Instance?.Configuration?.TmdbApiKey;
+                if (!string.IsNullOrWhiteSpace(apiKey))
+                {
+                    var allForKeywords = await _movieStore.GetAllMoviesAsync(cancellationToken);
+                    await _tmdbKeywordService.EnrichKeywordsAsync(apiKey, allForKeywords, cancellationToken);
+                }
+                else
+                {
+                    _logger.LogInformation("TMDB keyword enrichment skipped: no TMDB API key configured.");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "TMDB keyword enrichment failed during index; continuing without keywords.");
             }
 
             _logger.LogInformation("Library indexing complete.");

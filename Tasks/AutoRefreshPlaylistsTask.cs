@@ -38,10 +38,6 @@ namespace Jellyfin.Plugin.AIRecommender.Tasks
             int total = users.Length;
             int current = 0;
 
-            // v1.5.35: enrich TMDB keywords ONCE for the whole library before iterating
-            // users (it writes to the shared DB, so per-user repetition was pure waste).
-            await _playlistEngine.EnrichKeywordsOnceAsync(cancellationToken);
-
             foreach (var user in users)
             {
                 if (cancellationToken.IsCancellationRequested) break;
