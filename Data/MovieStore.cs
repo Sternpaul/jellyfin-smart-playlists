@@ -269,7 +269,11 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                 if (!string.IsNullOrWhiteSpace(movie.ImdbId))
                     existing = await db.Movies.FirstOrDefaultAsync(m => m.ImdbId == movie.ImdbId, cancellationToken);
                 if (existing == null)
-                    existing = await db.Movies.FindAsync(new object[] { keyGuid }, cancellationToken);
+                    // Case-insensitive find: stored ItemId may be a different case (e.g. a
+                    // pre-filled/backed-up DB used uppercase GUIDs) and FindAsync is
+                    // case-sensitive in SQLite, which caused "0 rows affected" crashes
+                    // (DbUpdateConcurrencyException) on the otherwise-correct update path.
+                    existing = await db.Movies.FirstOrDefaultAsync(m => m.ItemId.ToString().ToLower() == key, cancellationToken);
                 if (existing == null)
                 {
                     movie.ItemId = keyGuid; // normalize on insert
@@ -277,8 +281,12 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                 }
                 else
                 {
-                    // Update every field EXCEPT the primary key.
-                    movie.ItemId = existing.ItemId;
+                    // Update all fields. Normalize the primary key to lowercase so the DB
+                    // self-heals to consistent casing (pre-fill/backups may have used
+                    // uppercase GUIDs, which broke case-sensitive lookups). MovieMetadata
+                    // has no EF FK dependents, so changing the key in place is safe.
+                    existing.ItemId = keyGuid;
+                    movie.ItemId = keyGuid;
                     db.Entry(existing).CurrentValues.SetValues(movie);
                 }
                 if (!string.IsNullOrWhiteSpace(movie.ImdbId)) seenImdb.Add(movie.ImdbId);
@@ -323,7 +331,7 @@ namespace Jellyfin.Plugin.AIRecommender.Data
         public async Task SaveUserWatchlistConfigAsync(UserWatchlistConfig config, CancellationToken cancellationToken = default)
         {
             using var db = GetContext();
-            var existing = await db.UserWatchlists.FindAsync(new object[] { config.UserId }, cancellationToken);
+            var existing = await db.UserWatchlists.FirstOrDefaultAsync(w => w.UserId == config.UserId, cancellationToken);
             if (existing == null)
             {
                 db.UserWatchlists.Add(config);
@@ -357,7 +365,7 @@ namespace Jellyfin.Plugin.AIRecommender.Data
             foreach (var row in rows)
             {
                 var existing = await db.Affinities
-                    .FindAsync(new object[] { row.UserId, row.ItemId }, cancellationToken);
+                    .FirstOrDefaultAsync(a => a.UserId == row.UserId && a.ItemId == row.ItemId, cancellationToken);
                 if (existing == null)
                 {
                     db.Affinities.Add(row);
@@ -471,10 +479,10 @@ namespace Jellyfin.Plugin.AIRecommender.Data
         public async Task SaveUserRatingsAsync(Guid userId, IEnumerable<UserRating> ratings, CancellationToken cancellationToken = default)
         {
             using var db = GetContext();
-            var uid = userId.ToString();
-            var existing = await db.UserRatings.Where(r => r.UserId == userId).ToListAsync(cancellationToken);
-            if (existing.Any())
-                db.UserRatings.RemoveRange(existing);
+            // Raw delete (bypasses EF change-tracking/concurrency checks) then insert.
+            // The previous RemoveRange + SaveChangesAsync threw DbUpdateConcurrencyException
+            // ("expected 1 row, affected 0") against case-mismatched / already-removed rows.
+            await db.Database.ExecuteSqlRawAsync("DELETE FROM UserRatings WHERE UserId = {0}", userId);
             db.UserRatings.AddRange(ratings);
             await db.SaveChangesAsync(cancellationToken);
         }

@@ -2,6 +2,9 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.5.37
+- **FIXED Index crash + Letterboxd crash (`DbUpdateConcurrencyException: expected 1 row, affected 0`).** Root cause: `SaveMoviesAsync` used `FindAsync(lowercaseKey)` which is case-sensitive in SQLite; our pre-filled/backed-up DB stored uppercase GUID `ItemId`s, so the lookup missed and EF tried to INSERT instead of UPDATE → 0-row concurrency crash. Fixes: (1) case-insensitive `ItemId` lookup in `SaveMoviesAsync`; (2) `SaveUserRatingsAsync` now does a raw `DELETE` then insert (bypasses EF change-tracking, like `DeleteMoviesNotInAsync`); (3) same `FindAsync`→case-insensitive fix in `SaveUserWatchlistConfigAsync` and `UpsertAffinitiesAsync`; (4) updates now self-heal the key to lowercase so the DB converges to consistent casing. This was the actual cause of "Index & Classify Library Failed" and "Failed to process ratings JSON".
+
 ## v1.5.36
 - **Moved TMDB keyword enrichment into the Index task (per user request).** Keywords are stable library metadata, so they now run during "Index & Classify Library" (failure-swallowed, like the classifier) and are NOT fetched during playlist refresh at all. This keeps refresh fast (no TMDB round-trips per user) and matches the design intent: indexing gathers all data. `MovieIndexer` now takes `TmdbKeywordService` and enriches after prune. `EnrichKeywordsOnceAsync` was removed from the refresh path.
 - (v1.5.35 also shipped: fixed `SaveMoviesAsync` key-overwrite crash that broke Index + enrichment, and the 14-min per-user enrichment; those fixes are retained here with enrichment relocated to the index.)
