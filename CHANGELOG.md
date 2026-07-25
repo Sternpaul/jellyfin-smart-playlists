@@ -2,6 +2,10 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.5.35
+- **FIXED Index crash + TMDB enrichment concurrency crash (v1.5.34 regression).** `MovieStore.SaveMoviesAsync` used `CurrentValues.SetValues(movie)`, which tried to overwrite the primary key `ItemId` and threw `InvalidOperationException` / `DbUpdateConcurrencyException`. Now normalizes `ItemId` to lowercase and never modifies the key on update (sets `movie.ItemId = existing.ItemId` before `SetValues`; normalizes on insert). This unblocks "Index & Classify Library" and stops the per-user enrichment exceptions.
+- **FIXED 14-minute refresh.** TMDB keyword enrichment was inside `RefreshUserPlaylistsAsync`, so it ran once PER USER (loading all 1699 rows + hitting TMDB each time). Moved it to `EnrichKeywordsOnceAsync`, called once per refresh before the user loop. Refresh now enriches the shared DB a single time.
+
 ## v1.5.34
 - **FIXED the root cause of empty playlists (the real one).** `MovieIndexer.IndexLibraryAsync` built a `metadata` object for every library movie but never added it to the `newOrUpdatedMovies` list, so `SaveMoviesAsync` was never called — the full Index logged "Library indexing complete" having written 0 rows. The recommender DB stayed empty, so every playlist generation skipped with "no items." Fix: `newOrUpdatedMovies.Add(metadata);` inside the index loop (MovieIndexer.cs). This is the actual bug behind "0 movies in DB"; the v1.5.32/v1.5.33 WAL/connection-string work was necessary plumbing but downstream of this. After installing, run Index & Classify Library then Refresh Playlists — the log should show `Indexed 1735 new/updated movies.` and `SaveMoviesAsync committed. DB now has 1735 movie rows.`
 

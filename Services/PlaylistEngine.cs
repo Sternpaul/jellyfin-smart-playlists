@@ -209,25 +209,23 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             }
         }
 
-        public async Task RefreshUserPlaylistsAsync(Guid userId, CancellationToken cancellationToken = default)
+        // v1.5.35: TMDB keyword enrichment, run ONCE per refresh (not per user). It writes
+        // to the shared DB, so repeating it for every user just wasted TMDB calls and made
+        // the refresh take ~14 min for 2 users. Failures are swallowed so keyword absence
+        // never breaks playlist generation. The 3-minute cap + per-movie 10s budget prevent
+        // a pathological TMDB stall from hanging the refresh.
+        public async Task EnrichKeywordsOnceAsync(CancellationToken cancellationToken = default)
         {
-            _currentUserId = userId; // v1.5.3: for read-time decay helpers
-            // v1.5.14: push the configured keyword weight into the similarity engine
-            // so Because You Watched respects TMDB keyword overlap.
-            _similarityEngine.KeywordWeight = _config.KeywordWeight;
-
-            // v1.5.28: enrich TMDB keywords for the library (refresh-time fetch). Skipped
-            // automatically when no TMDB key is configured. Failures are swallowed so
-            // keyword absence never breaks the rest of the refresh.
-            // IMPORTANT: the enrichment timeout CTS is LINKED to the task's
-            // cancellationToken, so clicking Stop on the scheduled task actually aborts
-            // the enrichment loop (an unlinked CTS made the task unstoppable). A 3-minute
-            // hard cap also ensures a pathological TMDB stall can't hang the refresh forever.
+            if (string.IsNullOrWhiteSpace(_config.TmdbApiKey))
+            {
+                _logger.LogInformation("TMDB keyword enrichment skipped: no TMDB API key configured.");
+                return;
+            }
             try
             {
                 using var enrichCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 enrichCts.CancelAfter(TimeSpan.FromMinutes(3));
-                var allMovies = await _movieStore.GetAllMoviesAsync(cancellationToken);
+                var allMovies = await _movieStore.GetAllMoviesAsync(enrichCts.Token);
                 await _tmdbKeywordService.EnrichKeywordsAsync(_config.TmdbApiKey, allMovies, enrichCts.Token);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -238,6 +236,18 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             {
                 _logger.LogWarning(ex, "TMDB keyword enrichment failed; continuing without keywords. (Playlist generation is unaffected.)");
             }
+        }
+
+        public async Task RefreshUserPlaylistsAsync(Guid userId, CancellationToken cancellationToken = default)
+        {
+            _currentUserId = userId; // v1.5.3: for read-time decay helpers
+            // v1.5.14: push the configured keyword weight into the similarity engine
+            // so Because You Watched respects TMDB keyword overlap.
+            _similarityEngine.KeywordWeight = _config.KeywordWeight;
+
+            // NOTE: TMDB keyword enrichment runs ONCE per refresh (see EnrichKeywordsOnceAsync),
+            // not here, so it isn't repeated for every user. It writes to the shared DB.
+
 
             // Respect per-user exclusions configured by the admin.
             if (_config.DisabledUserIds != null &&

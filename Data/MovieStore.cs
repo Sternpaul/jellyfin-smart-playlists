@@ -257,17 +257,28 @@ namespace Jellyfin.Plugin.AIRecommender.Data
             var seenImdb = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var movie in movies)
             {
+                // Normalize the key to lowercase so lookups match the stored (lowercased)
+                // value, and so we never attempt to change the primary key on update.
+                // EF throws InvalidOperationException / DbUpdateConcurrencyException if a
+                // key property is modified via SetValues, which crashed both the index
+                // and the TMDB keyword enrichment (v1.5.34 regression: SaveMoviesAsync
+                // started being called). See issue fixed in v1.5.35.
+                var key = movie.ItemId.ToString().ToLowerInvariant();
+                var keyGuid = Guid.Parse(key);
                 MovieMetadata? existing = null;
                 if (!string.IsNullOrWhiteSpace(movie.ImdbId))
                     existing = await db.Movies.FirstOrDefaultAsync(m => m.ImdbId == movie.ImdbId, cancellationToken);
                 if (existing == null)
-                    existing = await db.Movies.FindAsync(new object[] { movie.ItemId }, cancellationToken);
+                    existing = await db.Movies.FindAsync(new object[] { keyGuid }, cancellationToken);
                 if (existing == null)
                 {
+                    movie.ItemId = keyGuid; // normalize on insert
                     db.Movies.Add(movie);
                 }
                 else
                 {
+                    // Update every field EXCEPT the primary key.
+                    movie.ItemId = existing.ItemId;
                     db.Entry(existing).CurrentValues.SetValues(movie);
                 }
                 if (!string.IsNullOrWhiteSpace(movie.ImdbId)) seenImdb.Add(movie.ImdbId);
