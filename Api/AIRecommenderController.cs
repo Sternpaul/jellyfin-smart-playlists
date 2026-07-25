@@ -13,6 +13,7 @@ using MediaBrowser.Model.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.AIRecommender.Api
 {
@@ -29,6 +30,7 @@ namespace Jellyfin.Plugin.AIRecommender.Api
         private readonly IUserManager _userManager;
         private readonly MovieStore _movieStore;
         private readonly ITaskManager _taskManager;
+        private readonly ILogger<AIRecommenderController> _logger;
 
         public AIRecommenderController(
             AIProviderFactory aiProviderFactory,
@@ -37,7 +39,8 @@ namespace Jellyfin.Plugin.AIRecommender.Api
             PlaylistEngine playlistEngine,
             IUserManager userManager,
             MovieStore movieStore,
-            ITaskManager taskManager)
+            ITaskManager taskManager,
+            ILogger<AIRecommenderController> logger)
         {
             _aiProviderFactory = aiProviderFactory;
             _letterboxdService = letterboxdService;
@@ -46,6 +49,7 @@ namespace Jellyfin.Plugin.AIRecommender.Api
             _userManager = userManager;
             _movieStore = movieStore;
             _taskManager = taskManager;
+            _logger = logger;
         }
 
         [HttpPost("Chat")]
@@ -122,6 +126,13 @@ namespace Jellyfin.Plugin.AIRecommender.Api
         [HttpPost("ClassifyLibrary")]
         public ActionResult ClassifyLibrary()
         {
+            // Fire-and-forget REAL scheduled task (the correct, stoppable behavior).
+            // Do NOT run the index/classify inside the HTTP request: that ties the work
+            // to the request's CancellationToken, which cancels every in-flight call
+            // (TMDB HTTP, EF save) the moment the browser closes the tab -> a forever
+            // loading circle, no way to stop it, and mass TaskCanceledException spam in
+            // the logs. The scheduled task runs on its own token and shows progress /
+            // can be stopped from Dashboard > Scheduled Tasks.
             var task = _taskManager.ScheduledTasks.FirstOrDefault(t => t.Name == "AI Recommender - Index & Classify Library");
             if (task != null)
             {
@@ -130,10 +141,13 @@ namespace Jellyfin.Plugin.AIRecommender.Api
             }
             return NotFound("Task not found");
         }
-        
+
         [HttpPost("RefreshPlaylists")]
         public ActionResult RefreshAllPlaylists()
         {
+            // Fire-and-forget REAL scheduled task. Same rationale as ClassifyLibrary:
+            // running the refresh inside the HTTP request caused the loading-circle /
+            // unstoppable / mass-cancellation regressions.
             var task = _taskManager.ScheduledTasks.FirstOrDefault(t => t.Name == "AI Recommender - Refresh Playlists");
             if (task != null)
             {

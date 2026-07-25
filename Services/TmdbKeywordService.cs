@@ -57,36 +57,90 @@ namespace Jellyfin.Plugin.AIRecommender.Services
 
             foreach (var movie in movies)
             {
-                if (cancellationToken.IsCancellationRequested) break;
-
-                // Skip movies that already have keywords.
-                if (!string.IsNullOrWhiteSpace(movie.Keywords) && movie.Keywords != "[]") continue;
+                // Per-movie budget so a single slow TMDB call can't stall the whole loop.
+                using var perMovieCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                perMovieCts.CancelAfter(TimeSpan.FromSeconds(10));
+                var ct = perMovieCts.Token;
 
                 int? tmdbId = movie.TmdbId;
                 if (tmdbId == null && !string.IsNullOrWhiteSpace(movie.ImdbId))
                 {
-                    tmdbId = await ResolveTmdbIdFromImdbAsync(apiKey, movie.ImdbId, cancellationToken);
+                    tmdbId = await ResolveTmdbIdFromImdbAsync(apiKey, movie.ImdbId, ct);
                     if (tmdbId != null) movie.TmdbId = tmdbId;
                 }
                 if (tmdbId == null) continue;
 
-                if (!cache.TryGetValue(tmdbId.Value, out var keywords))
+                // Load cached keywords/popularity for this tmdb id (if any).
+                cache.TryGetValue(tmdbId.Value, out var entry);
+                entry ??= new TmdbCacheEntry();
+
+                // Refresh keywords only when missing (popularity refresh is separate below).
+                if (string.IsNullOrWhiteSpace(movie.Keywords) || movie.Keywords == "[]")
                 {
-                    keywords = await FetchKeywordsAsync(apiKey, tmdbId.Value, cancellationToken);
-                    if (keywords != null) { cache[tmdbId.Value] = keywords; await SaveCacheAsync(cache); }
+                    var keywords = entry.Keywords
+                        ?? await FetchKeywordsAsync(apiKey, tmdbId.Value, ct);
+                    entry.Keywords = keywords ?? new List<string>();
+                    movie.Keywords = JsonSerializer.Serialize(entry.Keywords);
+                    movie.LastUpdated = DateTime.UtcNow;
+                    changed.Add(movie);
                 }
 
-                movie.Keywords = JsonSerializer.Serialize(keywords ?? new List<string>());
-                movie.LastUpdated = DateTime.UtcNow;
-                changed.Add(movie);
+                // Backfill popularity whenever the movie (or cache) lacks it, so the
+                // Hidden Gems fame penalty works even for films enriched before v1.5.21.
+                if (movie.Popularity <= 0)
+                {
+                    if (entry.Popularity > 0)
+                    {
+                        movie.Popularity = entry.Popularity;
+                        changed.Add(movie);
+                    }
+                    else
+                    {
+                        var popularity = await FetchPopularityAsync(apiKey, movie.ImdbId, tmdbId.Value, ct);
+                        if (popularity.HasValue && popularity.Value > 0)
+                        {
+                            movie.Popularity = popularity.Value;
+                            entry.Popularity = popularity.Value;
+                            changed.Add(movie);
+                        }
+                    }
+                }
 
-                await Task.Delay(50, cancellationToken); // be polite to TMDB
+                // Persist any cache updates.
+                cache[tmdbId.Value] = entry;
+                await SaveCacheAsync(cache);
+
+                await Task.Delay(50, CancellationToken.None); // be polite to TMDB
             }
 
             if (changed.Any())
-                await _movieStore.SaveMoviesAsync(changed, cancellationToken);
+                await _movieStore.SaveMoviesAsync(changed, CancellationToken.None);
 
             _logger.LogInformation("TMDB keyword enrichment complete: {Count} movies updated.", changed.Count);
+        }
+
+        private async Task<double?> FetchPopularityAsync(string apiKey, string? imdbId, int tmdbId, CancellationToken cancellationToken)
+        {
+            // Prefer the /find response (already fetched implicitly via id resolution):
+            // re-use ResolveTmdbIdFromImdb which returns the hit's popularity. If we only
+            // have the tmdb id, fall back to the movie detail endpoint's popularity.
+            if (!string.IsNullOrWhiteSpace(imdbId))
+            {
+                try
+                {
+                    var url = string.Format(FindUrl, imdbId, apiKey);
+                    var resp = await _httpClient.GetFromJsonAsync<TmdbFindResponse>(url, cancellationToken);
+                    var hit = resp?.movie_results?.FirstOrDefault();
+                    if (hit != null && hit.popularity > 0) return hit.popularity;
+                }
+                catch (Exception)
+                {
+                    // Keyword/popularity enrichment is best-effort; don't spew stack
+                    // traces into the log for a transient TMDB hiccup.
+                    _logger.LogDebug("TMDB find (imdb={Imdb}) popularity lookup failed.", imdbId);
+                }
+            }
+            return null;
         }
 
         private async Task<int?> ResolveTmdbIdFromImdbAsync(string apiKey, string imdbId, CancellationToken cancellationToken)
@@ -98,9 +152,9 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 var hit = resp?.movie_results?.FirstOrDefault();
                 if (hit != null && hit.id > 0) return hit.id;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                _logger.LogWarning(ex, "TMDB find (imdb={Imdb}) failed; skipping keyword resolve.", imdbId);
+                _logger.LogDebug("TMDB find (imdb={Imdb}) failed; skipping keyword resolve.", imdbId);
             }
             return null;
         }
@@ -118,16 +172,16 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     .Select(n => n!.Trim())
                     .ToList();
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                _logger.LogWarning(ex, "TMDB keyword fetch for movie {TmdbId} failed; skipping.", tmdbId);
+                _logger.LogDebug("TMDB keyword fetch for movie {TmdbId} failed; skipping.", tmdbId);
                 return null;
             }
         }
 
         private string CachePath => System.IO.Path.Combine(_cacheDir, "tmdb_keywords_cache.json");
 
-        private async Task<Dictionary<int, List<string>>> LoadCacheAsync()
+        private async Task<Dictionary<int, TmdbCacheEntry>> LoadCacheAsync()
         {
             await _cacheLock.WaitAsync();
             try
@@ -136,15 +190,15 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 {
                     var json = await System.IO.File.ReadAllTextAsync(CachePath);
                     if (!string.IsNullOrWhiteSpace(json))
-                        return JsonSerializer.Deserialize<Dictionary<int, List<string>>>(json) ?? new();
+                        return JsonSerializer.Deserialize<Dictionary<int, TmdbCacheEntry>>(json) ?? new();
                 }
             }
             catch { /* corrupt cache — start fresh */ }
             finally { _cacheLock.Release(); }
-            return new Dictionary<int, List<string>>();
+            return new Dictionary<int, TmdbCacheEntry>();
         }
 
-        private async Task SaveCacheAsync(Dictionary<int, List<string>> cache)
+        private async Task SaveCacheAsync(Dictionary<int, TmdbCacheEntry> cache)
         {
             await _cacheLock.WaitAsync();
             try { await System.IO.File.WriteAllTextAsync(CachePath, JsonSerializer.Serialize(cache)); }
@@ -159,6 +213,14 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         private class TmdbMovieHit
         {
             public int id { get; set; }
+            public double popularity { get; set; }
+        }
+        // v1.5.21: cache entry carries both keywords and the popularity (fame) score so we
+        // persist the signal across refreshes without re-hitting TMDB every time.
+        private class TmdbCacheEntry
+        {
+            public List<string>? Keywords { get; set; }
+            public double Popularity { get; set; } = 0;
         }
         private class TmdbKeywordResponse
         {

@@ -61,6 +61,8 @@ Download the latest `.dll` from [Releases](../../releases), drop it in your plug
 
 Prerequisites: Jellyfin **10.11.x**; an API key from [Google AI Studio](https://aistudio.google.com/), [OpenRouter](https://openrouter.ai/), [OpenAI](https://platform.openai.com/), or [Anthropic](https://console.anthropic.com/).
 
+> **Docker / NAS users (v1.5.32+):** The plugin's SQLite database is stored in your plugin configurations directory. On Docker bind-mounts, the default SQLite WAL (Write-Ahead Logging) mode can cause data to be invisible across connections. Since v1.5.32, the plugin automatically forces DELETE journal mode and checkpoints any existing WAL data at startup — no manual action needed. If you're upgrading from an older version that had empty playlists, simply install v1.5.32, restart Jellyfin, and run **Index & Classify Library** followed by **Refresh Playlists**. Check your Jellyfin log for `SQLite journal mode set to: delete` to confirm the fix is active.
+
 ---
 
 ## Letterboxd ratings (the dominant signal)

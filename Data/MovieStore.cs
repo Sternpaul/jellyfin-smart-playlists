@@ -6,24 +6,53 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AIRecommender.Data.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.AIRecommender.Data
 {
     public class MovieStore
     {
         private readonly string _dbPath;
+        private readonly ILogger<MovieStore> _logger;
 
         public string DataDirectory => Path.GetDirectoryName(_dbPath) ?? ".";
 
-        public MovieStore(MediaBrowser.Common.Configuration.IApplicationPaths applicationPaths)
+        public MovieStore(MediaBrowser.Common.Configuration.IApplicationPaths applicationPaths, ILogger<MovieStore> logger)
         {
+            _logger = logger;
             _dbPath = Path.Combine(applicationPaths.PluginConfigurationsPath, "airecommender.db");
+            _logger.LogInformation("AI Recommender DB path: {DbPath}", _dbPath);
             InitializeDatabase();
         }
 
         private void InitializeDatabase()
         {
             using var db = GetContext();
+
+            // v1.5.32: CRITICAL — flush any data stuck in a WAL sidecar file before
+            // doing anything else. On Docker bind-mounts the -wal/-shm files can be
+            // invisible to new connections, so data written by a prior run (Index task)
+            // might exist only in the WAL and be invisible to the next reader (Refresh
+            // task). Checkpoint writes that data into the main .db file. If the DB was
+            // never in WAL mode (or the WAL is empty), this is a harmless no-op.
+            // Then force DELETE journal mode so WAL is never used going forward.
+            try
+            {
+                db.Database.ExecuteSqlRaw("PRAGMA wal_checkpoint(TRUNCATE)");
+                db.Database.ExecuteSqlRaw("PRAGMA journal_mode=DELETE");
+                // Log the active journal mode so it's visible in the Jellyfin log.
+                using var cmd = db.Database.GetDbConnection().CreateCommand();
+                db.Database.OpenConnection();
+                cmd.CommandText = "PRAGMA journal_mode";
+                var mode = cmd.ExecuteScalar()?.ToString() ?? "unknown";
+                _logger.LogInformation("SQLite journal mode set to: {Mode}", mode);
+            }
+            catch (Exception ex)
+            {
+                // Brand-new DB or already in DELETE mode — safe to ignore.
+                _logger.LogWarning(ex, "WAL checkpoint/journal-mode switch failed (non-fatal).");
+            }
+
             // EnsureCreated only creates tables when the database file is NEW.
             // On a pre-existing DB (e.g. one written by an older plugin version)
             // it does nothing, so any table added since that version was created
@@ -50,6 +79,7 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                     IsClassified INTEGER NOT NULL,
                     DateAdded TEXT NOT NULL,
                     LastUpdated TEXT NOT NULL,
+                    Popularity REAL NOT NULL DEFAULT 0,
                     CONSTRAINT PK_Movies PRIMARY KEY (ItemId)
                 )");
             EnsureTable(db, @"
@@ -59,6 +89,8 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                     JsonUrl TEXT NULL,
                     CsvData TEXT NULL,
                     EnableWatchlistPlaylist INTEGER NOT NULL,
+                    RatingsJsonUrl TEXT NULL,
+                    EnableRatingsPlaylist INTEGER NOT NULL DEFAULT 0,
                     LastSynced TEXT NOT NULL,
                     MatchedItemIds TEXT NULL,
                     CONSTRAINT PK_UserWatchlists PRIMARY KEY (UserId)
@@ -101,18 +133,96 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                     CONSTRAINT PK_UserRatings PRIMARY KEY (UserId, ItemId)
                 )");
             MigrateAddMovieKeywordColumns(db);
+            MigrateAddUserWatchlistColumns(db);
+            // v1.5.28: one-time repair for databases created before the
+            // PRIMARY KEY (ItemId) constraint existed. CREATE TABLE IF NOT EXISTS
+            // is a no-op on pre-existing tables, so upgraded DBs never got the PK
+            // and SaveMoviesAsync (which only uses FindAsync, never a SQL upsert)
+            // let duplicate ItemId rows in. Those dups crash IndexLibraryAsync
+            // (ToDictionary(ItemId)) and cause inconsistent playlist matching.
+            // Collapse to one row per ItemId (keep the latest) and add a UNIQUE
+            // index so duplicates can never accumulate again.
+            DedupMovies(db);
+            EnsureUniqueMovieIndex(db);
         }
 
-        // v1.5.14: add TmdbId + Keywords columns to the Movies table on existing
+        // v1.5.25: add the v1.5.17 ratings columns to the UserWatchlists table on
+        // existing databases. Without this, EF queries/inserts of EnableRatingsPlaylist
+        // (and RatingsJsonUrl) throw "no such column" and the per-user watchlist/ratings
+        // config page can't load or save. ALTER is idempotent (caught if column exists).
+        private static void MigrateAddUserWatchlistColumns(AiDbContext db)
+        {
+            try { db.Database.ExecuteSqlRaw("ALTER TABLE UserWatchlists ADD COLUMN RatingsJsonUrl TEXT NULL"); }
+            catch { /* column already exists — ignore */ }
+            try { db.Database.ExecuteSqlRaw("ALTER TABLE UserWatchlists ADD COLUMN EnableRatingsPlaylist INTEGER NOT NULL DEFAULT 0"); }
+            catch { /* column already exists — ignore */ }
+        }
         // databases (the CREATE TABLE above only affects fresh installs). ALTER is
         // idempotent — adding a column that already exists is a no-op / caught.
         private static void MigrateAddMovieKeywordColumns(AiDbContext db)
         {
-            foreach (var col in new[] { "TmdbId", "Keywords" })
+            foreach (var col in new[] { "TmdbId", "Keywords", "Popularity" })
             {
                 try { db.Database.ExecuteSqlRaw($"ALTER TABLE Movies ADD COLUMN {col} TEXT NULL"); }
                 catch { /* column already exists — ignore */ }
             }
+
+            // v1.5.24: Popularity is a non-nullable double in the model but the column
+            // was historically added as NULL, so every pre-v1.5.21 row has NULL there.
+            // EF cannot materialize a double from NULL (GetDouble throws "data is NULL"),
+            // which crashed the index task on upgraded databases. Backfill NULLs to 0
+            // (the "unknown popularity → no fame penalty" sentinel). Create+drop-safe.
+            try { db.Database.ExecuteSqlRaw("UPDATE Movies SET Popularity = 0 WHERE Popularity IS NULL"); }
+            catch { /* column missing or already populated — ignore */ }
+        }
+
+        // v1.5.29: collapse PHANTOM duplicate rows. The previous (v1.5.28) dedup keyed
+        // on ItemId, but Jellyfin re-assigns ItemId on re-add/rescan, so every phantom
+        // row already had a distinct ItemId and the dedup deleted nothing — the DB kept
+        // ballooning (e.g. 3367 rows for ~1700 movies, the same film stored 4x under
+        // different GUIDs). The real stable identity is ImdbId. Keep one row per ImdbId
+        // (latest), then one row per (Title, ReleaseYear) for rows with no ImdbId.
+        // Finally normalize ItemId casing in Movies + every table that joins on ItemId,
+        // so the same GUID in different casings can't split into two rows or miss joins.
+        // Runs once at startup; safe to repeat (no-ops when already clean).
+        private static void DedupMovies(AiDbContext db)
+        {
+            try
+            {
+                db.Database.ExecuteSqlRaw(@"
+                    DELETE FROM Movies
+                    WHERE ImdbId IS NOT NULL AND ImdbId <> ''
+                      AND rowid NOT IN (
+                        SELECT MAX(rowid) FROM Movies
+                        WHERE ImdbId IS NOT NULL AND ImdbId <> ''
+                        GROUP BY ImdbId
+                      )");
+                db.Database.ExecuteSqlRaw(@"
+                    DELETE FROM Movies
+                    WHERE (ImdbId IS NULL OR ImdbId = '')
+                      AND rowid NOT IN (
+                        SELECT MAX(rowid) FROM Movies
+                        WHERE ImdbId IS NULL OR ImdbId = ''
+                        GROUP BY coalesce(Title,'') || '|' || coalesce(ReleaseYear,'')
+                      )");
+                db.Database.ExecuteSqlRaw("UPDATE Movies SET ItemId = LOWER(ItemId)");
+                db.Database.ExecuteSqlRaw("UPDATE Affinities SET ItemId = LOWER(ItemId)");
+                db.Database.ExecuteSqlRaw("UPDATE SurfaceHistory SET ItemId = LOWER(ItemId)");
+                db.Database.ExecuteSqlRaw("UPDATE UserRatings SET ItemId = LOWER(ItemId)");
+            }
+            catch { /* best-effort; ignore if schema/engine quirk */ }
+        }
+
+        // v1.5.28: guarantee one row per ItemId going forward. The PK constraint in
+        // CREATE TABLE is a no-op on pre-existing tables, so add an explicit UNIQUE
+        // index. Requires duplicates to already be removed (see DedupMovies).
+        private static void EnsureUniqueMovieIndex(AiDbContext db)
+        {
+            try
+            {
+                db.Database.ExecuteSqlRaw("CREATE UNIQUE INDEX IF NOT EXISTS UX_Movies_ItemId ON Movies(ItemId)");
+            }
+            catch { /* index may already exist, or dups remain — both are non-fatal here */ }
         }
 
         private static void EnsureTable(AiDbContext db, string sql)
@@ -139,10 +249,19 @@ namespace Jellyfin.Plugin.AIRecommender.Data
 
         public async Task SaveMoviesAsync(IEnumerable<MovieMetadata> movies, CancellationToken cancellationToken = default)
         {
+            // v1.5.29: dedupe in-memory by ImdbId first (a re-index pass may pass the
+            // same ImdbId twice with a synced ItemId), then upsert each. Upserting by
+            // ItemId alone would miss rows whose ItemId was updated to a new GUID, so we
+            // also find by ImdbId and update that row's ItemId into the new value.
             using var db = GetContext();
+            var seenImdb = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var movie in movies)
             {
-                var existing = await db.Movies.FindAsync(new object[] { movie.ItemId }, cancellationToken);
+                MovieMetadata? existing = null;
+                if (!string.IsNullOrWhiteSpace(movie.ImdbId))
+                    existing = await db.Movies.FirstOrDefaultAsync(m => m.ImdbId == movie.ImdbId, cancellationToken);
+                if (existing == null)
+                    existing = await db.Movies.FindAsync(new object[] { movie.ItemId }, cancellationToken);
                 if (existing == null)
                 {
                     db.Movies.Add(movie);
@@ -151,8 +270,37 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                 {
                     db.Entry(existing).CurrentValues.SetValues(movie);
                 }
+                if (!string.IsNullOrWhiteSpace(movie.ImdbId)) seenImdb.Add(movie.ImdbId);
             }
             await db.SaveChangesAsync(cancellationToken);
+
+            // v1.5.32: confirm persistence — log the actual row count after commit.
+            var totalRows = await db.Movies.CountAsync(cancellationToken);
+            _logger.LogInformation("SaveMoviesAsync committed. DB now has {Total} movie rows.", totalRows);
+        }
+
+        // v1.5.28: prune rows whose ItemId is no longer present in the Jellyfin
+        // library. The index only ever added rows (OnItemRemoved was a no-op), so
+        // deleted movies accumulated as orphans and the DB grew far larger than the
+        // real library — which also inflated TMDB enrichment counts and playlist
+        // matching. Pass the set of current Jellyfin movie ItemIds; anything in the
+        // DB not in that set is deleted.
+        public async Task<int> DeleteMoviesNotInAsync(HashSet<Guid> liveItemIds, CancellationToken cancellationToken = default)
+        {
+            // v1.5.29: raw SQL delete (bypasses EF change-tracking/concurrency checks).
+            // The previous EF RemoveRange threw DbUpdateConcurrencyException against
+            // some DBs; raw SQL is reliable and fast.
+            using var db = GetContext();
+            // Collect the orphan ItemIds first (parameter lists are awkward in EF Core
+            // raw SQL, so do the membership test in SQL via a temp set of NOT IN).
+            var orphans = await db.Movies
+                .Where(m => !liveItemIds.Contains(m.ItemId))
+                .Select(m => m.ItemId)
+                .ToListAsync(cancellationToken);
+            if (orphans.Count == 0) return 0;
+            var idList = string.Join(",", orphans.Select(g => $"'{g.ToString().ToLowerInvariant()}'"));
+            await db.Database.ExecuteSqlRawAsync($"DELETE FROM Movies WHERE LOWER(ItemId) IN ({idList})");
+            return orphans.Count;
         }
 
         public async Task<UserWatchlistConfig?> GetUserWatchlistConfigAsync(Guid userId, CancellationToken cancellationToken = default)

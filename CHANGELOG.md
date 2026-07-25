@@ -2,6 +2,20 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.5.32
+- **Fixed the root cause of empty playlists on Docker (bind-mount SQLite WAL durability bug).** EF Core's SQLite provider defaults to WAL (Write-Ahead Logging), which writes to `-wal`/`-shm` sidecar files. On Docker bind-mounts these sidecar files can be invisible to new connections, so the Index task would write 1735 movies to the WAL while the Refresh task (opening a fresh connection) read 0 from the base `.db` file. Fix: (1) on startup, `PRAGMA wal_checkpoint(TRUNCATE)` flushes any data stuck in an existing WAL file into the main DB (rescuing rows that would otherwise be lost); (2) `PRAGMA journal_mode=DELETE` switches to a traditional rollback journal so WAL sidecar files are never created again; (3) the connection string now includes `Journal Mode=Delete` so every new EF context opens in DELETE mode. The Jellyfin log now shows `SQLite journal mode set to: delete` at startup, and `SaveMoviesAsync committed. DB now has N movie rows.` after every index write.
+- **Consolidated v1.5.20–v1.5.29 code changes** (these were shipped via tag-only pushes but never landed on main):
+  - v1.5.20: "Because You Watched" playlist title now matches the dominant seed (the movie that contributed the most picks), not just the most-recently watched.
+  - v1.5.21: Hidden Gems fame penalty — TMDB popularity pushes blockbusters down so genuinely obscure-acclaimed films rise. New `FamePenaltyWeight` config knob (default 0.15, 0 = off).
+  - v1.5.24: Fixed NULL Popularity crash on upgraded DBs (backfill NULLs to 0).
+  - v1.5.25: Fixed `no such column: EnableRatingsPlaylist` crash; new-movie classify trigger (20s debounced); Generate button feedback.
+  - v1.5.26: Index/classify button reports real results; TMDB enrichment can't abort playlist generation (3-minute timeout, non-cancellable DB save); library-vs-DB count logging.
+  - v1.5.27: Reverted buttons to scheduled tasks (fixes loading-circle/cancel spam); quieted TMDB per-movie logging; fixed classified-but-empty subcategories never re-sent to AI.
+  - v1.5.28: Fixed index crash on duplicate ItemId rows (one-time DB repair + UNIQUE index); orphan pruning for deleted movies; stoppable refresh task.
+  - v1.5.29: Fixed DB ballooning (Jellyfin re-assigns ItemId on re-scan; indexer now deduplicates by ImdbId and syncs the row's ItemId to the current GUID; `SaveMoviesAsync` upserts by ImdbId). Fixed orphan-prune `DbUpdateConcurrencyException` (replaced EF RemoveRange with raw SQL).
+- **Removed diagnostic Warning logs** from v1.5.30/v1.5.31 (DIAG ForYou, DIAG Unwatched). Replaced with a permanent Info-level log: `Playlist input for {UserId}: N movies in DB, M watched, K eligible`.
+- **Added startup diagnostics**: `AI Recommender DB path: ...` logged at plugin load, confirming which database file is in use.
+
 ## v1.5.19
 - **Fixed the release workflow's manifest auto-update (the part that kept failing to land).** Root cause: the checkout step ran on the release *tag* (detached HEAD), and the manifest push used `git push --force-with-lease origin HEAD:main` from that detached HEAD — the lease can't verify a remote it never fetched, so every retry failed silently and the manifest never updated. It also based the edit on the tag's `repo/manifest.json`, which would have dropped prior versions. The step now checks out `main` first and does a clean fast-forward push. No plugin code change — this is a CI/release fix. The previous 1.5.17/1.5.18 manifest entries were added by hand in the interim.
 

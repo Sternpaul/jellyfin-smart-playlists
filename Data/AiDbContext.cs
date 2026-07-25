@@ -21,7 +21,13 @@ namespace Jellyfin.Plugin.AIRecommender.Data
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
-            optionsBuilder.UseSqlite($"Data Source={_databasePath}");
+            // v1.5.32: force DELETE journal mode. EF Core's SQLite provider defaults
+            // to WAL (Write-Ahead Logging), which writes to sidecar files (-wal/-shm).
+            // On Docker bind-mounts these sidecar files can be invisible to new
+            // connections, causing readers to see an empty table while the data sits in
+            // the WAL file. DELETE mode uses a traditional rollback journal that writes
+            // directly to the main .db file — every connection sees committed data.
+            optionsBuilder.UseSqlite($"Data Source={_databasePath};Journal Mode=Delete");
         }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)

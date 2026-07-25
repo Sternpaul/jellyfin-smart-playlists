@@ -63,6 +63,12 @@ namespace Jellyfin.Plugin.AIRecommender.Configuration
         public string TmdbApiKey { get; set; } = string.Empty;    // TMDB v3 API key (https://www.themoviedb.org/settings/api)
         public double KeywordWeight { get; set; } = 0.10;         // max contribution of keyword overlap to a 0..1 score (For You + similarity). 0 disables.
 
+        // v1.5.21: Hidden Gems "fame penalty". Blockbusters (high TMDB popularity) are
+        // pushed down so genuinely obscure-acclaimed films rise to the top. 0 disables the
+        // penalty (restores the old behavior). Needs a TMDB key so popularity is known;
+        // movies without a popularity value are untouched.
+        public double FamePenaltyWeight { get; set; } = 0.15;
+
         // v1.5.12: Letterboxd ratings are the dominant recommendation signal. This is
         // the max contribution of a 5-star rating to a 0..1 ranking score (other
         // terms are scaled down so ratings dominate). 0 disables the ratings weight.
