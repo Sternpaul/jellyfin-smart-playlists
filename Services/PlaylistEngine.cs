@@ -371,6 +371,8 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                             + (ratings.TryGetValue(m.ItemId, out var r) ? ratingW * (r / 5.0) : 0.0)
                 }).OrderByDescending(x => x.Score).ToList();
 
+            _logger.LogWarning("DIAG ForYou: userId={UserId} unwatched.Count={UW} claimed.Count={CL} scoredMovies.Count={SC} hasTaste={HT} tasteSize={TS} exploreSize={ES}", userId, unwatched.Count, claimed.Count, scoredMovies.Count, hasTaste, tasteSize, exploreSize);
+
             var tastePicks = scoredMovies.Take(tasteSize).Select(x => x.Movie.ItemId).ToList();
             
             // Exploration picks (least matched)
@@ -380,6 +382,8 @@ namespace Jellyfin.Plugin.AIRecommender.Services
 
             // Anti-bubble: cap how much any single subcategory may occupy.
             finalPicks = ApplyDiversityCap(finalPicks, unwatched, _config.DiversityCapPercent, userId);
+
+            _logger.LogWarning("DIAG ForYou finalPicks.Count={FP} after DiversityCap for userId={UserId}", finalPicks.Count, userId);
 
             await CreateOrUpdateJellyfinPlaylistAsync(userId, "For You", finalPicks, cancellationToken);
             return finalPicks;
