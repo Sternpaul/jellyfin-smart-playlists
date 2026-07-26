@@ -2,6 +2,13 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.7.1
+- **Unified recency, taste, and learning around one verified-playback rule:** only an actual Jellyfin playback stop strictly greater than 50% qualifies. Exactly 50%, shorter playback, unknown/reset positions, playback-progress saves, and manually toggling Played do not create signals.
+- Removed the contradictory `MinCompletionPercent` configuration and secondary learning filter. The old setting could not lower the verified threshold below 50%, while raising it allowed recency storage and learning behavior to disagree.
+- Removed the obsolete dashboard input and replaced it with explicit fixed-policy wording; updated the README settings and learning-loop documentation.
+- Added a regression proving the completion threshold is no longer administrator-configurable while preserving strict 49.9/50.0/50.1 boundary coverage.
+- This supersedes the configurable completion behavior described in the historical v1.5.1 release notes.
+
 ## v1.7.0
 - **Made `MaxMoviesPerPlaylist` a real global upper bound for every generated playlist.** `For You`, `Because You Watched`, `Hidden Gems`, `Recently Added`, familiar-subcategory, Discover, Wild Card, watchlist, and ratings playlists now all resolve their sizes through one policy.
 - Focused playlist types retain their intentional smaller defaults while respecting a lower administrator maximum; watchlist and ratings playlists use the configured global maximum.

@@ -169,11 +169,7 @@
                         <div class="fieldDescription">0 = rejected movies hard-banned while cooling; 1 = no penalty at all; 0.5 = they sink gently. Default: 0.50.</div>
                     </div>
 
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="MinCompletionPercent">Count a Watch At (%):</label>
-                        <input type="number" id="MinCompletionPercent" name="MinCompletionPercent" is="emby-input" min="0" max="100" />
-                        <div class="fieldDescription">A watch only teaches the algorithm if you reached this much. Below it, ignored (no penalty). 0 = any "played"; 100 = must finish. Default: 50.</div>
-                    </div>
+                    <div class="fieldDescription">Verified watch signals require an actual Jellyfin playback stop strictly above 50%. Exactly 50%, short playback, unknown/reset positions, and manually toggling Played do not create recency, taste, or learning signals.</div>
 
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="DecayRateReferencePerWeek">Your Normal Pace (movies/week):</label>
@@ -422,7 +418,7 @@
                     document.querySelector('#NewMovieBoostMinFit').value = (config.NewMovieBoostMinFit !== undefined && config.NewMovieBoostMinFit !== null) ? config.NewMovieBoostMinFit : 0.30;
                     document.querySelector('#NoveltyBonus').value = (config.NoveltyBonus !== undefined && config.NoveltyBonus !== null) ? config.NoveltyBonus : 0.05;
                     document.querySelector('#NoveltyHalfLifeDays').value = config.NoveltyHalfLifeDays || 30;
-                    document.querySelector('#MinCompletionPercent').value = (config.MinCompletionPercent !== undefined && config.MinCompletionPercent !== null) ? config.MinCompletionPercent : 50;
+
                     document.querySelector('#DecayRateReferencePerWeek').value = (config.DecayRateReferencePerWeek !== undefined && config.DecayRateReferencePerWeek !== null) ? config.DecayRateReferencePerWeek : 3;
 
                     // Tick exclusion checkboxes once users are loaded (guards promise ordering).
@@ -644,8 +640,7 @@
                     config.NoveltyBonus = parseFloat(document.querySelector('#NoveltyBonus').value);
                     if (isNaN(config.NoveltyBonus)) config.NoveltyBonus = 0.05;
                     config.NoveltyHalfLifeDays = parseInt(document.querySelector('#NoveltyHalfLifeDays').value, 10) || 30;
-                    config.MinCompletionPercent = parseInt(document.querySelector('#MinCompletionPercent').value, 10);
-                    if (isNaN(config.MinCompletionPercent)) config.MinCompletionPercent = 50;
+
                     config.DecayRateReferencePerWeek = parseInt(document.querySelector('#DecayRateReferencePerWeek').value, 10);
                     if (isNaN(config.DecayRateReferencePerWeek)) config.DecayRateReferencePerWeek = 3;
                     config.DisabledUserIds = Array.prototype.slice

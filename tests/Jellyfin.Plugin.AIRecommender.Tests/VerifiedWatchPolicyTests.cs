@@ -1,4 +1,5 @@
 using System.Reflection;
+using Jellyfin.Plugin.AIRecommender.Configuration;
 using Jellyfin.Plugin.AIRecommender.Services;
 using MediaBrowser.Model.Entities;
 using Xunit;
@@ -12,6 +13,12 @@ public class VerifiedWatchPolicyTests
         var method = typeof(WatchHistoryService).GetMethod("GetVerifiedPlaybackPercentage", BindingFlags.Static | BindingFlags.NonPublic);
         Assert.NotNull(method);
         return (double?)method!.Invoke(null, new object[] { reason, played, positionTicks, runtimeTicks });
+    }
+
+    [Fact]
+    public void Completion_threshold_is_not_administrator_configurable()
+    {
+        Assert.Null(typeof(PluginConfiguration).GetProperty("MinCompletionPercent"));
     }
 
     [Fact]

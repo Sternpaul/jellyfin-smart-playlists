@@ -38,7 +38,7 @@ When you **watch a movie from a playlist**, the plugin learns from that one acti
 - **Sibling penalty** — the other movies in that playlist get a rejection penalty and a temporary ban.
 - **Similar-movie reward** — the watched movie's nearest neighbours get a small affinity boost.
 - **Time decay** — penalties/rewards fade exponentially (default 28-day half-life).
-- Only watches that reach `Min Watch % to Learn` (default 50%) count; a glance is ignored.
+- Only actual Jellyfin playback stops strictly above 50% create recency, taste, or learning signals. Exactly 50%, short playback, unknown/reset positions, and manually toggling Played do not count.
 
 ### Anti-bubble protection
 25% of every playlist is reserved for exploration; a Diversity Cap (default 60%) stops any one subcategory from dominating.
@@ -206,7 +206,7 @@ Every N hours (default 12): rotate 30%, re-check watches, enforce diversity.
 | New-Movie Min Taste-Fit | 0.30 | For You boosts new films only if they fit |
 | Novelty Bonus | 0.05 | Nudge for un-recently-surfaced films |
 | Novelty Half-Life | 30 days | Novelty fade |
-| Min Watch % to Learn | 50% | Watch must reach this % to count as a signal |
+| Verified Playback Threshold | Strictly >50% | Fixed policy; actual playback stop only, not manual Played |
 | Decay Reference | 3/week | Watch-rate scaling for half-lives (0.3x–3x) |
 
 ### Provider-specific model IDs
@@ -258,7 +258,7 @@ DLL lands in `bin/Release/net9.0/`. The SQLite DB lives in the Jellyfin config d
 - [x] **v1.6.8:** make the configured refresh interval control the scheduled task
 - [x] **v1.6.9:** implement deterministic playlist rotation
 - [x] **v1.7.0:** align playlist size limits across generators
-- [ ] **v1.7.1:** align completion settings with strict verified-playback semantics
+- [x] **v1.7.1:** align completion settings with strict verified-playback semantics
 - [ ] **v1.7.2:** harden test discovery, releases, publication checks, and documentation
 - [ ] **v1.7.3:** durable managed-playlist provenance registry
 - [ ] **v1.7.4:** update playlists in place while preserving IDs and metadata

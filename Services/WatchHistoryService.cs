@@ -162,8 +162,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
     {
         public Guid UserId { get; set; }
         public Guid MovieId { get; set; }
-        // v1.5.1: playback % at time of the watch event (null if unknown). Below
-        // MinCompletionPercent => not a real watch signal (glance/test); engine ignores it.
+        // Actual playback percentage from a verified playback stop strictly above 50%.
         public double? PlaybackPercentage { get; set; }
     }
 }

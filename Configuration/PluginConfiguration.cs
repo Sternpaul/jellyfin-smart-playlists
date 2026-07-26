@@ -56,7 +56,6 @@ namespace Jellyfin.Plugin.AIRecommender.Configuration
         public double NewMovieBoostMinFit { get; set; } = 0.30;  // For You only boosts new movies that fit taste at/above this score
         public double NoveltyBonus { get; set; } = 0.05;          // nudge for movies not recently surfaced in playlists
         public int NoveltyHalfLifeDays { get; set; } = 30;        // days; how fast the novelty nudge fades after a movie is surfaced
-        public int MinCompletionPercent { get; set; } = 50;       // v1.5.1: min playback % for a watch to count as a real signal (penalty/reward). 0 = any "played" counts (old behavior); 100 = must finish.
         public int DecayRateReferencePerWeek { get; set; } = 3;   // v1.5.3: reference watch rate. Effective affinity/novelty half-lives scale by (user's weekly rate / this). Faster watchers => quicker decay (fresher). Clamped 0.3x-3x.
 
         // v1.5.14: TMDB keywords (objective precision signal) + the key to fetch them.
