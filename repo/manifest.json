@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.7.3.0",
+        "changelog": "- **Added durable managed-playlist provenance.** The plugin database now records each managed playlist by user, stable logical key, exact Jellyfin playlist GUID, display name, and lifecycle kind.\n- **Stopped treating playlist names or ownership as ongoing deletion authority.** Refresh and disabled-user cleanup delete only exact GUIDs registered as rotating recommendations, so an unregistered personal playlist survives even if it uses plugin-like wording.\n- **Separated rotating recommendations from persistent collections in the schema.** Rotating cleanup cannot remove future collection registrations.\n- **Left legacy playlists unregistered and untouched.** Older versions stored no authoritative playlist marker, so v1.7.3 refuses to infer destructive provenance from names, owners, paths, or overlapping movie membership. The first refresh may therefore leave a legacy duplicate beside the newly registered playlist rather than risk deleting personal data.\n- **Registered the exact GUID returned by Jellyfin playlist creation.** Registration failures remove the just-created orphan and fail the refresh rather than leaving an untracked playlist.\n- Added fresh-database, in-place-upgrade, upsert, user isolation, lifecycle isolation, stable logical-key, and registered-ID cleanup regressions.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.7.3/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "ae8957c31888c42cb5394d27366ad1cf",
+        "timestamp": "2026-07-26T21:26:11Z"
+      },
+      {
         "version": "1.7.2.0",
         "changelog": "- **Fixed false-green root test discovery.** Added `Jellyfin.Plugin.AIRecommender.sln` with both production and xUnit projects, so plain root `dotnet test` runs the real suite instead of exiting successfully with zero tests.\n- The tag workflow now verifies tag/project version parity, runs the full Release test suite, and fails when the version-specific changelog section is missing instead of publishing placeholder notes.\n- Published releases are treated as immutable: the workflow refuses to delete or replace an existing tag release and serializes manifest publication.\n- Manifest publication now checks out the real `gh-pages` branch and validates version, ABI, exact source URL, non-placeholder changelog, and MD5 checksum before pushing.\n- The workflow performs a bounded public read-back and verifies the served manifest plus a checksum-matching ZIP containing exactly one plugin DLL.\n- Updated source-build and release documentation with the tested root commands and publication contract.",
         "targetAbi": "10.11.0.0",
