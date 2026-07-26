@@ -20,16 +20,15 @@ namespace Jellyfin.Plugin.AIRecommender.Tasks
         }
 
         public string Name => "AI Recommender - Refresh Playlists";
-        public string Key => "AIRecommenderRefreshPlaylists";
+        public string Key => PlaylistRefreshSchedule.ScheduledTaskKey;
         public string Description => "Refreshes AI smart playlists for all users, cycling out old movies and applying punishments.";
         public string Category => "AI Recommender";
 
         public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
         {
-            return new[]
-            {
-                new TaskTriggerInfo { Type = TaskTriggerInfoType.IntervalTrigger, IntervalTicks = TimeSpan.FromHours(12).Ticks }
-            };
+            var configuredHours = Plugin.Instance?.Configuration?.PlaylistRefreshHours
+                ?? PlaylistRefreshSchedule.DefaultHours;
+            return PlaylistRefreshSchedule.CreateTriggers(configuredHours);
         }
 
         public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)

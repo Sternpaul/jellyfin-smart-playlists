@@ -1,6 +1,7 @@
 using Jellyfin.Plugin.AIRecommender.Data;
 using Jellyfin.Plugin.AIRecommender.Services;
 using Jellyfin.Plugin.AIRecommender.Services.AI;
+using Jellyfin.Plugin.AIRecommender.Tasks;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.Extensions.DependencyInjection;
@@ -35,6 +36,7 @@ namespace Jellyfin.Plugin.AIRecommender
             serviceCollection.AddSingleton<LetterboxdService>();
             serviceCollection.AddSingleton<MovieClassifier>();
             serviceCollection.AddSingleton<MovieIndexer>();
+            serviceCollection.AddHostedService<PlaylistRefreshScheduleService>();
         }
     }
 }

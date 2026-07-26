@@ -2,6 +2,12 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.6.8
+- **Made `PlaylistRefreshHours` control the real Jellyfin scheduled task.** The refresh task's default trigger now comes from plugin configuration instead of a hard-coded 12 hours.
+- Added a hosted schedule synchronizer that repairs an already-installed task's persisted trigger at startup and immediately applies later plugin-configuration changes. Startup synchronization retries in the background until Jellyfin registers plugin tasks; assigning the worker's `Triggers` persists the `.js` task configuration and reloads the live timer.
+- Valid configured intervals are 1–168 hours; out-of-range values safely fall back to 12 hours.
+- Added trigger-policy, boundary, target-worker, idempotence, and hosted-service registration regressions.
+
 ## v1.6.7
 - **Removed cross-user scoring state.** Affinity and novelty decay now receive the intended user ID explicitly instead of reading singleton `_currentUserId`, so another user's refresh cannot change scores mid-generation.
 - **Serialized refresh-affecting operations.** Scheduled/manual refreshes, immediate exclusion cleanup, and watch-triggered affinity rebuilds now share one cancellation-safe execution gate, preventing overlapping playlist deletion/creation and same-database affinity races.
