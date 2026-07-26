@@ -75,8 +75,8 @@
 
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="PlaylistRotationPercent">Rotation per Refresh (%):</label>
-                        <input type="range" id="PlaylistRotationPercent" name="PlaylistRotationPercent" min="10" max="100" step="5" is="emby-input" />
-                        <div class="fieldDescription">How much of each playlist is swapped out every refresh. Higher = fresher but more churn. Default: 30%.</div>
+                        <input type="range" id="PlaylistRotationPercent" name="PlaylistRotationPercent" min="0" max="100" step="5" is="emby-input" />
+                        <div class="fieldDescription">How much of each playlist is swapped out every refresh. 0% keeps every still-eligible item; 100% prefers entirely new eligible items. Default: 30%.</div>
                     </div>
 
                     <div class="inputContainer">
@@ -404,7 +404,7 @@
                     
                     document.querySelector('#PlaylistRefreshHours').value = config.PlaylistRefreshHours || 12;
                     document.querySelector('#MaxMoviesPerPlaylist').value = config.MaxMoviesPerPlaylist || 20;
-                    document.querySelector('#PlaylistRotationPercent').value = config.PlaylistRotationPercent || 30;
+                    document.querySelector('#PlaylistRotationPercent').value = config.PlaylistRotationPercent ?? 30;
                     document.querySelector('#CoolingPeriodCycles').value = config.CoolingPeriodCycles || 2;
                     
                     document.querySelector('#DiversityWeight').value = config.DiversityWeight || 25;

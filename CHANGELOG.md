@@ -2,6 +2,13 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.6.9
+- **Made `PlaylistRotationPercent` control actual playlist membership.** Each refresh captures that user's immediately previous plugin-playlist membership before cleanup, retains the configured stable share when those items remain eligible, and fills replacement slots from each generator's deterministic ranked candidate pool.
+- Replacement slots prefer genuinely new eligible movies and only reuse rotated-out members when the library does not contain enough alternatives. Played, removed, disabled, or otherwise ineligible items are never retained merely for stability.
+- Rotation applies to all generated playlist types while preserving their existing source-specific rankings, exploration quotas, similarity anchors, and size behavior.
+- The dashboard now supports the full 0–100% policy: 0% keeps every still-eligible member, 100% prefers entirely new eligible members, and stored zero is no longer overwritten by the JavaScript default.
+- Added deterministic policy regressions for 0%, 30%, 100%, first generation, eligibility removal, and pool-shortage behavior.
+
 ## v1.6.8
 - **Made `PlaylistRefreshHours` control the real Jellyfin scheduled task.** The refresh task's default trigger now comes from plugin configuration instead of a hard-coded 12 hours.
 - Added a hosted schedule synchronizer that repairs an already-installed task's persisted trigger at startup and immediately applies later plugin-configuration changes. Startup synchronization retries in the background until Jellyfin registers plugin tasks; assigning the worker's `Triggers` persists the `.js` task configuration and reloads the live timer.

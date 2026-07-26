@@ -241,6 +241,10 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 return;
             }
 
+            // Capture the immediately previous membership before cleanup. Rotation is
+            // computed from this immutable per-refresh snapshot rather than shared state.
+            var previousPlaylists = CaptureRecommendationPlaylistMembers(userId);
+
             // Clean slate: remove any existing recommendation playlists for this user
             // before regenerating, so stale/disabled/renamed ones never linger.
             await DeleteUserRecommendationPlaylistsAsync(userId, cancellationToken);
@@ -282,32 +286,32 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             // get shorter effective half-lives (fresher playlists); slow watchers slower.
             ComputeDecayFactor(userId, cancellationToken);
             if (_config.EnableForYou)
-                claimed.UnionWith(await GenerateForYouPlaylistAsync(userId, tasteProfile, unwatchedMovies, affinities, ratings, claimed, cancellationToken));
+                claimed.UnionWith(await GenerateForYouPlaylistAsync(userId, tasteProfile, unwatchedMovies, affinities, ratings, claimed, previousPlaylists, cancellationToken));
 
             if (_config.EnableBecauseYouWatched)
-                await GenerateBecauseYouWatchedPlaylistAsync(userId, unwatchedMovies, cancellationToken);
+                await GenerateBecauseYouWatchedPlaylistAsync(userId, unwatchedMovies, previousPlaylists, cancellationToken);
                 
             if (_config.EnableHiddenGems)
-                claimed.UnionWith(await GenerateHiddenGemsPlaylistAsync(userId, unwatchedMovies, tasteProfile, affinities, claimed, cancellationToken));
+                claimed.UnionWith(await GenerateHiddenGemsPlaylistAsync(userId, unwatchedMovies, tasteProfile, affinities, claimed, previousPlaylists, cancellationToken));
                 
             if (_config.EnableRecentlyAdded)
-                await GenerateRecentlyAddedPlaylistAsync(userId, unwatchedMovies, cancellationToken);
+                await GenerateRecentlyAddedPlaylistAsync(userId, unwatchedMovies, previousPlaylists, cancellationToken);
                 
             if (_config.EnableSubcategory || _config.EnableDiscover)
-                claimed.UnionWith(await GenerateSubcategoryPlaylistsAsync(userId, tasteProfile, unwatchedMovies, affinities, claimed, cancellationToken));
+                claimed.UnionWith(await GenerateSubcategoryPlaylistsAsync(userId, tasteProfile, unwatchedMovies, affinities, claimed, previousPlaylists, cancellationToken));
                 
             if (_config.EnableWildCard)
-                claimed.UnionWith(await GenerateWildCardPlaylistAsync(userId, tasteProfile, unwatchedMovies, affinities, claimed, cancellationToken));
+                claimed.UnionWith(await GenerateWildCardPlaylistAsync(userId, tasteProfile, unwatchedMovies, affinities, claimed, previousPlaylists, cancellationToken));
 
             // Watchlist and ratings playlists are handled separately if the user enabled them
             var userConfig = await _movieStore.GetUserWatchlistConfigAsync(userId, cancellationToken);
             if (userConfig != null && userConfig.EnableWatchlistPlaylist)
             {
-                await GenerateWatchlistPlaylistAsync(userId, unwatchedMovies, cancellationToken);
+                await GenerateWatchlistPlaylistAsync(userId, unwatchedMovies, previousPlaylists, cancellationToken);
             }
             if (userConfig != null && userConfig.EnableRatingsPlaylist && ratings.Count > 0)
             {
-                await GenerateRatingsPlaylistAsync(userId, ratings, cancellationToken);
+                await GenerateRatingsPlaylistAsync(userId, ratings, previousPlaylists, cancellationToken);
             }
             
             _logger.LogInformation("Finished refreshing playlists for user {UserId}", userId);
@@ -342,6 +346,45 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 && (ownerUserId == targetUserId || ownerUserId == Guid.Empty);
         }
 
+        private Dictionary<string, IReadOnlyList<Guid>> CaptureRecommendationPlaylistMembers(Guid userId)
+        {
+            return _libraryManager.GetItemList(new InternalItemsQuery
+                {
+                    IncludeItemTypes = new[] { Jellyfin.Data.Enums.BaseItemKind.Playlist },
+                    IsVirtualItem = false,
+                    Recursive = true
+                })
+                .OfType<Playlist>()
+                .Where(playlist => playlist.OwnerUserId == userId && IsRecommendationPlaylistName(playlist.Name))
+                .GroupBy(playlist => playlist.Name, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    group => group.Key,
+                    group => (IReadOnlyList<Guid>)group
+                        .OrderByDescending(playlist => playlist.DateCreated)
+                        .First()
+                        .GetManageableItems()
+                        .Select(item => item.Item2.Id)
+                        .Where(id => id != Guid.Empty)
+                        .Distinct()
+                        .ToList(),
+                    StringComparer.OrdinalIgnoreCase);
+        }
+
+        private List<Guid> ApplyConfiguredRotation(
+            IReadOnlyDictionary<string, IReadOnlyList<Guid>> previousPlaylists,
+            string playlistName,
+            IEnumerable<Guid> rankedEligibleCandidates,
+            int targetSize)
+        {
+            previousPlaylists.TryGetValue(playlistName, out var previousMembers);
+            return PlaylistRotationPolicy.Select(
+                    previousMembers ?? Array.Empty<Guid>(),
+                    rankedEligibleCandidates,
+                    targetSize,
+                    _config.PlaylistRotationPercent)
+                .ToList();
+        }
+
         // Deletes only this plugin's recommendation playlists for the target user.
         // Unrelated user-created playlists must survive a refresh. Ownerless plugin
         // recommendation patterns are also removed to migrate pre-v1.5.39 ghosts.
@@ -364,7 +407,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             await Task.CompletedTask;
         }
 
-        private async Task<List<Guid>> GenerateForYouPlaylistAsync(Guid userId, TasteProfile profile, List<MovieMetadata> unwatched, Dictionary<Guid, MovieAffinity> affinities, Dictionary<Guid, double> ratings, HashSet<Guid> claimed, CancellationToken cancellationToken)
+        private async Task<List<Guid>> GenerateForYouPlaylistAsync(Guid userId, TasteProfile profile, List<MovieMetadata> unwatched, Dictionary<Guid, MovieAffinity> affinities, Dictionary<Guid, double> ratings, HashSet<Guid> claimed, IReadOnlyDictionary<string, IReadOnlyList<Guid>> previousPlaylists, CancellationToken cancellationToken)
         {
             var now = DateTime.UtcNow;
             // 75% taste-matched, 25% exploration (from _config.DiversityWeight)
@@ -403,6 +446,10 @@ namespace Jellyfin.Plugin.AIRecommender.Services
 
             // Anti-bubble: cap how much any single subcategory may occupy.
             finalPicks = ApplyDiversityCap(finalPicks, unwatched, _config.DiversityCapPercent, userId);
+
+            var rotationRanking = finalPicks
+                .Concat(scoredMovies.Select(item => item.Movie.ItemId));
+            finalPicks = ApplyConfiguredRotation(previousPlaylists, "For You", rotationRanking, finalPicks.Count);
 
             await CreateOrUpdateJellyfinPlaylistAsync(userId, "For You", finalPicks, cancellationToken);
             return finalPicks;
@@ -460,7 +507,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             catch { return null; }
         }
 
-        private async Task GenerateBecauseYouWatchedPlaylistAsync(Guid userId, List<MovieMetadata> unwatched, CancellationToken cancellationToken)
+        private async Task GenerateBecauseYouWatchedPlaylistAsync(Guid userId, List<MovieMetadata> unwatched, IReadOnlyDictionary<string, IReadOnlyList<Guid>> previousPlaylists, CancellationToken cancellationToken)
         {
             // Seed on the user's 5 most recently *watched* movies (by LastPlayedDate,
             // falling back to DateAdded when the played date is unknown), not just the
@@ -510,7 +557,13 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             if (anchor == null)
                 return;
 
-            await CreateOrUpdateJellyfinPlaylistAsync(userId, $"Because You Watched {anchor.Title}", picks, cancellationToken);
+            var playlistName = $"Because You Watched {anchor.Title}";
+            picks = ApplyConfiguredRotation(
+                previousPlaylists,
+                playlistName,
+                bestSim.OrderByDescending(item => item.Value).ThenBy(item => item.Key).Select(item => item.Key),
+                picks.Count);
+            await CreateOrUpdateJellyfinPlaylistAsync(userId, playlistName, picks, cancellationToken);
         }
 
         private static MovieMetadata? SelectBecauseYouWatchedAnchor(
@@ -530,7 +583,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 .FirstOrDefault();
         }
         
-        private async Task<List<Guid>> GenerateHiddenGemsPlaylistAsync(Guid userId, List<MovieMetadata> unwatched, TasteProfile profile, Dictionary<Guid, MovieAffinity> affinities, HashSet<Guid> claimed, CancellationToken cancellationToken)
+        private async Task<List<Guid>> GenerateHiddenGemsPlaylistAsync(Guid userId, List<MovieMetadata> unwatched, TasteProfile profile, Dictionary<Guid, MovieAffinity> affinities, HashSet<Guid> claimed, IReadOnlyDictionary<string, IReadOnlyList<Guid>> previousPlaylists, CancellationToken cancellationToken)
         {
             var now = DateTime.UtcNow;
             // "Hidden Gems" = high acclaim AND unfamiliar to the user (subcategories
@@ -546,7 +599,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             // key) or when FamePenaltyWeight is 0, restoring the old behavior.
             var familiarSubs = TopSubcategories(profile, 5); // most-watched subcats
             var fameScale = Math.Log(1 + 100); // popularity of ~100 → full penalty
-            var gems = unwatched
+            var rankedGems = unwatched
                 .Where(m => !claimed.Contains(m.ItemId))
                 .Where(m => m.CriticalAcclaimScore >= 7)
                 .Where(m => !SharesAnySubcategory(m, familiarSubs)) // unfamiliar = hidden
@@ -562,9 +615,11 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                             + GetSoftPenalty(affinities, m.ItemId, now)
                 })
                 .OrderByDescending(x => x.Score - x.FamePenalty)
-                .Take(15)
+                .ThenBy(x => x.M.ItemId)
                 .Select(x => x.M.ItemId)
                 .ToList();
+
+            var gems = ApplyConfiguredRotation(previousPlaylists, "Hidden Gems", rankedGems, Math.Min(15, rankedGems.Count));
 
             await CreateOrUpdateJellyfinPlaylistAsync(userId, "Hidden Gems", gems, cancellationToken);
             return gems;
@@ -593,18 +648,20 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             catch { return false; }
         }
 
-        private async Task GenerateRecentlyAddedPlaylistAsync(Guid userId, List<MovieMetadata> unwatched, CancellationToken cancellationToken)
+        private async Task GenerateRecentlyAddedPlaylistAsync(Guid userId, List<MovieMetadata> unwatched, IReadOnlyDictionary<string, IReadOnlyList<Guid>> previousPlaylists, CancellationToken cancellationToken)
         {
-            var recent = unwatched
+            var rankedRecent = unwatched
                 .OrderByDescending(m => m.DateAdded)
-                .Take(15)
+                .ThenBy(m => m.ItemId)
                 .Select(m => m.ItemId)
                 .ToList();
+
+            var recent = ApplyConfiguredRotation(previousPlaylists, "Recently Added", rankedRecent, Math.Min(15, rankedRecent.Count));
                 
             await CreateOrUpdateJellyfinPlaylistAsync(userId, "Recently Added", recent, cancellationToken);
         }
 
-        private async Task<List<Guid>> GenerateSubcategoryPlaylistsAsync(Guid userId, TasteProfile profile, List<MovieMetadata> unwatched, Dictionary<Guid, MovieAffinity> affinities, HashSet<Guid> claimed, CancellationToken cancellationToken)
+        private async Task<List<Guid>> GenerateSubcategoryPlaylistsAsync(Guid userId, TasteProfile profile, List<MovieMetadata> unwatched, Dictionary<Guid, MovieAffinity> affinities, HashSet<Guid> claimed, IReadOnlyDictionary<string, IReadOnlyList<Guid>> previousPlaylists, CancellationToken cancellationToken)
         {
             var picks = new List<Guid>();
             if (profile.SubcategoryPreferences.Any() && _config.EnableSubcategory)
@@ -612,15 +669,17 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 // Pick top familiar subcategory
                 var topSubcategory = profile.SubcategoryPreferences.OrderByDescending(x => x.Value).First().Key;
                 
-                var familiarPicks = unwatched
+                var rankedFamiliar = unwatched
                     .Where(m => !claimed.Contains(m.ItemId))
                     .Where(m => !string.IsNullOrEmpty(m.Subcategories) && m.Subcategories.Contains(topSubcategory, StringComparison.OrdinalIgnoreCase))
-                    .Take(15)
+                    .OrderBy(m => m.ItemId)
                     .Select(m => m.ItemId)
                     .ToList();
-                    
+
+                var familiarName = $"{topSubcategory} For You";
+                var familiarPicks = ApplyConfiguredRotation(previousPlaylists, familiarName, rankedFamiliar, Math.Min(15, rankedFamiliar.Count));
                 if (familiarPicks.Any())
-                    await CreateOrUpdateJellyfinPlaylistAsync(userId, $"{topSubcategory} For You", familiarPicks, cancellationToken);
+                    await CreateOrUpdateJellyfinPlaylistAsync(userId, familiarName, familiarPicks, cancellationToken);
                 picks.AddRange(familiarPicks);
             }
             
@@ -629,19 +688,21 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 // Discover = the user's LEAST-explored subcategories (gateway into the unknown).
                 // Surface movies from those subcats, ranked by acclaim + learned affinity +
                 // new-movie nudge, so they're adjacent to taste, not random.
-                var discovered = DiscoverPicks(userId, unwatched.Where(m => !claimed.Contains(m.ItemId)).ToList(), profile, affinities, 8);
-                if (!discovered.Any())
+                var rankedDiscovered = DiscoverPicks(userId, unwatched.Where(m => !claimed.Contains(m.ItemId)).ToList(), profile, affinities, int.MaxValue);
+                if (!rankedDiscovered.Any())
                 {
                     // Fallback: nothing in the least-familiar subcats is unwatched, so
                     // surface the top-acclaim unwatched films instead — Discover must
                     // always exist (CreateOrUpdateJellyfinPlaylistAsync skips empties).
-                    discovered = unwatched
+                    rankedDiscovered = unwatched
                         .Where(m => !claimed.Contains(m.ItemId) && m.IsClassified)
                         .OrderByDescending(m => m.CriticalAcclaimScore)
-                        .Take(8)
+                        .ThenBy(m => m.ItemId)
                         .Select(m => m.ItemId)
                         .ToList();
                 }
+
+                var discovered = ApplyConfiguredRotation(previousPlaylists, "Discover: Hidden World", rankedDiscovered, Math.Min(8, rankedDiscovered.Count));
                 if (discovered.Any())
                     await CreateOrUpdateJellyfinPlaylistAsync(userId, "Discover: Hidden World", discovered, cancellationToken);
                 picks.AddRange(discovered);
@@ -682,7 +743,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 .ToList();
         }
 
-        private async Task<List<Guid>> GenerateWildCardPlaylistAsync(Guid userId, TasteProfile profile, List<MovieMetadata> unwatched, Dictionary<Guid, MovieAffinity> affinities, HashSet<Guid> claimed, CancellationToken cancellationToken)
+        private async Task<List<Guid>> GenerateWildCardPlaylistAsync(Guid userId, TasteProfile profile, List<MovieMetadata> unwatched, Dictionary<Guid, MovieAffinity> affinities, HashSet<Guid> claimed, IReadOnlyDictionary<string, IReadOnlyList<Guid>> previousPlaylists, CancellationToken cancellationToken)
         {
             var now = DateTime.UtcNow;
             // Wild Card = 100% exploration: the user's LEAST-explored subcategory,
@@ -691,7 +752,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 ? profile.SubcategoryPreferences.OrderBy(kv => kv.Value).First().Key
                 : null;
 
-            var wildPicks = unwatched
+            var rankedWild = unwatched
                 .Where(m => !claimed.Contains(m.ItemId))
                 .Where(m => m.CriticalAcclaimScore >= 7)
                 .Where(m => leastFamiliar == null || (m.Subcategories ?? "").Contains(leastFamiliar, StringComparison.OrdinalIgnoreCase))
@@ -704,27 +765,29 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                             + GetSoftPenalty(affinities, m.ItemId, now)
                 })
                 .OrderByDescending(x => x.Score)
-                .Take(10)
+                .ThenBy(x => x.M.ItemId)
                 .Select(x => x.M.ItemId)
                 .ToList();
 
-            if (!wildPicks.Any())
+            if (!rankedWild.Any())
             {
                 // Fallback: relax to any high-acclaim unwatched film (no subcat match) so
                 // Wild Card always exists when the strict pool is exhausted/claimed.
-                wildPicks = unwatched
+                rankedWild = unwatched
                     .Where(m => !claimed.Contains(m.ItemId) && m.IsClassified && m.CriticalAcclaimScore >= 7)
                     .OrderByDescending(m => m.CriticalAcclaimScore)
-                    .Take(10)
+                    .ThenBy(m => m.ItemId)
                     .Select(m => m.ItemId)
                     .ToList();
             }
+
+            var wildPicks = ApplyConfiguredRotation(previousPlaylists, "Wild Card", rankedWild, Math.Min(10, rankedWild.Count));
 
             await CreateOrUpdateJellyfinPlaylistAsync(userId, "Wild Card", wildPicks, cancellationToken);
             return wildPicks;
         }
 
-        private async Task GenerateWatchlistPlaylistAsync(Guid userId, List<MovieMetadata> unwatched, CancellationToken cancellationToken)
+        private async Task GenerateWatchlistPlaylistAsync(Guid userId, List<MovieMetadata> unwatched, IReadOnlyDictionary<string, IReadOnlyList<Guid>> previousPlaylists, CancellationToken cancellationToken)
         {
             // Sync the user's watchlist (from the JSON URL or CSV they provided in
             // config) into matched library ItemIds, then build the playlist from those.
@@ -767,25 +830,28 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 return;
             }
 
+            toWatch = ApplyConfiguredRotation(previousPlaylists, "From Your Watchlist", toWatch, toWatch.Count);
             await CreateOrUpdateJellyfinPlaylistAsync(userId, "From Your Watchlist", toWatch, cancellationToken);
         }
 
         // v1.5.12: "Highly Rated by You" — the user's top-rated Letterboxd films that are
         // in the library, ordered by rating. Prefers unwatched films (a recommendation
         // list of things you'd love), then fills with watched ones if short.
-        private async Task GenerateRatingsPlaylistAsync(Guid userId, Dictionary<Guid, double> ratings, CancellationToken cancellationToken)
+        private async Task GenerateRatingsPlaylistAsync(Guid userId, Dictionary<Guid, double> ratings, IReadOnlyDictionary<string, IReadOnlyList<Guid>> previousPlaylists, CancellationToken cancellationToken)
         {
             var byId = (await _movieStore.GetAllMoviesAsync(cancellationToken)).ToDictionary(m => m.ItemId);
             var watched = (await _watchHistoryService.GetWatchedMoviesAsync(userId, cancellationToken)).Select(w => w.ItemId).ToHashSet();
 
-            var rated = ratings
+            var rankedRated = ratings
                 .Where(kv => byId.ContainsKey(kv.Key))
                 .Select(kv => new { Id = kv.Key, Rating = kv.Value, Watched = watched.Contains(kv.Key) })
                 .OrderByDescending(x => x.Watched ? 0 : 1) // unwatched first
                 .ThenByDescending(x => x.Rating)
-                .Take(_config.MaxMoviesPerPlaylist)
+                .ThenBy(x => x.Id)
                 .Select(x => x.Id)
                 .ToList();
+
+            var rated = ApplyConfiguredRotation(previousPlaylists, "Highly Rated by You", rankedRated, Math.Min(_config.MaxMoviesPerPlaylist, rankedRated.Count));
 
             if (rated.Any())
                 await CreateOrUpdateJellyfinPlaylistAsync(userId, "Highly Rated by You", rated, cancellationToken);
