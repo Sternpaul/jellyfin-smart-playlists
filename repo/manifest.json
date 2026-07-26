@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.7.1.0",
+        "changelog": "- **Unified recency, taste, and learning around one verified-playback rule:** only an actual Jellyfin playback stop strictly greater than 50% qualifies. Exactly 50%, shorter playback, unknown/reset positions, playback-progress saves, and manually toggling Played do not create signals.\n- Removed the contradictory `MinCompletionPercent` configuration and secondary learning filter. The old setting could not lower the verified threshold below 50%, while raising it allowed recency storage and learning behavior to disagree.\n- Removed the obsolete dashboard input and replaced it with explicit fixed-policy wording; updated the README settings and learning-loop documentation.\n- Added a regression proving the completion threshold is no longer administrator-configurable while preserving strict 49.9/50.0/50.1 boundary coverage.\n- This supersedes the configurable completion behavior described in the historical v1.5.1 release notes.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.7.1/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "dd1cdd9a3e5911fd2d596d3c39249241",
+        "timestamp": "2026-07-26T20:26:57Z"
+      },
+      {
         "version": "1.7.0.0",
         "changelog": "- **Made `MaxMoviesPerPlaylist` a real global upper bound for every generated playlist.** `For You`, `Because You Watched`, `Hidden Gems`, `Recently Added`, familiar-subcategory, Discover, Wild Card, watchlist, and ratings playlists now all resolve their sizes through one policy.\n- Focused playlist types retain their intentional smaller defaults while respecting a lower administrator maximum; watchlist and ratings playlists use the configured global maximum.\n- Added a defense-in-depth cap at the Jellyfin playlist-creation boundary so future generators cannot accidentally exceed the configured maximum.\n- Valid maximums are 5–100 movies; invalid values safely fall back to 20, and candidate shortages produce smaller valid playlists.\n- Added boundary and source-default regression coverage and clarified the dashboard wording.",
         "targetAbi": "10.11.0.0",
