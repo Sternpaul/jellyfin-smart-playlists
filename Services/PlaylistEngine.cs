@@ -235,7 +235,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
 
             // Capture the immediately previous membership before cleanup. Rotation is
             // computed from this immutable per-refresh snapshot rather than shared state.
-            var previousPlaylists = CaptureRecommendationPlaylistMembers(userId);
+            var previousPlaylists = await CaptureRecommendationPlaylistMembersAsync(userId, cancellationToken);
 
             // Clean slate: remove any existing recommendation playlists for this user
             // before regenerating, so stale/disabled/renamed ones never linger.
@@ -309,37 +309,57 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             _logger.LogInformation("Finished refreshing playlists for user {UserId}", userId);
         }
 
-        // v1.5.39: Jellyfin 10.11 does NOT set OwnerUserId from PlaylistCreationRequest.UserId —
-        // plugin-created playlists end up with OwnerUserId == Guid.Empty. The old owner-scoped
-        // delete/find matched nothing, so every refresh created a NEW playlist (Jellyfin appends
-        // 1, 11, 111... to the path) and ghosts accumulated forever, visible to every user.
-        // Fix: (a) CreateOrUpdateJellyfinPlaylistAsync now explicitly sets OwnerUserId after
-        // creation; (b) cleanup also removes OWNERLESS playlists whose name matches our
-        // recommendation patterns, which migrates existing ghost playlists away.
-        private static bool IsRecommendationPlaylistName(string? name)
+
+        private static bool ShouldDeleteRegisteredPlaylist(Guid playlistId, IReadOnlySet<Guid> registeredRotatingPlaylistIds)
         {
-            if (string.IsNullOrWhiteSpace(name)) return false;
-            // Jellyfin dedupes colliding paths by appending digits ("For You11"); strip them.
-            var baseName = name.TrimEnd('0', '1', '2', '3', '4', '5', '6', '7', '8', '9').TrimEnd();
-            if (baseName.StartsWith("Because You Watched", StringComparison.OrdinalIgnoreCase)) return true;
-            if (baseName.EndsWith("For You", StringComparison.OrdinalIgnoreCase)) return true; // "For You", "drama For You", ...
-            return baseName.Equals("Hidden Gems", StringComparison.OrdinalIgnoreCase)
-                || baseName.Equals("Discover: Hidden World", StringComparison.OrdinalIgnoreCase)
-                || baseName.Equals("Discover  Hidden World", StringComparison.OrdinalIgnoreCase) // FS-sanitized ghost
-                || baseName.Equals("Wild Card", StringComparison.OrdinalIgnoreCase)
-                || baseName.Equals("Recently Added", StringComparison.OrdinalIgnoreCase)
-                || baseName.Equals("From Your Watchlist", StringComparison.OrdinalIgnoreCase)
-                || baseName.Equals("Highly Rated by You", StringComparison.OrdinalIgnoreCase);
+            return registeredRotatingPlaylistIds.Contains(playlistId);
         }
 
-        private static bool ShouldDeleteRecommendationPlaylist(Guid ownerUserId, string? name, Guid targetUserId)
+        private static string GetManagedPlaylistLogicalKey(string displayName)
         {
-            return IsRecommendationPlaylistName(name)
-                && (ownerUserId == targetUserId || ownerUserId == Guid.Empty);
+            var normalized = displayName.Trim();
+            if (normalized.StartsWith("Because You Watched", StringComparison.OrdinalIgnoreCase))
+                return "dynamic:because-you-watched";
+
+            if (normalized.Equals("For You", StringComparison.OrdinalIgnoreCase)) return "dynamic:for-you";
+            if (normalized.Equals("Hidden Gems", StringComparison.OrdinalIgnoreCase)) return "dynamic:hidden-gems";
+            if (normalized.Equals("Recently Added", StringComparison.OrdinalIgnoreCase)) return "dynamic:recently-added";
+            if (normalized.Equals("Discover: Hidden World", StringComparison.OrdinalIgnoreCase)) return "dynamic:discover";
+            if (normalized.Equals("Wild Card", StringComparison.OrdinalIgnoreCase)) return "dynamic:wild-card";
+            if (normalized.Equals("From Your Watchlist", StringComparison.OrdinalIgnoreCase)) return "dynamic:watchlist";
+            if (normalized.Equals("Highly Rated by You", StringComparison.OrdinalIgnoreCase)) return "dynamic:highly-rated";
+
+            const string suffix = " For You";
+            if (normalized.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            {
+                var subtype = normalized[..^suffix.Length];
+                return $"dynamic:subcategory:{NormalizeManagedPlaylistKeyComponent(subtype)}";
+            }
+
+            return $"dynamic:{NormalizeManagedPlaylistKeyComponent(normalized)}";
         }
 
-        private Dictionary<string, IReadOnlyList<Guid>> CaptureRecommendationPlaylistMembers(Guid userId)
+        private static string NormalizeManagedPlaylistKeyComponent(string value)
         {
+            var characters = value.Trim().ToLowerInvariant()
+                .Select(character => char.IsLetterOrDigit(character) ? character : '-')
+                .ToArray();
+            return string.Join(
+                '-',
+                new string(characters).Split('-', StringSplitOptions.RemoveEmptyEntries));
+        }
+
+
+        private async Task<Dictionary<string, IReadOnlyList<Guid>>> CaptureRecommendationPlaylistMembersAsync(
+            Guid userId,
+            CancellationToken cancellationToken)
+        {
+            var registrations = await _movieStore.GetManagedPlaylistsAsync(
+                userId,
+                ManagedPlaylistKind.RotatingRecommendation,
+                cancellationToken);
+            var registeredById = registrations.ToDictionary(row => row.PlaylistId);
+
             return _libraryManager.GetItemList(new InternalItemsQuery
                 {
                     IncludeItemTypes = new[] { Jellyfin.Data.Enums.BaseItemKind.Playlist },
@@ -347,8 +367,8 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     Recursive = true
                 })
                 .OfType<Playlist>()
-                .Where(playlist => playlist.OwnerUserId == userId && IsRecommendationPlaylistName(playlist.Name))
-                .GroupBy(playlist => playlist.Name, StringComparer.OrdinalIgnoreCase)
+                .Where(playlist => registeredById.ContainsKey(playlist.Id))
+                .GroupBy(playlist => registeredById[playlist.Id].LogicalKey, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(
                     group => group.Key,
                     group => (IReadOnlyList<Guid>)group
@@ -368,20 +388,32 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             IEnumerable<Guid> rankedEligibleCandidates,
             int targetSize)
         {
-            previousPlaylists.TryGetValue(playlistName, out var previousMembers);
+            var previousMembers = GetPreviousPlaylistMembers(previousPlaylists, playlistName);
             return PlaylistRotationPolicy.Select(
-                    previousMembers ?? Array.Empty<Guid>(),
+                    previousMembers,
                     rankedEligibleCandidates,
                     targetSize,
                     _config.PlaylistRotationPercent)
                 .ToList();
         }
 
-        // Deletes only this plugin's recommendation playlists for the target user.
-        // Unrelated user-created playlists must survive a refresh. Ownerless plugin
-        // recommendation patterns are also removed to migrate pre-v1.5.39 ghosts.
+        private static IReadOnlyList<Guid> GetPreviousPlaylistMembers(
+            IReadOnlyDictionary<string, IReadOnlyList<Guid>> previousPlaylists,
+            string displayName)
+        {
+            return previousPlaylists.TryGetValue(GetManagedPlaylistLogicalKey(displayName), out var members)
+                ? members
+                : Array.Empty<Guid>();
+        }
+
+        // Deletes only rotating playlists whose durable Jellyfin IDs are registered by
+        // this plugin for the target user. Names and ownership are not provenance.
         private async Task DeleteUserRecommendationPlaylistsAsync(Guid userId, CancellationToken cancellationToken)
         {
+            var registrations = await _movieStore.GetManagedPlaylistsAsync(
+                userId,
+                ManagedPlaylistKind.RotatingRecommendation,
+                cancellationToken);
             var allPlaylists = _libraryManager.GetItemList(new InternalItemsQuery
             {
                 IncludeItemTypes = new[] { Jellyfin.Data.Enums.BaseItemKind.Playlist },
@@ -389,14 +421,35 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 Recursive = true
             }).OfType<Playlist>().ToList();
 
-            foreach (var playlist in allPlaylists.Where(p =>
-                         ShouldDeleteRecommendationPlaylist(p.OwnerUserId, p.Name, userId)))
+            foreach (var registration in registrations)
             {
-                _logger.LogInformation("Deleting playlist '{Name}' for user {UserId} (clean slate).", playlist.Name, userId);
-                _libraryManager.DeleteItem(playlist, new MediaBrowser.Controller.Library.DeleteOptions { DeleteFileLocation = true });
-            }
+                var playlist = allPlaylists.FirstOrDefault(candidate => candidate.Id == registration.PlaylistId);
+                if (playlist != null)
+                {
+                    _logger.LogInformation(
+                        "Deleting registered playlist '{Name}' ({PlaylistId}) for user {UserId} (clean slate).",
+                        playlist.Name,
+                        playlist.Id,
+                        userId);
+                    _libraryManager.DeleteItem(
+                        playlist,
+                        new MediaBrowser.Controller.Library.DeleteOptions { DeleteFileLocation = true });
+                }
+                else
+                {
+                    _logger.LogInformation(
+                        "Pruning stale managed-playlist registration {PlaylistId} for user {UserId}; the Jellyfin item no longer exists.",
+                        registration.PlaylistId,
+                        userId);
+                }
 
-            await Task.CompletedTask;
+                // Remove provenance only after the exact registered item was successfully
+                // deleted, or after its absence was explicitly confirmed above.
+                await _movieStore.RemoveManagedPlaylistAsync(
+                    userId,
+                    registration.PlaylistId,
+                    cancellationToken);
+            }
         }
 
         private async Task<List<Guid>> GenerateForYouPlaylistAsync(Guid userId, TasteProfile profile, List<MovieMetadata> unwatched, Dictionary<Guid, MovieAffinity> affinities, Dictionary<Guid, double> ratings, HashSet<Guid> claimed, IReadOnlyDictionary<string, IReadOnlyList<Guid>> previousPlaylists, CancellationToken cancellationToken)
@@ -1329,22 +1382,6 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 .Take(PlaylistSizePolicy.Resolve(_config.MaxMoviesPerPlaylist, null, itemIds.Count))
                 .ToList();
 
-            // Look for existing private playlist owned by this user
-            var allPlaylists = _libraryManager.GetItemList(new InternalItemsQuery
-            {
-                IncludeItemTypes = new[] { Jellyfin.Data.Enums.BaseItemKind.Playlist },
-                IsVirtualItem = false,
-                Recursive = true
-            }).OfType<Playlist>().ToList();
-
-            // Find this user's own playlist by name (scoped per-user so refreshes
-            // for different users don't delete each other's recommendation playlists).
-            var existingPlaylist = allPlaylists.FirstOrDefault(p => p.Name == name && p.OwnerUserId == userId);
-            if (existingPlaylist != null)
-            {
-                _libraryManager.DeleteItem(existingPlaylist, new MediaBrowser.Controller.Library.DeleteOptions { DeleteFileLocation = true });
-            }
-
             if (itemIds.Any())
             {
                 var req = new MediaBrowser.Model.Playlists.PlaylistCreationRequest
@@ -1359,34 +1396,44 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 // Jellyfin has persisted the playlist. Otherwise another user's
                 // cleanup can race the still-ownerless playlist creation task.
                 var result = await _playlistManager.CreatePlaylist(req);
+                if (!Guid.TryParse(result.Id, out var createdPlaylistId) || createdPlaylistId == Guid.Empty)
+                    throw new InvalidOperationException($"Jellyfin returned an invalid playlist ID for '{name}': '{result.Id}'.");
                 _logger.LogInformation("Created playlist '{Name}' for user {UserId} with {Count} items (Result Id: {ResultId}).", name, userId, itemIds.Count, result.Id);
 
-                // v1.5.39: Jellyfin 10.11 ignores PlaylistCreationRequest.UserId for
-                // ownership — the created playlist has OwnerUserId == Guid.Empty, which
-                // broke the owner-scoped find/delete above (ghost playlists accumulated
-                // with '1'-suffixed paths). Stamp the owner explicitly and persist it.
+                // Ownership and durable provenance are one fail-closed creation boundary.
+                // Jellyfin 10.11 ignores PlaylistCreationRequest.UserId, so persist the
+                // owner on the exact returned ID before confirming it as managed. Any
+                // lookup, owner-write, or registry failure removes only this new item.
+                Playlist? created = null;
                 try
                 {
-                    // Creation is complete here, so the just-created ownerless playlist
-                    // is visible before any other refresh can enter cleanup.
-                    var created = _libraryManager.GetItemList(new InternalItemsQuery
-                        {
-                            IncludeItemTypes = new[] { Jellyfin.Data.Enums.BaseItemKind.Playlist },
-                            IsVirtualItem = false,
-                            Recursive = true
-                        }).OfType<Playlist>()
-                        .Where(p => p.Name == name && p.OwnerUserId == Guid.Empty)
-                        .OrderByDescending(p => p.DateCreated)
-                        .FirstOrDefault();
-                    if (created != null)
-                    {
-                        created.OwnerUserId = userId;
-                        await created.UpdateToRepositoryAsync(MediaBrowser.Controller.Library.ItemUpdateType.MetadataEdit, cancellationToken);
-                    }
+                    created = _libraryManager.GetItemById<Playlist>(createdPlaylistId)
+                        ?? throw new InvalidOperationException(
+                            $"Jellyfin created playlist '{name}' ({createdPlaylistId}) but exact-ID lookup failed.");
+                    created.OwnerUserId = userId;
+                    await created.UpdateToRepositoryAsync(
+                        MediaBrowser.Controller.Library.ItemUpdateType.MetadataEdit,
+                        cancellationToken);
+
+                    await _movieStore.UpsertManagedPlaylistAsync(
+                        userId,
+                        GetManagedPlaylistLogicalKey(name),
+                        createdPlaylistId,
+                        name,
+                        ManagedPlaylistKind.RotatingRecommendation,
+                        cancellationToken);
                 }
-                catch (Exception ex)
+                catch
                 {
-                    _logger.LogWarning(ex, "Failed to stamp OwnerUserId on playlist '{Name}'.", name);
+                    var orphan = created ?? _libraryManager.GetItemById<Playlist>(createdPlaylistId);
+                    if (orphan != null)
+                    {
+                        _libraryManager.DeleteItem(
+                            orphan,
+                            new MediaBrowser.Controller.Library.DeleteOptions { DeleteFileLocation = true });
+                    }
+
+                    throw;
                 }
 
                 // Record surfacing for novelty tracking (so the same films don't recycle).

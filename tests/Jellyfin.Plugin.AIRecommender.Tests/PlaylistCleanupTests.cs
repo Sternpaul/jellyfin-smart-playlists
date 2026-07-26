@@ -6,39 +6,88 @@ namespace Jellyfin.Plugin.AIRecommender.Tests;
 
 public class PlaylistCleanupTests
 {
-    private static bool ShouldDelete(Guid ownerId, string name, Guid targetUserId)
+    private static bool ShouldDelete(Guid playlistId, params Guid[] registeredRotatingPlaylistIds)
     {
         var method = typeof(PlaylistEngine).GetMethod(
-            "ShouldDeleteRecommendationPlaylist",
+            "ShouldDeleteRegisteredPlaylist",
             BindingFlags.NonPublic | BindingFlags.Static);
 
         Assert.NotNull(method);
-        return (bool)method.Invoke(null, new object?[] { ownerId, name, targetUserId })!;
+        return (bool)method!.Invoke(null, new object?[]
+        {
+            playlistId,
+            registeredRotatingPlaylistIds.ToHashSet()
+        })!;
+    }
+
+    private static string LogicalKey(string displayName)
+    {
+        var method = typeof(PlaylistEngine).GetMethod(
+            "GetManagedPlaylistLogicalKey",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+        return (string)method!.Invoke(null, new object?[] { displayName })!;
+    }
+
+    private static IReadOnlyList<Guid> PreviousMembers(
+        IReadOnlyDictionary<string, IReadOnlyList<Guid>> previousByLogicalKey,
+        string displayName)
+    {
+        var method = typeof(PlaylistEngine).GetMethod(
+            "GetPreviousPlaylistMembers",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+        return (IReadOnlyList<Guid>)method!.Invoke(null, new object?[] { previousByLogicalKey, displayName })!;
     }
 
     [Fact]
-    public void Personal_playlist_owned_by_target_user_is_preserved()
+    public void Because_you_watched_anchor_changes_keep_one_stable_logical_key()
     {
-        var userId = Guid.NewGuid();
-        Assert.False(ShouldDelete(userId, "My Friday Movies", userId));
+        Assert.Equal(LogicalKey("Because You Watched Arrival"), LogicalKey("Because You Watched Alien"));
     }
 
     [Fact]
-    public void Plugin_playlist_owned_by_target_user_is_deleted()
+    public void Distinct_fixed_playlist_slots_have_distinct_logical_keys()
     {
-        var userId = Guid.NewGuid();
-        Assert.True(ShouldDelete(userId, "For You", userId));
+        Assert.NotEqual(LogicalKey("For You"), LogicalKey("Recently Added"));
     }
 
     [Fact]
-    public void Ownerless_plugin_ghost_is_deleted()
+    public void Changed_because_you_watched_anchor_reuses_prior_logical_slot_members()
     {
-        Assert.True(ShouldDelete(Guid.Empty, "Because You Watched Arrival11", Guid.NewGuid()));
+        var previousMembers = new[] { Guid.NewGuid(), Guid.NewGuid() };
+        var previous = new Dictionary<string, IReadOnlyList<Guid>>(StringComparer.OrdinalIgnoreCase)
+        {
+            [LogicalKey("Because You Watched Arrival")] = previousMembers
+        };
+
+        Assert.Equal(previousMembers, PreviousMembers(previous, "Because You Watched Alien"));
     }
 
     [Fact]
-    public void Another_users_plugin_playlist_is_preserved()
+    public void Registered_rotating_playlist_is_deleted_by_jellyfin_id()
     {
-        Assert.False(ShouldDelete(Guid.NewGuid(), "For You", Guid.NewGuid()));
+        var playlistId = Guid.NewGuid();
+        Assert.True(ShouldDelete(playlistId, playlistId));
+    }
+
+    [Fact]
+    public void Unregistered_personal_or_legacy_playlist_is_preserved_even_if_its_name_matches_plugin_wording()
+    {
+        Assert.False(ShouldDelete(Guid.NewGuid()));
+    }
+
+    [Fact]
+    public void Another_registered_playlist_does_not_authorize_deletion()
+    {
+        Assert.False(ShouldDelete(Guid.NewGuid(), Guid.NewGuid()));
+    }
+
+    [Fact]
+    public void Persistent_collection_is_preserved_when_only_rotating_ids_are_supplied()
+    {
+        var persistentCollectionId = Guid.NewGuid();
+        var rotatingId = Guid.NewGuid();
+        Assert.False(ShouldDelete(persistentCollectionId, rotatingId));
     }
 }

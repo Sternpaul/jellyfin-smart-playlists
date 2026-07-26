@@ -143,6 +143,19 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                     PlaybackPercentage REAL NOT NULL,
                     CONSTRAINT PK_VerifiedWatches PRIMARY KEY (UserId, ItemId)
                 )");
+            EnsureTable(db, @"
+                CREATE TABLE IF NOT EXISTS ManagedPlaylists (
+                    UserId TEXT NOT NULL,
+                    LogicalKey TEXT NOT NULL,
+                    PlaylistId TEXT NOT NULL,
+                    DisplayName TEXT NOT NULL,
+                    Kind INTEGER NOT NULL,
+                    CreatedAt TEXT NOT NULL,
+                    UpdatedAt TEXT NOT NULL,
+                    CONSTRAINT PK_ManagedPlaylists PRIMARY KEY (UserId, LogicalKey)
+                )");
+            db.Database.ExecuteSqlRaw(
+                "CREATE UNIQUE INDEX IF NOT EXISTS IX_ManagedPlaylists_PlaylistId ON ManagedPlaylists (PlaylistId)");
             MigrateAddMovieKeywordColumns(db);
             MigrateAddUserWatchlistColumns(db);
             // v1.5.28: one-time repair for databases created before the
@@ -679,6 +692,89 @@ namespace Jellyfin.Plugin.AIRecommender.Data
             return await db.VerifiedWatches
                 .Where(w => w.UserId == userId)
                 .ToDictionaryAsync(w => w.ItemId, w => w.WatchedAt, cancellationToken);
+        }
+
+        // ---- ManagedPlaylists (v1.7.3): durable plugin provenance ----
+
+        public async Task<List<ManagedPlaylist>> GetManagedPlaylistsAsync(
+            Guid userId,
+            ManagedPlaylistKind? kind = null,
+            CancellationToken cancellationToken = default)
+        {
+            using var db = GetContext();
+            var query = db.ManagedPlaylists.Where(playlist => playlist.UserId == userId);
+            if (kind.HasValue)
+                query = query.Where(playlist => playlist.Kind == kind.Value);
+            return await query.OrderBy(playlist => playlist.LogicalKey).ToListAsync(cancellationToken);
+        }
+
+        public async Task UpsertManagedPlaylistAsync(
+            Guid userId,
+            string logicalKey,
+            Guid playlistId,
+            string displayName,
+            ManagedPlaylistKind kind,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(logicalKey))
+                throw new ArgumentException("A managed playlist logical key is required.", nameof(logicalKey));
+            if (playlistId == Guid.Empty)
+                throw new ArgumentException("A managed playlist must have a Jellyfin playlist ID.", nameof(playlistId));
+
+            using var db = GetContext();
+            var existing = await db.ManagedPlaylists.FindAsync(new object[] { userId, logicalKey }, cancellationToken);
+            var now = DateTime.UtcNow;
+            if (existing == null)
+            {
+                db.ManagedPlaylists.Add(new ManagedPlaylist
+                {
+                    UserId = userId,
+                    LogicalKey = logicalKey,
+                    PlaylistId = playlistId,
+                    DisplayName = displayName,
+                    Kind = kind,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                });
+            }
+            else
+            {
+                existing.PlaylistId = playlistId;
+                existing.DisplayName = displayName;
+                existing.Kind = kind;
+                existing.UpdatedAt = now;
+            }
+
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        public async Task RemoveManagedPlaylistsAsync(
+            Guid userId,
+            ManagedPlaylistKind kind,
+            CancellationToken cancellationToken = default)
+        {
+            using var db = GetContext();
+            var rows = await db.ManagedPlaylists
+                .Where(playlist => playlist.UserId == userId && playlist.Kind == kind)
+                .ToListAsync(cancellationToken);
+            db.ManagedPlaylists.RemoveRange(rows);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        public async Task RemoveManagedPlaylistAsync(
+            Guid userId,
+            Guid playlistId,
+            CancellationToken cancellationToken = default)
+        {
+            using var db = GetContext();
+            var row = await db.ManagedPlaylists.SingleOrDefaultAsync(
+                playlist => playlist.UserId == userId && playlist.PlaylistId == playlistId,
+                cancellationToken);
+            if (row == null)
+                return;
+
+            db.ManagedPlaylists.Remove(row);
+            await db.SaveChangesAsync(cancellationToken);
         }
     }
 }

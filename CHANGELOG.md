@@ -2,6 +2,14 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.7.3
+- **Added durable managed-playlist provenance.** The plugin database now records each managed playlist by user, stable logical key, exact Jellyfin playlist GUID, display name, and lifecycle kind.
+- **Stopped treating playlist names or ownership as ongoing deletion authority.** Refresh and disabled-user cleanup delete only exact GUIDs registered as rotating recommendations, so an unregistered personal playlist survives even if it uses plugin-like wording.
+- **Separated rotating recommendations from persistent collections in the schema.** Rotating cleanup cannot remove future collection registrations.
+- **Left legacy playlists unregistered and untouched.** Older versions stored no authoritative playlist marker, so v1.7.3 refuses to infer destructive provenance from names, owners, paths, or overlapping movie membership. The first refresh may therefore leave a legacy duplicate beside the newly registered playlist rather than risk deleting personal data.
+- **Registered the exact GUID returned by Jellyfin playlist creation.** Registration failures remove the just-created orphan and fail the refresh rather than leaving an untracked playlist.
+- Added fresh-database, in-place-upgrade, upsert, user isolation, lifecycle isolation, stable logical-key, and registered-ID cleanup regressions.
+
 ## v1.7.2
 - **Fixed false-green root test discovery.** Added `Jellyfin.Plugin.AIRecommender.sln` with both production and xUnit projects, so plain root `dotnet test` runs the real suite instead of exiting successfully with zero tests.
 - The tag workflow now verifies tag/project version parity, runs the full Release test suite, and fails when the version-specific changelog section is missing instead of publishing placeholder notes.

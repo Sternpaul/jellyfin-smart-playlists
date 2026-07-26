@@ -19,6 +19,7 @@ namespace Jellyfin.Plugin.AIRecommender.Data
         public DbSet<SurfaceHistory> SurfaceHistory { get; set; }
         public DbSet<UserRating> UserRatings { get; set; }
         public DbSet<VerifiedWatch> VerifiedWatches { get; set; }
+        public DbSet<ManagedPlaylist> ManagedPlaylists { get; set; }
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
@@ -54,6 +55,13 @@ namespace Jellyfin.Plugin.AIRecommender.Data
 
             modelBuilder.Entity<VerifiedWatch>()
                 .HasKey(w => new { w.UserId, w.ItemId });
+
+            modelBuilder.Entity<ManagedPlaylist>()
+                .HasKey(p => new { p.UserId, p.LogicalKey });
+
+            modelBuilder.Entity<ManagedPlaylist>()
+                .HasIndex(p => p.PlaylistId)
+                .IsUnique();
         }
     }
 }

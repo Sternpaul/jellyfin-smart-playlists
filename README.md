@@ -263,7 +263,7 @@ Releases are tag-only and immutable. The release workflow requires the tag and p
 - [x] **v1.7.0:** align playlist size limits across generators
 - [x] **v1.7.1:** align completion settings with strict verified-playback semantics
 - [x] **v1.7.2:** harden test discovery, releases, publication checks, and documentation
-- [ ] **v1.7.3:** durable managed-playlist provenance registry
+- [x] **v1.7.3:** add durable managed-playlist provenance registry
 - [ ] **v1.7.4:** update playlists in place while preserving IDs and metadata
 - [ ] **v1.7.5:** native Jellyfin playlist descriptions and explanations
 - [ ] **v1.7.6:** deterministic primary/backdrop artwork with manual-art preservation
