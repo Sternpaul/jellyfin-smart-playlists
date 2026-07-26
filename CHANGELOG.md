@@ -2,6 +2,10 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.6.2
+- **Stopped refresh and user-disable operations from deleting unrelated personal playlists.** The clean-slate cleanup previously selected every playlist owned by the target user, regardless of whether AI Recommender created it, and deleted its backing file. Cleanup now requires both plugin recommendation-name provenance and matching ownership; ownerless plugin-pattern ghosts from older versions are still removed.
+- Added regression coverage proving that personal playlists and another user's plugin playlists survive, while the target user's plugin playlists and legacy ownerless ghosts are removed.
+
 ## v1.6.1
 - **Plugin controls are now administrator-only.** Every AI Recommender API route now requires Jellyfin's `RequiresElevation` authorization policy. Non-admin users can no longer read or modify plugin settings, trigger indexing or playlist refreshes, inspect another user's recommendation state, invoke plugin chat, or configure server-fetched watchlist/ratings URLs.
 - **Admin-managed per-user targets remain supported.** An administrator can still configure which Jellyfin users receive recommendation playlists and manage their watchlist/ratings sources from the plugin dashboard. Direct user self-service is deferred to a possible future feature with explicit per-user authorization.

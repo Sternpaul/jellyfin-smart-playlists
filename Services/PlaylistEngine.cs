@@ -324,9 +324,15 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 || baseName.Equals("Highly Rated by You", StringComparison.OrdinalIgnoreCase);
         }
 
-        // Deletes ALL playlists owned by a user (complete wipe) before regenerating,
-        // so the user starts from a totally clean slate. Also removes ownerless
-        // recommendation-pattern playlists (ghosts left by pre-v1.5.39 versions).
+        private static bool ShouldDeleteRecommendationPlaylist(Guid ownerUserId, string? name, Guid targetUserId)
+        {
+            return IsRecommendationPlaylistName(name)
+                && (ownerUserId == targetUserId || ownerUserId == Guid.Empty);
+        }
+
+        // Deletes only this plugin's recommendation playlists for the target user.
+        // Unrelated user-created playlists must survive a refresh. Ownerless plugin
+        // recommendation patterns are also removed to migrate pre-v1.5.39 ghosts.
         private async Task DeleteUserRecommendationPlaylistsAsync(Guid userId, CancellationToken cancellationToken)
         {
             var allPlaylists = _libraryManager.GetItemList(new InternalItemsQuery
@@ -337,8 +343,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             }).OfType<Playlist>().ToList();
 
             foreach (var playlist in allPlaylists.Where(p =>
-                         p.OwnerUserId == userId ||
-                         (p.OwnerUserId == Guid.Empty && IsRecommendationPlaylistName(p.Name))))
+                         ShouldDeleteRecommendationPlaylist(p.OwnerUserId, p.Name, userId)))
             {
                 _logger.LogInformation("Deleting playlist '{Name}' for user {UserId} (clean slate).", playlist.Name, userId);
                 _libraryManager.DeleteItem(playlist, new MediaBrowser.Controller.Library.DeleteOptions { DeleteFileLocation = true });
