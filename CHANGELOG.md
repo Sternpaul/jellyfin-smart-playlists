@@ -2,6 +2,12 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.6.4
+- **Made ratings replacement atomic.** Clearing a user's prior imported ratings and inserting the replacement set now occurs in one SQLite transaction; any insert failure rolls back and preserves the previous valid ratings.
+- **Deduplicated imported ratings before EF tracking.** Repeated rows for the same movie no longer trigger a duplicate composite-key exception. The last imported value wins deterministically.
+- Serialized ratings writes and made user-key deletion case-insensitive for legacy GUID text formats.
+- Added EF/SQLite regression tests for duplicate input and injected replacement failure rollback.
+
 ## v1.6.3
 - **Made Jellyfin ItemId reassignment atomic.** The old movie-row deletion, dependent-state migration, and replacement insert now run in one SQLite transaction. If any step fails, the transaction rolls back and the original indexed movie remains intact instead of disappearing between commits.
 - **Preserved learned and imported state across library rebuilds.** Reassigned ItemIds now migrate `Affinities`, `SurfaceHistory`, `UserRatings`, and cached watchlist matches to the replacement key before the stale movie row is removed.

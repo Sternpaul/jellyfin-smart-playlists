@@ -15,6 +15,7 @@ namespace Jellyfin.Plugin.AIRecommender.Data
         private readonly string _dbPath;
         private readonly ILogger<MovieStore> _logger;
         private readonly SemaphoreSlim _saveMoviesLock = new(1, 1);
+        private readonly SemaphoreSlim _saveRatingsLock = new(1, 1);
 
         public string DataDirectory => Path.GetDirectoryName(_dbPath) ?? ".";
 
@@ -577,16 +578,40 @@ namespace Jellyfin.Plugin.AIRecommender.Data
             return result;
         }
 
-        // Replace a user's ratings wholesale (re-scraped). Old ratings for this user are cleared first.
+        // Replace a user's ratings wholesale (re-scraped). The delete and deduplicated
+        // insert are atomic so malformed imports cannot erase the previous valid set.
         public async Task SaveUserRatingsAsync(Guid userId, IEnumerable<UserRating> ratings, CancellationToken cancellationToken = default)
         {
-            using var db = GetContext();
-            // Raw delete (bypasses EF change-tracking/concurrency checks) then insert.
-            // The previous RemoveRange + SaveChangesAsync threw DbUpdateConcurrencyException
-            // ("expected 1 row, affected 0") against case-mismatched / already-removed rows.
-            await db.Database.ExecuteSqlRawAsync("DELETE FROM UserRatings WHERE UserId = {0}", userId);
-            db.UserRatings.AddRange(ratings);
-            await db.SaveChangesAsync(cancellationToken);
+            await _saveRatingsLock.WaitAsync(cancellationToken);
+            try
+            {
+                var deduplicated = ratings
+                    .GroupBy(rating => rating.ItemId)
+                    .Select(group => group.Last())
+                    .Select(rating => new UserRating
+                    {
+                        UserId = userId,
+                        ItemId = rating.ItemId,
+                        Rating = rating.Rating,
+                        SourceTitle = rating.SourceTitle,
+                        LastUpdated = rating.LastUpdated
+                    })
+                    .ToList();
+
+                using var db = GetContext();
+                await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+                var userKey = userId.ToString().ToLowerInvariant();
+                await db.Database.ExecuteSqlInterpolatedAsync(
+                    $"DELETE FROM UserRatings WHERE LOWER(UserId) = {userKey}",
+                    cancellationToken);
+                db.UserRatings.AddRange(deduplicated);
+                await db.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+            }
+            finally
+            {
+                _saveRatingsLock.Release();
+            }
         }
     }
 }
