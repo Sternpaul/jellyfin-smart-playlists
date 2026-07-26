@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.6.7.0",
+        "changelog": "- **Removed cross-user scoring state.** Affinity and novelty decay now receive the intended user ID explicitly instead of reading singleton `_currentUserId`, so another user's refresh cannot change scores mid-generation.\n- **Serialized refresh-affecting operations.** Scheduled/manual refreshes, immediate exclusion cleanup, and watch-triggered affinity rebuilds now share one cancellation-safe execution gate, preventing overlapping playlist deletion/creation and same-database affinity races.\n- Playlist creation is now awaited so the gate remains held until Jellyfin has persisted the new ownerless playlist and the plugin can stamp its owner before another cleanup begins.\n- Added regressions for explicit user context and overlapping-operation serialization.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.6.7/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "afd70780f17e372675d4f870e6e248b8",
+        "timestamp": "2026-07-26T19:45:03Z"
+      },
+      {
         "version": "1.6.6.0",
         "changelog": "- **Separated manual Played flags from recent-watch signals.** Manually marking a movie played still excludes it from unwatched recommendations, but no longer feeds recency, taste profiling, punishment/reward learning, or `Because You Watched`.\n- Added a persistent `VerifiedWatches` store used by recency and taste. It records only actual Jellyfin `PlaybackFinished` events above 50% completion; exactly 50% and lower are ignored.\n- Uses Jellyfin's playback-session stop event so the original reported position is retained; reset or unknown positions are ignored rather than inferred from the Played flag, and playback-progress saves do not create duplicate signals.\n- Verified-watch records follow ItemId reassignment atomically with the rest of the movie's dependent state.\n- Added SQLite persistence, user-isolation, playback-reason, threshold-boundary, and ItemId-migration regression tests.",
         "targetAbi": "10.11.0.0",
