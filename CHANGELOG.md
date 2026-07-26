@@ -2,6 +2,11 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.6.1
+- **Plugin controls are now administrator-only.** Every AI Recommender API route now requires Jellyfin's `RequiresElevation` authorization policy. Non-admin users can no longer read or modify plugin settings, trigger indexing or playlist refreshes, inspect another user's recommendation state, invoke plugin chat, or configure server-fetched watchlist/ratings URLs.
+- **Admin-managed per-user targets remain supported.** An administrator can still configure which Jellyfin users receive recommendation playlists and manage their watchlist/ratings sources from the plugin dashboard. Direct user self-service is deferred to a possible future feature with explicit per-user authorization.
+- Added the first automated regression-test project; authorization tests verify that the controller has the elevation policy and no policy-less authentication fallback.
+
 ## v1.5.40
 - **Fixed Index & Classify crashing when Jellyfin reassigns a movie's ItemId.** During a library re-import or rescan, Jellyfin can assign a new ItemId to a movie whose IMDb ID already exists in the recommender database. `MovieStore.SaveMoviesAsync` matched the existing row by IMDb ID and then attempted to replace its `ItemId`, but `ItemId` is the Entity Framework primary key and cannot be modified on a tracked entity. This aborted indexing with `InvalidOperationException: The property 'MovieMetadata.ItemId' is part of a key and so cannot be modified or marked as modified.` The upsert now deletes and flushes the stale row before inserting the movie under its new ItemId, with a guard that removes any conflicting row already occupying the new key.
 - **Regression-tested against the real plugin DLL.** A standalone reproduction indexed one IMDb ID under ItemId A and then re-indexed it under ItemId B: v1.5.39 reproduced the exact primary-key exception, while v1.5.40 completed with one database row under ItemId B and no duplicate. The clean Jellyfin 10.11.11 test rig also completed indexing 146/146 movies with 146 distinct ItemIds and no key or concurrency exception.

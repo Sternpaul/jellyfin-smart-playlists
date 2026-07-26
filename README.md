@@ -91,7 +91,7 @@ This is the only supported ratings source — the plugin does **not** scrape Let
 ---
 
 ## ⚙️ Configuration (summary)
-**Dashboard → Plugins → AI Recommender.** AI provider + key, refresh interval, playlist sizes, diversity, learning rates — all configurable. **Per-user**: Letterboxd username, watchlist URL/CSV, and which bonus playlists to enable.
+**Dashboard → Plugins → AI Recommender.** All plugin controls and API operations are administrator-only. The administrator configures the AI provider, playlist behavior, and the watchlist/ratings sources and bonus playlists assigned to each Jellyfin user. Non-admin users only consume the generated playlists; they cannot access or change plugin settings.
 
 The full settings tables, technical internals, REST API, cost breakdown, and roadmap are in **[DETAILS](#details)** below.
 
@@ -218,7 +218,7 @@ Every N hours (default 12): rotate 30%, re-check watches, enforce diversity.
 | Anthropic | `claude-sonnet-4-5` | `claude-sonnet-4-5` |
 
 ## REST API
-All endpoints require Jellyfin auth (`Authorization` header).
+All endpoints require an authenticated Jellyfin administrator (`RequiresElevation`). Non-admin accounts cannot call plugin APIs or modify plugin-managed per-user settings.
 | Method | Endpoint | Description |
 |---|---|---|
 | POST | `/api/airecommender/chat` | NL recommendations |
@@ -254,6 +254,7 @@ DLL lands in `bin/Release/net9.0/`. The SQLite DB lives in the Jellyfin config d
 - [x] Self-hosted plugin repository with auto-update
 - [x] Transparency / "what's happening" panel
 - [ ] Richer ratings coverage (CSV export import as robust alternative to scraping)
+- [ ] Optional user self-service settings with strict same-user authorization (configuration is administrator-only today)
 
 ## License
 MIT — see [LICENSE](LICENSE).

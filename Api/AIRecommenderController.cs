@@ -8,6 +8,7 @@ using Jellyfin.Plugin.AIRecommender.Data.Models;
 using Jellyfin.Plugin.AIRecommender.Configuration;
 using Jellyfin.Plugin.AIRecommender.Services;
 using Jellyfin.Plugin.AIRecommender.Services.AI;
+using MediaBrowser.Common.Api;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Tasks;
 using Microsoft.AspNetCore.Authorization;
@@ -20,7 +21,7 @@ namespace Jellyfin.Plugin.AIRecommender.Api
     [ApiController]
     [Route("AIRecommender")]
     [Produces("application/json")]
-    [Authorize]
+    [Authorize(Policy = Policies.RequiresElevation)]
     public class AIRecommenderController : ControllerBase
     {
         private readonly AIProviderFactory _aiProviderFactory;
