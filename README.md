@@ -230,7 +230,7 @@ All endpoints require an authenticated Jellyfin administrator (`RequiresElevatio
 | POST | `/api/airecommender/UserConfig/SyncRatings?userId=` | Re-scrape a user's ratings |
 
 ## How it works (technical)
-**First run:** index library → AI-classify → compute similarity → export watch history → taste-profile → generate playlists. **Ongoing:** incremental classification of new movies, real-time watch hooks, scheduled refresh (zero API cost), debounced immediate refresh after a watch.
+**First run:** index library → AI-classify → compute similarity → export watch history → taste-profile → generate playlists. **Ongoing:** incremental classification of new movies, verified playback hooks, scheduled refresh (zero API cost), debounced immediate refresh after a watch. A manual Jellyfin **Mark Played** remains a strict exclusion signal only; recent-watch ordering, taste recency, and learning use actual Jellyfin playback sessions stopped above 50% completion.
 
 **Client compatibility:** Playlists work on every client. AI Chat is web-only.
 

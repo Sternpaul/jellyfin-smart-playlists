@@ -2,6 +2,13 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.6.6
+- **Separated manual Played flags from recent-watch signals.** Manually marking a movie played still excludes it from unwatched recommendations, but no longer feeds recency, taste profiling, punishment/reward learning, or `Because You Watched`.
+- Added a persistent `VerifiedWatches` store used by recency and taste. It records only actual Jellyfin `PlaybackFinished` events above 50% completion; exactly 50% and lower are ignored.
+- Uses Jellyfin's playback-session stop event so the original reported position is retained; reset or unknown positions are ignored rather than inferred from the Played flag, and playback-progress saves do not create duplicate signals.
+- Verified-watch records follow ItemId reassignment atomically with the rest of the movie's dependent state.
+- Added SQLite persistence, user-isolation, playback-reason, threshold-boundary, and ItemId-migration regression tests.
+
 ## v1.6.5
 - **Stopped empty `Because You Watched` refreshes from crashing.** If watch history exists but no eligible unwatched candidates remain, the generator now returns without calling `First()` on an empty sequence.
 - **Fixed comma-separated classifier fallback.** Plain-text subcategories are now tokenized once and used directly instead of being passed to `JsonSerializer.Deserialize`, which previously threw on values such as `Action, Drama`.

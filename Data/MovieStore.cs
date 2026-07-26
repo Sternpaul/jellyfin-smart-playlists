@@ -16,6 +16,7 @@ namespace Jellyfin.Plugin.AIRecommender.Data
         private readonly ILogger<MovieStore> _logger;
         private readonly SemaphoreSlim _saveMoviesLock = new(1, 1);
         private readonly SemaphoreSlim _saveRatingsLock = new(1, 1);
+        private readonly SemaphoreSlim _verifiedWatchLock = new(1, 1);
 
         public string DataDirectory => Path.GetDirectoryName(_dbPath) ?? ".";
 
@@ -133,6 +134,14 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                     SourceTitle TEXT NULL,
                     LastUpdated TEXT NOT NULL,
                     CONSTRAINT PK_UserRatings PRIMARY KEY (UserId, ItemId)
+                )");
+            EnsureTable(db, @"
+                CREATE TABLE IF NOT EXISTS VerifiedWatches (
+                    UserId TEXT NOT NULL,
+                    ItemId TEXT NOT NULL,
+                    WatchedAt TEXT NOT NULL,
+                    PlaybackPercentage REAL NOT NULL,
+                    CONSTRAINT PK_VerifiedWatches PRIMARY KEY (UserId, ItemId)
                 )");
             MigrateAddMovieKeywordColumns(db);
             MigrateAddUserWatchlistColumns(db);
@@ -380,6 +389,14 @@ namespace Jellyfin.Plugin.AIRecommender.Data
             await db.Database.ExecuteSqlInterpolatedAsync(
                 $"DELETE FROM UserRatings WHERE LOWER(ItemId) = {oldId}", cancellationToken);
 
+            await db.Database.ExecuteSqlInterpolatedAsync($@"
+                INSERT OR REPLACE INTO VerifiedWatches
+                    (UserId, ItemId, WatchedAt, PlaybackPercentage)
+                SELECT UserId, {newId}, WatchedAt, PlaybackPercentage
+                FROM VerifiedWatches WHERE LOWER(ItemId) = {oldId}", cancellationToken);
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"DELETE FROM VerifiedWatches WHERE LOWER(ItemId) = {oldId}", cancellationToken);
+
             await db.Database.ExecuteSqlInterpolatedAsync(
                 $"UPDATE SurfaceHistory SET ItemId = {newId} WHERE LOWER(ItemId) = {oldId}",
                 cancellationToken);
@@ -612,6 +629,56 @@ namespace Jellyfin.Plugin.AIRecommender.Data
             {
                 _saveRatingsLock.Release();
             }
+        }
+
+        // ---- VerifiedWatches (v1.6.6): actual Jellyfin playback only ----
+
+        public async Task RecordVerifiedWatchAsync(
+            Guid userId,
+            Guid itemId,
+            DateTime watchedAt,
+            double playbackPercentage,
+            CancellationToken cancellationToken = default)
+        {
+            await _verifiedWatchLock.WaitAsync(cancellationToken);
+            try
+            {
+                using var db = GetContext();
+                var existing = await db.VerifiedWatches.FindAsync(
+                    new object[] { userId, itemId },
+                    cancellationToken);
+                if (existing == null)
+                {
+                    db.VerifiedWatches.Add(new VerifiedWatch
+                    {
+                        UserId = userId,
+                        ItemId = itemId,
+                        WatchedAt = watchedAt,
+                        PlaybackPercentage = playbackPercentage
+                    });
+                }
+                else if (watchedAt >= existing.WatchedAt)
+                {
+                    existing.WatchedAt = watchedAt;
+                    existing.PlaybackPercentage = playbackPercentage;
+                }
+
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            finally
+            {
+                _verifiedWatchLock.Release();
+            }
+        }
+
+        public async Task<Dictionary<Guid, DateTime>> GetVerifiedWatchDatesAsync(
+            Guid userId,
+            CancellationToken cancellationToken = default)
+        {
+            using var db = GetContext();
+            return await db.VerifiedWatches
+                .Where(w => w.UserId == userId)
+                .ToDictionaryAsync(w => w.ItemId, w => w.WatchedAt, cancellationToken);
         }
     }
 }

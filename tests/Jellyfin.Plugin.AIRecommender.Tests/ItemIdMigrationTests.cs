@@ -55,6 +55,7 @@ public sealed class ItemIdMigrationTests : IDisposable
             db.Affinities.Add(new MovieAffinity { UserId = userId.ToString(), ItemId = oldId.ToString(), Affinity = 0.7 });
             db.SurfaceHistory.Add(new SurfaceHistory { UserId = userId.ToString(), ItemId = oldId.ToString(), PlaylistType = "For You", SurfacedAt = DateTime.UtcNow });
             db.UserRatings.Add(new UserRating { UserId = userId, ItemId = oldId, Rating = 4.5, LastUpdated = DateTime.UtcNow });
+            db.VerifiedWatches.Add(new VerifiedWatch { UserId = userId, ItemId = oldId, WatchedAt = DateTime.UtcNow.AddDays(-1), PlaybackPercentage = 75.0 });
             db.UserWatchlists.Add(new UserWatchlistConfig { UserId = userId, MatchedItemIds = JsonSerializer.Serialize(new[] { oldId }) });
             await db.SaveChangesAsync();
         }
@@ -71,6 +72,8 @@ public sealed class ItemIdMigrationTests : IDisposable
         var ratings = await verify.UserRatings.ToListAsync();
         Assert.DoesNotContain(ratings, x => x.ItemId == oldId);
         Assert.Contains(ratings, x => x.ItemId == newId);
+        Assert.DoesNotContain(await verify.VerifiedWatches.ToListAsync(), x => x.ItemId == oldId);
+        Assert.Contains(await verify.VerifiedWatches.ToListAsync(), x => x.ItemId == newId && x.PlaybackPercentage == 75.0);
         var cachedIds = JsonSerializer.Deserialize<List<Guid>>((await verify.UserWatchlists.FindAsync(userId))!.MatchedItemIds!);
         Assert.DoesNotContain(oldId, cachedIds!);
         Assert.Contains(newId, cachedIds!);

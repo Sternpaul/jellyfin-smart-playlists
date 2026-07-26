@@ -18,6 +18,7 @@ namespace Jellyfin.Plugin.AIRecommender.Data
         public DbSet<TasteSnapshot> TasteSnapshots { get; set; }
         public DbSet<SurfaceHistory> SurfaceHistory { get; set; }
         public DbSet<UserRating> UserRatings { get; set; }
+        public DbSet<VerifiedWatch> VerifiedWatches { get; set; }
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
@@ -50,6 +51,9 @@ namespace Jellyfin.Plugin.AIRecommender.Data
 
             modelBuilder.Entity<UserRating>()
                 .HasKey(r => new { r.UserId, r.ItemId });
+
+            modelBuilder.Entity<VerifiedWatch>()
+                .HasKey(w => new { w.UserId, w.ItemId });
         }
     }
 }

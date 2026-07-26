@@ -8,6 +8,8 @@ using Jellyfin.Plugin.AIRecommender.Data.Models;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.Session;
+using MediaBrowser.Model.Entities;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.AIRecommender.Services
@@ -19,6 +21,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         private readonly IUserManager _userManager;
         private readonly MovieStore _movieStore;
         private readonly TasteProfiler _tasteProfiler;
+        private readonly ISessionManager _sessionManager;
         private readonly ILogger<WatchHistoryService> _logger;
 
         public WatchHistoryService(
@@ -27,6 +30,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             IUserManager userManager,
             MovieStore movieStore,
             TasteProfiler tasteProfiler,
+            ISessionManager sessionManager,
             ILogger<WatchHistoryService> logger)
         {
             _userDataManager = userDataManager;
@@ -34,9 +38,10 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             _userManager = userManager;
             _movieStore = movieStore;
             _tasteProfiler = tasteProfiler;
+            _sessionManager = sessionManager;
             _logger = logger;
-            
-            _userDataManager.UserDataSaved += OnUserDataSaved;
+
+            _sessionManager.PlaybackStopped += OnPlaybackStopped;
         }
 
         public async Task<List<MovieMetadata>> GetWatchedMoviesAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -65,34 +70,16 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             return allMetadata.Where(m => watchedItemIds.Contains(m.ItemId)).ToList();
         }
 
-        // Same as GetWatchedMoviesAsync but also returns the last-played date so the
-        // taste profiler can apply time-decay. Kept separate to avoid changing the
-        // signature relied on by the "Because You Watched" playlist.
+        // Recency and taste use only playback sessions the plugin actually observed.
+        // Jellyfin's Played flag remains the separate, broader exclusion source above.
         public async Task<List<(MovieMetadata Movie, DateTime? WatchedAt)>> GetWatchedMoviesWithDatesAsync(Guid userId, CancellationToken cancellationToken = default)
         {
-            var allMovies = _libraryManager.GetItemList(new InternalItemsQuery
-            {
-                IncludeItemTypes = new[] { Jellyfin.Data.Enums.BaseItemKind.Movie },
-                IsVirtualItem = false,
-                Recursive = true
-            }).OfType<Movie>().ToList();
-
-            var user = _userManager.GetUserById(userId);
-            if (user == null) return new List<(MovieMetadata, DateTime?)>();
-
-            var watchedMeta = await _movieStore.GetAllMoviesAsync(cancellationToken);
-            var watchedMetaById = watchedMeta.ToDictionary(m => m.ItemId);
-
-            var result = new List<(MovieMetadata, DateTime?)>();
-            foreach (var movie in allMovies)
-            {
-                var userData = _userDataManager.GetUserData(user, movie);
-                if (userData != null && userData.Played && watchedMetaById.TryGetValue(movie.Id, out var meta))
-                {
-                    result.Add((meta, userData.LastPlayedDate));
-                }
-            }
-            return result;
+            var verifiedDates = await _movieStore.GetVerifiedWatchDatesAsync(userId, cancellationToken);
+            var metadata = await _movieStore.GetAllMoviesAsync(cancellationToken);
+            return metadata
+                .Where(movie => verifiedDates.ContainsKey(movie.ItemId))
+                .Select(movie => (movie, (DateTime?)verifiedDates[movie.ItemId]))
+                .ToList();
         }
 
         public async Task<TasteProfile> GetUserTasteProfileAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -102,36 +89,69 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             return _tasteProfiler.CalculateProfile(userId, watched, halfLife);
         }
 
-        private void OnUserDataSaved(object? sender, UserDataSaveEventArgs e)
+        private static double? GetVerifiedPlaybackPercentage(
+            UserDataSaveReason saveReason,
+            bool played,
+            long playbackPositionTicks,
+            long runtimeTicks)
         {
-            if (e.Item is Movie && e.UserData.Played)
+            // Only a finished Jellyfin playback session is evidence of when a movie
+            // was watched. TogglePlayed merely means the user has seen it sometime.
+            if (saveReason != UserDataSaveReason.PlaybackFinished)
+                return null;
+
+            if (runtimeTicks > 0 && playbackPositionTicks > 0)
             {
-                _logger.LogInformation("User {UserId} watched {Movie}. Emitting watch event...", e.UserId, e.Item.Name);
+                var percentage = (double)playbackPositionTicks / runtimeTicks * 100.0;
+                return percentage > 50.0 ? percentage : null;
+            }
 
-                // v1.5.1: compute playback % so the engine can ignore quick glances /
-                // tests (below MinCompletionPercent) — only a real watch learns.
-                double? pct = null;
-                if (e.Item.RunTimeTicks is > 0 && e.UserData.PlaybackPositionTicks is > 0)
-                {
-                    pct = (double)e.UserData.PlaybackPositionTicks / e.Item.RunTimeTicks * 100.0;
-                }
-                else if (e.UserData.Played)
-                {
-                    // Marked played without position info (e.g. user manually ticked
-                    // "played" in the UI, or watched it elsewhere). Per design this IS a
-                    // real watch signal: the user has seen the film, so it should count
-                    // as watched for exclusion AND feed the taste profile + punish/reward.
-                    // Treat as fully watched (100%) rather than a glance/test.
-                    pct = 100.0;
-                }
+            // Played=true with a reset/unknown position is still not direct evidence
+            // of >50%; the session stop event normally retains the original position.
+            return null;
+        }
 
-                // Fire an event that PlaylistEngine can listen to for real-time punishment + rebuild
-                WatchEventEmitted?.Invoke(this, new WatchEventArgs
+        private async void OnPlaybackStopped(object? sender, PlaybackStopEventArgs e)
+        {
+            if (e.Item is not Movie)
+                return;
+
+            var percentage = GetVerifiedPlaybackPercentage(
+                UserDataSaveReason.PlaybackFinished,
+                false,
+                e.PlaybackPositionTicks ?? 0,
+                e.Item.RunTimeTicks ?? 0);
+            if (!percentage.HasValue)
+                return;
+
+            foreach (var user in e.Users)
+            {
+                try
                 {
-                    UserId = e.UserId,
-                    MovieId = e.Item.Id,
-                    PlaybackPercentage = pct
-                });
+                    var watchedAt = DateTime.UtcNow;
+                    await _movieStore.RecordVerifiedWatchAsync(
+                        user.Id,
+                        e.Item.Id,
+                        watchedAt,
+                        percentage.Value,
+                        CancellationToken.None);
+                    _logger.LogInformation(
+                        "Verified Jellyfin playback of {Movie} by {UserId} at {Percentage:F1}%; recording recency and emitting watch event.",
+                        e.Item.Name,
+                        user.Id,
+                        percentage.Value);
+
+                    WatchEventEmitted?.Invoke(this, new WatchEventArgs
+                    {
+                        UserId = user.Id,
+                        MovieId = e.Item.Id,
+                        PlaybackPercentage = percentage.Value
+                    });
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to record verified playback for {MovieId} by {UserId}.", e.Item.Id, user.Id);
+                }
             }
         }
 
