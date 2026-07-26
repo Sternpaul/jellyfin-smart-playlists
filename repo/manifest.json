@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.6.2.0",
+        "changelog": "- **Stopped refresh and user-disable operations from deleting unrelated personal playlists.** The clean-slate cleanup previously selected every playlist owned by the target user, regardless of whether AI Recommender created it, and deleted its backing file. Cleanup now requires both plugin recommendation-name provenance and matching ownership; ownerless plugin-pattern ghosts from older versions are still removed.\n- Added regression coverage proving that personal playlists and another user's plugin playlists survive, while the target user's plugin playlists and legacy ownerless ghosts are removed.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.6.2/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "2f2b80a2c02f26b07b287d27cd5036f2",
+        "timestamp": "2026-07-26T17:12:51Z"
+      },
+      {
         "version": "1.6.1.0",
         "changelog": "- **Plugin controls are now administrator-only.** Every AI Recommender API route now requires Jellyfin's `RequiresElevation` authorization policy. Non-admin users can no longer read or modify plugin settings, trigger indexing or playlist refreshes, inspect another user's recommendation state, invoke plugin chat, or configure server-fetched watchlist/ratings URLs.\n- **Admin-managed per-user targets remain supported.** An administrator can still configure which Jellyfin users receive recommendation playlists and manage their watchlist/ratings sources from the plugin dashboard. Direct user self-service is deferred to a possible future feature with explicit per-user authorization.\n- Added the first automated regression-test project; authorization tests verify that the controller has the elevation policy and no policy-less authentication fallback.",
         "targetAbi": "10.11.0.0",
