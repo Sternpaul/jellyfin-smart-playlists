@@ -279,15 +279,33 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                     movie.ItemId = keyGuid; // normalize on insert
                     db.Movies.Add(movie);
                 }
+                else if (existing.ItemId == keyGuid)
+                {
+                    // Same key: plain field update. Keep movie.ItemId identical to the
+                    // tracked key so SetValues never attempts a key modification.
+                    movie.ItemId = existing.ItemId;
+                    db.Entry(existing).CurrentValues.SetValues(movie);
+                }
                 else
                 {
-                    // Update all fields. Normalize the primary key to lowercase so the DB
-                    // self-heals to consistent casing (pre-fill/backups may have used
-                    // uppercase GUIDs, which broke case-sensitive lookups). MovieMetadata
-                    // has no EF FK dependents, so changing the key in place is safe.
-                    existing.ItemId = keyGuid;
+                    // v1.5.40: the row was found by ImdbId but Jellyfin re-assigned the
+                    // movie a NEW ItemId (re-added/rescanned item). ItemId is the EF
+                    // PRIMARY KEY and EF forbids modifying a tracked entity's key
+                    // ("property 'MovieMetadata.ItemId' is part of a key and so cannot
+                    // be modified") — the old in-place `existing.ItemId = keyGuid`
+                    // crashed the whole index task here. Correct EF pattern: delete the
+                    // old row, flush, then insert a fresh row under the new key.
+                    db.Movies.Remove(existing);
+                    await db.SaveChangesAsync(cancellationToken);
+                    // Guard: another row may already sit under the new key (duplicate
+                    // from an older index run). Update it in place instead of inserting
+                    // a conflicting PK.
+                    var occupant = await db.Movies.FirstOrDefaultAsync(m => m.ItemId == keyGuid, cancellationToken);
                     movie.ItemId = keyGuid;
-                    db.Entry(existing).CurrentValues.SetValues(movie);
+                    if (occupant != null)
+                        db.Entry(occupant).CurrentValues.SetValues(movie);
+                    else
+                        db.Movies.Add(movie);
                 }
                 if (!string.IsNullOrWhiteSpace(movie.ImdbId)) seenImdb.Add(movie.ImdbId);
             }
