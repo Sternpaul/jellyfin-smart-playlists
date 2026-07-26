@@ -2,6 +2,14 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.7.2
+- **Fixed false-green root test discovery.** Added `Jellyfin.Plugin.AIRecommender.sln` with both production and xUnit projects, so plain root `dotnet test` runs the real suite instead of exiting successfully with zero tests.
+- The tag workflow now verifies tag/project version parity, runs the full Release test suite, and fails when the version-specific changelog section is missing instead of publishing placeholder notes.
+- Published releases are treated as immutable: the workflow refuses to delete or replace an existing tag release and serializes manifest publication.
+- Manifest publication now checks out the real `gh-pages` branch and validates version, ABI, exact source URL, non-placeholder changelog, and MD5 checksum before pushing.
+- The workflow performs a bounded public read-back and verifies the served manifest plus a checksum-matching ZIP containing exactly one plugin DLL.
+- Updated source-build and release documentation with the tested root commands and publication contract.
+
 ## v1.7.1
 - **Unified recency, taste, and learning around one verified-playback rule:** only an actual Jellyfin playback stop strictly greater than 50% qualifies. Exactly 50%, shorter playback, unknown/reset positions, playback-progress saves, and manually toggling Played do not create signals.
 - Removed the contradictory `MinCompletionPercent` configuration and secondary learning filter. The old setting could not lower the verified threshold below 50%, while raising it allowed recency storage and learning behavior to disagree.

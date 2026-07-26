@@ -16,6 +16,10 @@ on:
     tags:
       - 'v*' # Trigger the workflow on version tags (e.g., v1.0.0)
 
+concurrency:
+  group: release-manifest-${{ github.repository }}
+  cancel-in-progress: false
+
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
@@ -31,13 +35,44 @@ jobs:
       with:
         dotnet-version: '9.0.x'
 
+    - name: Verify tag matches project version
+      run: |
+        python3 - <<'PY'
+        import os, re, xml.etree.ElementTree as ET
+        tag = os.environ['GITHUB_REF_NAME']
+        raw = tag.removeprefix('v')
+        parts = raw.split('.')
+        if not all(part.isdigit() for part in parts) or not 2 <= len(parts) <= 4:
+            raise SystemExit(f"invalid release tag: {tag}")
+        expected = '.'.join(parts + ['0'] * (4 - len(parts)))
+        actual = ET.parse('Jellyfin.Plugin.AIRecommender.csproj').getroot().findtext('.//Version')
+        if actual != expected:
+            raise SystemExit(f"tag {tag} requires project version {expected}, found {actual}")
+        print(f"verified tag/project version: {expected}")
+        PY
+
+    - name: Restore solution
+      run: dotnet restore Jellyfin.Plugin.AIRecommender.sln
+
     - name: Build Plugin
-      run: dotnet build Jellyfin.Plugin.AIRecommender.csproj --configuration Release
+      run: dotnet build Jellyfin.Plugin.AIRecommender.csproj --configuration Release --no-restore
+
+    - name: Run Tests
+      run: dotnet test Jellyfin.Plugin.AIRecommender.sln --configuration Release --no-restore --logger "console;verbosity=minimal"
 
     - name: Package Plugin
       run: |
-        cd bin/Release/net9.0/
-        zip -r Jellyfin.Plugin.AIRecommender.zip Jellyfin.Plugin.AIRecommender.dll
+        python3 - <<'PY'
+        import pathlib, zipfile
+        root = pathlib.Path('bin/Release/net9.0')
+        dll = root / 'Jellyfin.Plugin.AIRecommender.dll'
+        archive = root / 'Jellyfin.Plugin.AIRecommender.zip'
+        with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED) as package:
+            package.write(dll, dll.name)
+        with zipfile.ZipFile(archive) as package:
+            assert package.namelist() == [dll.name]
+        print(f'packaged {dll.name} only')
+        PY
 
     - name: Extract changelog section for this version
       run: |
@@ -60,7 +95,9 @@ jobs:
                     break
             elif capturing:
                 out.append(line)
-        section = '\n'.join(out).strip() or f"Release {version}"
+        section = '\n'.join(out).strip()
+        if not section:
+            raise SystemExit(f"CHANGELOG.md has no section for {version}")
         print("--- extracted section for %s ---" % version)
         print(section)
         print("--- end ---")
@@ -68,11 +105,14 @@ jobs:
             f.write(section + "\n")
         PY
 
-    - name: Delete existing release for this tag (if any)
-      continue-on-error: true  # 404 expected when detached/absent; ignore it
+    - name: Refuse to replace an existing release
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: gh release delete "${{ github.ref_name }}" --yes 2>/dev/null || true
+      run: |
+        if gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
+          echo "release ${{ github.ref_name }} already exists; published releases are immutable" >&2
+          exit 1
+        fi
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
@@ -115,7 +155,7 @@ jobs:
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
         if git fetch origin gh-pages 2>/dev/null; then
-          git checkout gh-pages
+          git checkout -B gh-pages origin/gh-pages
         else
           # First release: create an orphan gh-pages branch with just the manifest.
           git checkout --orphan gh-pages
@@ -166,6 +206,21 @@ jobs:
         print("Updated manifest with version", os.environ["ver_no_prefix"])
         PY
 
+        python3 - <<'PY'
+        import json, os, re
+        manifest = json.load(open('repo/manifest.json', encoding='utf-8'))
+        guid = '3D3D8BE7-67AB-4F65-9F31-3EAE8764BBA3'
+        plugin = next(p for p in manifest if p.get('guid') == guid)
+        entry = next(v for v in plugin.get('versions', []) if v.get('version') == os.environ['ver_no_prefix'])
+        assert entry['targetAbi'] == '10.11.0.0'
+        assert entry['sourceUrl'] == os.environ['source_url']
+        assert entry['checksum'] == os.environ['checksum']
+        assert re.fullmatch(r'[0-9a-f]{32}', entry['checksum'])
+        assert entry.get('changelog', '').strip()
+        assert not entry['changelog'].startswith('Release v')
+        print('validated generated manifest entry', entry['version'])
+        PY
+
         git add repo/manifest.json
         if git diff --cached --quiet; then
           echo "manifest unchanged; nothing to push"
@@ -173,3 +228,35 @@ jobs:
         fi
         git commit -m "manifest: add ${version}"
         git push origin gh-pages
+
+    - name: Verify public manifest and release artifact
+      run: |
+        python3 - <<'PY'
+        import hashlib, io, json, os, time, urllib.request, zipfile
+        version = os.environ['GITHUB_REF_NAME']
+        raw = version.removeprefix('v').split('.')
+        expected_version = '.'.join(raw + ['0'] * (4 - len(raw)))
+        manifest_url = 'https://sternpaul.github.io/jellyfin-smart-playlists/repo/manifest.json'
+        deadline = time.time() + 120
+        entry = None
+        while time.time() < deadline:
+            with urllib.request.urlopen(f'{manifest_url}?t={time.time_ns()}', timeout=20) as response:
+                manifest = json.load(response)
+            plugin = next((p for p in manifest if p.get('guid') == '3D3D8BE7-67AB-4F65-9F31-3EAE8764BBA3'), None)
+            entry = next((v for v in (plugin or {}).get('versions', []) if v.get('version') == expected_version), None)
+            if entry:
+                break
+            time.sleep(5)
+        if not entry:
+            raise SystemExit(f'public manifest did not publish {expected_version} within 120 seconds')
+        assert entry['targetAbi'] == '10.11.0.0'
+        assert entry.get('changelog', '').strip() and not entry['changelog'].startswith('Release v')
+        expected_source = f'https://github.com/{os.environ["GITHUB_REPOSITORY"]}/releases/download/{version}/Jellyfin.Plugin.AIRecommender.zip'
+        assert entry['sourceUrl'] == expected_source
+        with urllib.request.urlopen(f"{entry['sourceUrl']}?t={time.time_ns()}", timeout=30) as response:
+            archive = response.read()
+        assert hashlib.md5(archive).hexdigest() == entry['checksum']
+        with zipfile.ZipFile(io.BytesIO(archive)) as package:
+            assert package.namelist() == ['Jellyfin.Plugin.AIRecommender.dll']
+        print('verified public manifest, checksum, changelog, ABI, source URL, and single-DLL ZIP')
+        PY

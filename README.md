@@ -242,9 +242,12 @@ Requires .NET 9.0 SDK:
 ```bash
 git clone https://github.com/Sternpaul/jellyfin-smart-playlists.git
 cd jellyfin-smart-playlists
+dotnet test
 dotnet build --configuration Release
 ```
-DLL lands in `bin/Release/net9.0/`. The SQLite DB lives in the Jellyfin config dir (`/config/data/plugins/configurations/airecommender.db`) — persists across updates.
+Root `dotnet test` discovers and runs the xUnit suite through `Jellyfin.Plugin.AIRecommender.sln`. The DLL lands in `bin/Release/net9.0/`. The SQLite DB lives in the Jellyfin config dir (`/config/data/plugins/configurations/airecommender.db`) — persists across updates.
+
+Releases are tag-only and immutable. The release workflow requires the tag and project version to match, runs the full test suite, requires a version-specific changelog, packages only the plugin DLL, publishes the manifest to `gh-pages`, and verifies the public ABI, source URL, changelog, MD5 checksum, and ZIP contents before succeeding.
 
 ## Roadmap
 
@@ -259,7 +262,7 @@ DLL lands in `bin/Release/net9.0/`. The SQLite DB lives in the Jellyfin config d
 - [x] **v1.6.9:** implement deterministic playlist rotation
 - [x] **v1.7.0:** align playlist size limits across generators
 - [x] **v1.7.1:** align completion settings with strict verified-playback semantics
-- [ ] **v1.7.2:** harden test discovery, releases, publication checks, and documentation
+- [x] **v1.7.2:** harden test discovery, releases, publication checks, and documentation
 - [ ] **v1.7.3:** durable managed-playlist provenance registry
 - [ ] **v1.7.4:** update playlists in place while preserving IDs and metadata
 - [ ] **v1.7.5:** native Jellyfin playlist descriptions and explanations
