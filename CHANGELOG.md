@@ -2,6 +2,9 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.5.39
+- **Fixed ghost playlist accumulation.** Jellyfin 10.11 does not honor `PlaylistCreationRequest.UserId` for ownership: plugin-created playlists end up with `OwnerUserId == Guid.Empty`, so the owner-scoped clean-slate delete never matched and every refresh created a NEW playlist (Jellyfin dedupes the path by appending digits: `For You1`, `For You11`, ...). Ghosts (including empty `Because You Watched ...` and `<subcategory> For You` playlists) accumulated forever. The cleanup now also removes ownerless playlists whose names match the plugin's recommendation patterns (digit-suffix aware), migrating existing ghosts away, and the engine attempts to stamp the owner on newly created playlists.
+
 ## v1.5.38
 - **Watched semantics fix (manual "played" mark now counts as watched).** A user marking a movie "played" in Jellyfin (or having watched it elsewhere) is a real watch signal. Previously `WatchHistoryService.OnUserDataSaved` set manual marks to `PlaybackPercentage = 0`, so they were excluded from playlists but did NOT feed the taste profile or trigger the punish/reward rebuild — inconsistent. Now a manual `Played` mark is treated as 100% watched, so it's excluded from recommendation playlists AND updates the user's taste profile / decay factor.
 - **FIXED "From Your Watchlist" dumping ALL matched movies.** `GenerateWatchlistPlaylistAsync` built the playlist from every matched Letterboxd entry regardless of watch state, so a fully- or partially-watched watchlist showed every film. A watchlist is a TO-WATCH list: the playlist now excludes films the user has already marked played, so it reflects what's left to watch.

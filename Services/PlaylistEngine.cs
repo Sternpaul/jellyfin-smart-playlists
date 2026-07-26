@@ -301,9 +301,32 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             _logger.LogInformation("Finished refreshing playlists for user {UserId}", userId);
         }
 
+        // v1.5.39: Jellyfin 10.11 does NOT set OwnerUserId from PlaylistCreationRequest.UserId —
+        // plugin-created playlists end up with OwnerUserId == Guid.Empty. The old owner-scoped
+        // delete/find matched nothing, so every refresh created a NEW playlist (Jellyfin appends
+        // 1, 11, 111... to the path) and ghosts accumulated forever, visible to every user.
+        // Fix: (a) CreateOrUpdateJellyfinPlaylistAsync now explicitly sets OwnerUserId after
+        // creation; (b) cleanup also removes OWNERLESS playlists whose name matches our
+        // recommendation patterns, which migrates existing ghost playlists away.
+        private static bool IsRecommendationPlaylistName(string? name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return false;
+            // Jellyfin dedupes colliding paths by appending digits ("For You11"); strip them.
+            var baseName = name.TrimEnd('0', '1', '2', '3', '4', '5', '6', '7', '8', '9').TrimEnd();
+            if (baseName.StartsWith("Because You Watched", StringComparison.OrdinalIgnoreCase)) return true;
+            if (baseName.EndsWith("For You", StringComparison.OrdinalIgnoreCase)) return true; // "For You", "drama For You", ...
+            return baseName.Equals("Hidden Gems", StringComparison.OrdinalIgnoreCase)
+                || baseName.Equals("Discover: Hidden World", StringComparison.OrdinalIgnoreCase)
+                || baseName.Equals("Discover  Hidden World", StringComparison.OrdinalIgnoreCase) // FS-sanitized ghost
+                || baseName.Equals("Wild Card", StringComparison.OrdinalIgnoreCase)
+                || baseName.Equals("Recently Added", StringComparison.OrdinalIgnoreCase)
+                || baseName.Equals("From Your Watchlist", StringComparison.OrdinalIgnoreCase)
+                || baseName.Equals("Highly Rated by You", StringComparison.OrdinalIgnoreCase);
+        }
+
         // Deletes ALL playlists owned by a user (complete wipe) before regenerating,
-        // so the user starts from a totally clean slate. User-created playlists are
-        // also removed, as intended for this deployment.
+        // so the user starts from a totally clean slate. Also removes ownerless
+        // recommendation-pattern playlists (ghosts left by pre-v1.5.39 versions).
         private async Task DeleteUserRecommendationPlaylistsAsync(Guid userId, CancellationToken cancellationToken)
         {
             var allPlaylists = _libraryManager.GetItemList(new InternalItemsQuery
@@ -313,7 +336,9 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 Recursive = true
             }).OfType<Playlist>().ToList();
 
-            foreach (var playlist in allPlaylists.Where(p => p.OwnerUserId == userId))
+            foreach (var playlist in allPlaylists.Where(p =>
+                         p.OwnerUserId == userId ||
+                         (p.OwnerUserId == Guid.Empty && IsRecommendationPlaylistName(p.Name))))
             {
                 _logger.LogInformation("Deleting playlist '{Name}' for user {UserId} (clean slate).", playlist.Name, userId);
                 _libraryManager.DeleteItem(playlist, new MediaBrowser.Controller.Library.DeleteOptions { DeleteFileLocation = true });
@@ -1205,6 +1230,34 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 
                 var result = _playlistManager.CreatePlaylist(req);
                 _logger.LogInformation("Created playlist '{Name}' for user {UserId} with {Count} items (Result Id: {ResultId}).", name, userId, itemIds.Count, result.Id);
+
+                // v1.5.39: Jellyfin 10.11 ignores PlaylistCreationRequest.UserId for
+                // ownership — the created playlist has OwnerUserId == Guid.Empty, which
+                // broke the owner-scoped find/delete above (ghost playlists accumulated
+                // with '1'-suffixed paths). Stamp the owner explicitly and persist it.
+                try
+                {
+                    // result.Id is not the playlist Guid (it's an internal int).
+                    // Find the just-created playlist by name among ownerless ones.
+                    var created = _libraryManager.GetItemList(new InternalItemsQuery
+                        {
+                            IncludeItemTypes = new[] { Jellyfin.Data.Enums.BaseItemKind.Playlist },
+                            IsVirtualItem = false,
+                            Recursive = true
+                        }).OfType<Playlist>()
+                        .Where(p => p.Name == name && p.OwnerUserId == Guid.Empty)
+                        .OrderByDescending(p => p.DateCreated)
+                        .FirstOrDefault();
+                    if (created != null)
+                    {
+                        created.OwnerUserId = userId;
+                        await created.UpdateToRepositoryAsync(MediaBrowser.Controller.Library.ItemUpdateType.MetadataEdit, cancellationToken);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to stamp OwnerUserId on playlist '{Name}'.", name);
+                }
 
                 // Record surfacing for novelty tracking (so the same films don't recycle).
                 try
