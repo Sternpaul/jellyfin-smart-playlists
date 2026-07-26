@@ -2,6 +2,10 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.5.40
+- **Fixed Index & Classify crashing when Jellyfin reassigns a movie's ItemId.** During a library re-import or rescan, Jellyfin can assign a new ItemId to a movie whose IMDb ID already exists in the recommender database. `MovieStore.SaveMoviesAsync` matched the existing row by IMDb ID and then attempted to replace its `ItemId`, but `ItemId` is the Entity Framework primary key and cannot be modified on a tracked entity. This aborted indexing with `InvalidOperationException: The property 'MovieMetadata.ItemId' is part of a key and so cannot be modified or marked as modified.` The upsert now deletes and flushes the stale row before inserting the movie under its new ItemId, with a guard that removes any conflicting row already occupying the new key.
+- **Regression-tested against the real plugin DLL.** A standalone reproduction indexed one IMDb ID under ItemId A and then re-indexed it under ItemId B: v1.5.39 reproduced the exact primary-key exception, while v1.5.40 completed with one database row under ItemId B and no duplicate. The clean Jellyfin 10.11.11 test rig also completed indexing 146/146 movies with 146 distinct ItemIds and no key or concurrency exception.
+
 ## v1.5.39
 - **Fixed ghost playlist accumulation.** Jellyfin 10.11 does not honor `PlaylistCreationRequest.UserId` for ownership: plugin-created playlists end up with `OwnerUserId == Guid.Empty`, so the owner-scoped clean-slate delete never matched and every refresh created a NEW playlist (Jellyfin dedupes the path by appending digits: `For You1`, `For You11`, ...). Ghosts (including empty `Because You Watched ...` and `<subcategory> For You` playlists) accumulated forever. The cleanup now also removes ownerless playlists whose names match the plugin's recommendation patterns (digit-suffix aware), migrating existing ghosts away, and the engine attempts to stamp the owner on newly created playlists.
 
