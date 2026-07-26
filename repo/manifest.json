@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.6.1.0",
+        "changelog": "- **Plugin controls are now administrator-only.** Every AI Recommender API route now requires Jellyfin's `RequiresElevation` authorization policy. Non-admin users can no longer read or modify plugin settings, trigger indexing or playlist refreshes, inspect another user's recommendation state, invoke plugin chat, or configure server-fetched watchlist/ratings URLs.\n- **Admin-managed per-user targets remain supported.** An administrator can still configure which Jellyfin users receive recommendation playlists and manage their watchlist/ratings sources from the plugin dashboard. Direct user self-service is deferred to a possible future feature with explicit per-user authorization.\n- Added the first automated regression-test project; authorization tests verify that the controller has the elevation policy and no policy-less authentication fallback.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.6.1/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "57b65f153dc3928d2a3e7c411fae8d4a",
+        "timestamp": "2026-07-26T17:04:02Z"
+      },
+      {
         "version": "1.5.40.0",
         "changelog": "- **Fixed Index & Classify crashing when Jellyfin reassigns a movie's ItemId.** During a library re-import or rescan, Jellyfin can assign a new ItemId to a movie whose IMDb ID already exists in the recommender database. `MovieStore.SaveMoviesAsync` matched the existing row by IMDb ID and then attempted to replace its `ItemId`, but `ItemId` is the Entity Framework primary key and cannot be modified on a tracked entity. The upsert now deletes and flushes the stale row before inserting the movie under its new ItemId, with a guard that removes any conflicting row already occupying the new key.\n- **Regression-tested against the real plugin DLL.** v1.5.39 reproduced the exact primary-key exception when one IMDb ID changed from ItemId A to ItemId B; v1.5.40 completed with one row under ItemId B and no duplicate. A clean Jellyfin 10.11.11 rig also indexed 146/146 movies with 146 distinct ItemIds and no key or concurrency exception.",
         "targetAbi": "10.11.0.0",
