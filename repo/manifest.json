@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.6.8.0",
+        "changelog": "- **Made `PlaylistRefreshHours` control the real Jellyfin scheduled task.** The refresh task's default trigger now comes from plugin configuration instead of a hard-coded 12 hours.\n- Added a hosted schedule synchronizer that repairs an already-installed task's persisted trigger at startup and immediately applies later plugin-configuration changes. Startup synchronization retries in the background until Jellyfin registers plugin tasks; assigning the worker's `Triggers` persists the `.js` task configuration and reloads the live timer.\n- Valid configured intervals are 1–168 hours; out-of-range values safely fall back to 12 hours.\n- Added trigger-policy, boundary, target-worker, idempotence, and hosted-service registration regressions.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.6.8/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "bfe20fb6446511ddc0a5af8e293dd3c4",
+        "timestamp": "2026-07-26T19:58:43Z"
+      },
+      {
         "version": "1.6.7.0",
         "changelog": "- **Removed cross-user scoring state.** Affinity and novelty decay now receive the intended user ID explicitly instead of reading singleton `_currentUserId`, so another user's refresh cannot change scores mid-generation.\n- **Serialized refresh-affecting operations.** Scheduled/manual refreshes, immediate exclusion cleanup, and watch-triggered affinity rebuilds now share one cancellation-safe execution gate, preventing overlapping playlist deletion/creation and same-database affinity races.\n- Playlist creation is now awaited so the gate remains held until Jellyfin has persisted the new ownerless playlist and the plugin can stamp its owner before another cleanup begins.\n- Added regressions for explicit user context and overlapping-operation serialization.",
         "targetAbi": "10.11.0.0",
