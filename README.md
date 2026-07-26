@@ -247,14 +247,49 @@ dotnet build --configuration Release
 DLL lands in `bin/Release/net9.0/`. The SQLite DB lives in the Jellyfin config dir (`/config/data/plugins/configurations/airecommender.db`) — persists across updates.
 
 ## Roadmap
+
+### In progress — one feature per release
 - [x] AI classification, similarity engine, taste profiling
 - [x] Playlist engine + punishment mechanic + scheduled refresh
-- [x] Letterboxd watchlist import (CSV/JSON) + watchlist playlist
-- [x] Per-user Letterboxd **ratings** as dominant signal + "Highly Rated by You"
+- [x] External watchlist and per-user ratings imports
 - [x] Self-hosted plugin repository with auto-update
 - [x] Transparency / "what's happening" panel
-- [ ] Richer ratings coverage (CSV export import as robust alternative to scraping)
-- [ ] Optional user self-service settings with strict same-user authorization (configuration is administrator-only today)
+- [x] **v1.6.7:** remove cross-user scoring state and serialize refresh-affecting operations
+- [ ] **v1.6.8:** make the configured refresh interval control the scheduled task
+- [ ] **v1.6.9:** implement deterministic playlist rotation
+- [ ] **v1.7.0:** align playlist size limits across generators
+- [ ] **v1.7.1:** align completion settings with strict verified-playback semantics
+- [ ] **v1.7.2:** harden test discovery, releases, publication checks, and documentation
+- [ ] **v1.7.3:** durable managed-playlist provenance registry
+- [ ] **v1.7.4:** update playlists in place while preserving IDs and metadata
+- [ ] **v1.7.5:** native Jellyfin playlist descriptions and explanations
+- [ ] **v1.7.6:** deterministic primary/backdrop artwork with manual-art preservation
+- [ ] **v1.7.7:** persistent per-user composite and curated collections
+- [ ] **v1.7.8:** optional read-only Radarr collection catalog and completeness data
+- [ ] **v1.7.9:** administrator-approved collection suggestions per user
+- [ ] **v1.7.10:** index and classify each TV series once (never every episode)
+- [ ] **v1.7.11:** store verified episode playback strictly above 50% and aggregate it by series
+- [ ] **v1.7.12:** blend one bounded series signal into movie taste without episode multiplication
+
+### Planned features after the series-aware taste work
+- **New For You:** recently added movies filtered by taste instead of a generic date-only list.
+- **Continue the Vibe:** a short-lived playlist driven by the last few verified watches.
+- **Rewatch Rediscovery:** older verified favorites that have not been watched through Jellyfin recently.
+- **Seasonal collections:** configurable Halloween, Christmas, awards-season, and similar date-window lists.
+- **Collection completion dashboard:** available, missing, and excluded franchise titles; any Radarr acquisition action would require a separate explicit opt-in design.
+- **Pin / never recommend controls:** preserve a playlist or permanently suppress a movie, franchise, or collection.
+- **Freshness modes:** stable, balanced, and fresh rotation policies.
+- **Shared household playlists:** intersection-first recommendations for selected users without exposing either person's private history.
+- **Taste timeline:** show how verified movie and series signals changed subcategories and moods over time.
+- **Runtime-aware evening mix:** choose a movie or compact episode set for an available time budget.
+- **New Season Radar:** surface newly added seasons for series the user has verified watching.
+- **Continue or resume a series:** next episodes and verified-started shows that have gone inactive.
+- **Completed-series discovery:** favor finished stories for users who prefer completed shows.
+- **Binge-balance mode:** offset a long episode binge with shorter or deliberately different recommendations.
+- **Cross-media explanations:** explain movie recommendations using both verified films and series, without creating mixed TV playlists.
+- **Optional user self-service settings:** strict same-user authorization; plugin management remains administrator-only until deliberately changed.
+
+Separate TV recommendation playlists are intentionally not in the current implementation plan.
 
 ## License
 MIT — see [LICENSE](LICENSE).

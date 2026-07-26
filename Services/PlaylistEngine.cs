@@ -38,9 +38,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         // Computed once per refresh from the user's recent weekly watch rate.
         private readonly Dictionary<Guid, double> _decayFactor = new();
         private readonly object _decayLock = new();
-        // The user currently being refreshed (used by read-time decay helpers that
-        // don't otherwise carry a userId). Set at the top of RefreshUserPlaylistsAsync.
-        private Guid _currentUserId = Guid.Empty;
+        private readonly RefreshExecutionGate _refreshExecutionGate = new();
 
         public PlaylistEngine(
             IPlaylistManager playlistManager,
@@ -87,7 +85,12 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             }
         }
 
-        private async Task HandlePunishmentAndRebuildAsync(Guid userId, Guid watchedMovieId, CancellationToken cancellationToken)
+        private Task HandlePunishmentAndRebuildAsync(Guid userId, Guid watchedMovieId, CancellationToken cancellationToken)
+            => _refreshExecutionGate.RunAsync(
+                gateToken => HandlePunishmentAndRebuildCoreAsync(userId, watchedMovieId, gateToken),
+                cancellationToken);
+
+        private async Task HandlePunishmentAndRebuildCoreAsync(Guid userId, Guid watchedMovieId, CancellationToken cancellationToken)
         {
             _logger.LogInformation("Applying dynamic rating update for UserId {UserId}, watched MovieId {MovieId}", userId, watchedMovieId);
 
@@ -147,7 +150,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 await _movieStore.UpsertAffinitiesAsync(changed, cancellationToken);
 
             // 4. Rebuild the user's playlists (refresh READS the new affinities).
-            await RefreshUserPlaylistsAsync(userId, cancellationToken);
+            await RefreshUserPlaylistsCoreAsync(userId, cancellationToken);
         }
 
         // Returns the ItemIds of all OTHER movies sharing a playlist with the given movie,
@@ -199,7 +202,12 @@ namespace Jellyfin.Plugin.AIRecommender.Services
 
         // v1.5.9: apply per-user exclusions immediately when config is saved, so the
         // disabled users' playlists disappear without waiting for the next 12h refresh.
-        public async Task ApplyExclusionsNowAsync(IEnumerable<Guid> disabledUserIds, CancellationToken cancellationToken = default)
+        public Task ApplyExclusionsNowAsync(IEnumerable<Guid> disabledUserIds, CancellationToken cancellationToken = default)
+            => _refreshExecutionGate.RunAsync(
+                gateToken => ApplyExclusionsNowCoreAsync(disabledUserIds, gateToken),
+                cancellationToken);
+
+        private async Task ApplyExclusionsNowCoreAsync(IEnumerable<Guid> disabledUserIds, CancellationToken cancellationToken)
         {
             foreach (var userId in disabledUserIds)
             {
@@ -209,9 +217,13 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             }
         }
 
-        public async Task RefreshUserPlaylistsAsync(Guid userId, CancellationToken cancellationToken = default)
+        public Task RefreshUserPlaylistsAsync(Guid userId, CancellationToken cancellationToken = default)
+            => _refreshExecutionGate.RunAsync(
+                gateToken => RefreshUserPlaylistsCoreAsync(userId, gateToken),
+                cancellationToken);
+
+        private async Task RefreshUserPlaylistsCoreAsync(Guid userId, CancellationToken cancellationToken)
         {
-            _currentUserId = userId; // v1.5.3: for read-time decay helpers
             // v1.5.14: push the configured keyword weight into the similarity engine
             // so Because You Watched respects TMDB keyword overlap.
             _similarityEngine.KeywordWeight = _config.KeywordWeight;
@@ -375,9 +387,9 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     Score = (hasTaste ? ScoreMovieAgainstProfile(m, profile) : 0.0)
                             + CalculateReviewNudge(m)
                             + (hasTaste ? 0.0 : m.CriticalAcclaimScore / 10.0)
-                            + Clamp(GetEffectiveAffinity(affinities, m.ItemId) * _config.AffinityRankWeight, -_config.AffinityRankWeight, _config.AffinityRankWeight)
+                            + Clamp(GetEffectiveAffinity(userId, affinities, m.ItemId) * _config.AffinityRankWeight, -_config.AffinityRankWeight, _config.AffinityRankWeight)
                             + GetNewMovieBoostByFit(m, profile, now)
-                            + GetNoveltyBonus(affinities, m.ItemId, now)
+                            + GetNoveltyBonus(userId, affinities, m.ItemId, now)
                             + GetSoftPenalty(affinities, m.ItemId, now)
                             + (ratings.TryGetValue(m.ItemId, out var r) ? ratingW * (r / 5.0) : 0.0)
                 }).OrderByDescending(x => x.Score).ToList();
@@ -545,7 +557,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                         ? _config.FamePenaltyWeight * Math.Min(1.0, Math.Log(1 + m.Popularity) / fameScale)
                         : 0.0,
                     Score = m.CriticalAcclaimScore / 10.0
-                            + Clamp(GetEffectiveAffinity(affinities, m.ItemId) * _config.AffinityRankWeight, -_config.AffinityRankWeight, _config.AffinityRankWeight)
+                            + Clamp(GetEffectiveAffinity(userId, affinities, m.ItemId) * _config.AffinityRankWeight, -_config.AffinityRankWeight, _config.AffinityRankWeight)
                             + GetNewMovieBoost(m, now)
                             + GetSoftPenalty(affinities, m.ItemId, now)
                 })
@@ -617,7 +629,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 // Discover = the user's LEAST-explored subcategories (gateway into the unknown).
                 // Surface movies from those subcats, ranked by acclaim + learned affinity +
                 // new-movie nudge, so they're adjacent to taste, not random.
-                var discovered = DiscoverPicks(unwatched.Where(m => !claimed.Contains(m.ItemId)).ToList(), profile, affinities, 8);
+                var discovered = DiscoverPicks(userId, unwatched.Where(m => !claimed.Contains(m.ItemId)).ToList(), profile, affinities, 8);
                 if (!discovered.Any())
                 {
                     // Fallback: nothing in the least-familiar subcats is unwatched, so
@@ -638,7 +650,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         }
 
         // Movies from the user's least-weighted subcategories, ranked by acclaim + affinity.
-        private List<Guid> DiscoverPicks(List<MovieMetadata> unwatched, TasteProfile profile, Dictionary<Guid, MovieAffinity> affinities, int count)
+        private List<Guid> DiscoverPicks(Guid userId, List<MovieMetadata> unwatched, TasteProfile profile, Dictionary<Guid, MovieAffinity> affinities, int count)
         {
             var now = DateTime.UtcNow;
             IEnumerable<string> leastFamiliar;
@@ -661,7 +673,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     M = m,
                     Score = (leastSet.Any() && SharesAnySubcategory(m, leastSet) ? 0.5 : 0.0)
                             + m.CriticalAcclaimScore / 10.0
-                            + Clamp(GetEffectiveAffinity(affinities, m.ItemId) * _config.AffinityRankWeight, -_config.AffinityRankWeight, _config.AffinityRankWeight)
+                            + Clamp(GetEffectiveAffinity(userId, affinities, m.ItemId) * _config.AffinityRankWeight, -_config.AffinityRankWeight, _config.AffinityRankWeight)
                             + GetNewMovieBoost(m, now)
                 })
                 .OrderByDescending(x => x.Score)
@@ -687,7 +699,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 {
                     M = m,
                     Score = m.CriticalAcclaimScore / 10.0
-                            + Clamp(GetEffectiveAffinity(affinities, m.ItemId) * _config.AffinityRankWeight, -_config.AffinityRankWeight, _config.AffinityRankWeight)
+                            + Clamp(GetEffectiveAffinity(userId, affinities, m.ItemId) * _config.AffinityRankWeight, -_config.AffinityRankWeight, _config.AffinityRankWeight)
                             + GetNewMovieBoost(m, now)
                             + GetSoftPenalty(affinities, m.ItemId, now)
                 })
@@ -882,14 +894,14 @@ namespace Jellyfin.Plugin.AIRecommender.Services
 
         // Effective affinity after lazy time-decay. Never writes — pure read-time computation.
         // v1.5.3: the half-life is scaled by the user's consumption-rate factor.
-        private double GetEffectiveAffinity(Dictionary<Guid, MovieAffinity> affinities, Guid itemId)
+        private double GetEffectiveAffinity(Guid userId, Dictionary<Guid, MovieAffinity> affinities, Guid itemId)
         {
             if (!affinities.TryGetValue(itemId, out var row) || row == null) return 0.0;
             if (row.LastUpdated == null) return row.Affinity;
             if (!DateTime.TryParse(row.LastUpdated, out var updated)) return row.Affinity;
             var ageDays = (DateTime.UtcNow - updated).TotalDays;
             if (ageDays <= 0) return row.Affinity;
-            var halfLife = _config.AffinityDecayHalfLifeDays * GetDecayFactor(_currentUserId);
+            var halfLife = _config.AffinityDecayHalfLifeDays * GetDecayFactor(userId);
             return row.Affinity * Math.Exp(-ageDays / Math.Max(1.0, halfLife));
         }
 
@@ -935,7 +947,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         // Novelty nudge (#6): movies not recently surfaced in playlists get a small
         // bonus that decays over NoveltyHalfLifeDays after they appear. Keeps the
         // same films from recycling to the top every refresh.
-        private double GetNoveltyBonus(Dictionary<Guid, MovieAffinity> affinities, Guid itemId, DateTime now)
+        private double GetNoveltyBonus(Guid userId, Dictionary<Guid, MovieAffinity> affinities, Guid itemId, DateTime now)
         {
             if (_config.NoveltyBonus <= 0 || _config.NoveltyHalfLifeDays <= 0) return 0.0;
             if (!affinities.TryGetValue(itemId, out var row) || row == null || string.IsNullOrEmpty(row.LastSurfaced))
@@ -945,7 +957,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             if (ageDays < 0) ageDays = 0;
             // Exponential decay: full nudge just after surfacing -> 0 after several half-lives.
             // v1.5.3: half-life scaled by the user's consumption-rate factor.
-            var halfLife = _config.NoveltyHalfLifeDays * GetDecayFactor(_currentUserId);
+            var halfLife = _config.NoveltyHalfLifeDays * GetDecayFactor(userId);
             return _config.NoveltyBonus * Math.Exp(-ageDays / Math.Max(1.0, halfLife));
         }
 
@@ -1248,7 +1260,10 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     Public = false
                 };
                 
-                var result = _playlistManager.CreatePlaylist(req);
+                // Await creation so the refresh execution gate remains held until
+                // Jellyfin has persisted the playlist. Otherwise another user's
+                // cleanup can race the still-ownerless playlist creation task.
+                var result = await _playlistManager.CreatePlaylist(req);
                 _logger.LogInformation("Created playlist '{Name}' for user {UserId} with {Count} items (Result Id: {ResultId}).", name, userId, itemIds.Count, result.Id);
 
                 // v1.5.39: Jellyfin 10.11 ignores PlaylistCreationRequest.UserId for
@@ -1257,8 +1272,8 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 // with '1'-suffixed paths). Stamp the owner explicitly and persist it.
                 try
                 {
-                    // result.Id is not the playlist Guid (it's an internal int).
-                    // Find the just-created playlist by name among ownerless ones.
+                    // Creation is complete here, so the just-created ownerless playlist
+                    // is visible before any other refresh can enter cleanup.
                     var created = _libraryManager.GetItemList(new InternalItemsQuery
                         {
                             IncludeItemTypes = new[] { Jellyfin.Data.Enums.BaseItemKind.Playlist },

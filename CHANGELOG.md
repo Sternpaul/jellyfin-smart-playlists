@@ -2,6 +2,12 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.6.7
+- **Removed cross-user scoring state.** Affinity and novelty decay now receive the intended user ID explicitly instead of reading singleton `_currentUserId`, so another user's refresh cannot change scores mid-generation.
+- **Serialized refresh-affecting operations.** Scheduled/manual refreshes, immediate exclusion cleanup, and watch-triggered affinity rebuilds now share one cancellation-safe execution gate, preventing overlapping playlist deletion/creation and same-database affinity races.
+- Playlist creation is now awaited so the gate remains held until Jellyfin has persisted the new ownerless playlist and the plugin can stamp its owner before another cleanup begins.
+- Added regressions for explicit user context and overlapping-operation serialization.
+
 ## v1.6.6
 - **Separated manual Played flags from recent-watch signals.** Manually marking a movie played still excludes it from unwatched recommendations, but no longer feeds recency, taste profiling, punishment/reward learning, or `Because You Watched`.
 - Added a persistent `VerifiedWatches` store used by recency and taste. It records only actual Jellyfin `PlaybackFinished` events above 50% completion; exactly 50% and lower are ignored.
