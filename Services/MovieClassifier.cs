@@ -201,7 +201,12 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                         var movie = batch.FirstOrDefault(m => m.Title.StartsWith(title, StringComparison.OrdinalIgnoreCase) || m.Title.Contains(title, StringComparison.OrdinalIgnoreCase));
                         if (movie != null)
                         {
-                            movie.Subcategories = JsonSerializer.Serialize(match.Groups["subcategories"].Value.Split(new[] { ',', '/' }, StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()));
+                            var fbSubcats = match.Groups["subcategories"].Value
+                                .Split(new[] { ',', '/' }, StringSplitOptions.RemoveEmptyEntries)
+                                .Select(s => s.Trim())
+                                .Where(s => s.Length > 0)
+                                .ToList();
+                            movie.Subcategories = JsonSerializer.Serialize(fbSubcats);
                             movie.Moods = JsonSerializer.Serialize(match.Groups["moods"].Value.Split(new[] { ',', '/' }, StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()));
                             movie.Themes = JsonSerializer.Serialize(match.Groups["themes"].Value.Split(new[] { ',', '/' }, StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()));
                             movie.NarrativeStyle = match.Groups["style"].Value.Trim();
@@ -211,7 +216,6 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                             
                             // Same rule as the JSON path: only count it as classified
                             // if the AI actually supplied a non-empty subcategory list.
-                            var fbSubcats = JsonSerializer.Deserialize<List<string>>(match.Groups["subcategories"].Value) ?? new List<string>();
                             movie.IsClassified = fbSubcats.Count > 0;
                             movie.LastUpdated = DateTime.UtcNow;
                             successCount++;

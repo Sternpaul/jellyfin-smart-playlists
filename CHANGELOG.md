@@ -2,6 +2,11 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.6.5
+- **Stopped empty `Because You Watched` refreshes from crashing.** If watch history exists but no eligible unwatched candidates remain, the generator now returns without calling `First()` on an empty sequence.
+- **Fixed comma-separated classifier fallback.** Plain-text subcategories are now tokenized once and used directly instead of being passed to `JsonSerializer.Deserialize`, which previously threw on values such as `Action, Drama`.
+- Added regression tests for empty and populated anchor selection plus the real plain-text fallback response shape.
+
 ## v1.6.4
 - **Made ratings replacement atomic.** Clearing a user's prior imported ratings and inserting the replacement set now occurs in one SQLite transaction; any insert failure rolls back and preserves the previous valid ratings.
 - **Deduplicated imported ratings before EF tracking.** Repeated rows for the same movie no longer trigger a duplicate composite-key exception. The last imported value wins deterministically.

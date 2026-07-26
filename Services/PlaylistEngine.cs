@@ -494,13 +494,28 @@ namespace Jellyfin.Plugin.AIRecommender.Services
 
             // Name the playlist after the seed that contributed the most of the chosen
             // picks (most-recent seed wins ties), so the title matches the content.
-            var anchor = picks
-                .GroupBy(itemId => bestSeed[itemId])
-                .OrderByDescending(g => g.Count())
-                .ThenByDescending(g => recentSeeds.IndexOf(g.Key))
-                .First().Key;
+            var anchor = SelectBecauseYouWatchedAnchor(picks, bestSeed, recentSeeds);
+            if (anchor == null)
+                return;
 
             await CreateOrUpdateJellyfinPlaylistAsync(userId, $"Because You Watched {anchor.Title}", picks, cancellationToken);
+        }
+
+        private static MovieMetadata? SelectBecauseYouWatchedAnchor(
+            List<Guid> picks,
+            Dictionary<Guid, MovieMetadata> bestSeed,
+            List<MovieMetadata> recentSeeds)
+        {
+            if (picks.Count == 0)
+                return null;
+
+            return picks
+                .Where(bestSeed.ContainsKey)
+                .GroupBy(itemId => bestSeed[itemId])
+                .OrderByDescending(group => group.Count())
+                .ThenByDescending(group => recentSeeds.IndexOf(group.Key))
+                .Select(group => group.Key)
+                .FirstOrDefault();
         }
         
         private async Task<List<Guid>> GenerateHiddenGemsPlaylistAsync(Guid userId, List<MovieMetadata> unwatched, TasteProfile profile, Dictionary<Guid, MovieAffinity> affinities, HashSet<Guid> claimed, CancellationToken cancellationToken)
