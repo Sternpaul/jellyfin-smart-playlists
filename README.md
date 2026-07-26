@@ -257,7 +257,7 @@ DLL lands in `bin/Release/net9.0/`. The SQLite DB lives in the Jellyfin config d
 - [x] **v1.6.7:** remove cross-user scoring state and serialize refresh-affecting operations
 - [x] **v1.6.8:** make the configured refresh interval control the scheduled task
 - [x] **v1.6.9:** implement deterministic playlist rotation
-- [ ] **v1.7.0:** align playlist size limits across generators
+- [x] **v1.7.0:** align playlist size limits across generators
 - [ ] **v1.7.1:** align completion settings with strict verified-playback semantics
 - [ ] **v1.7.2:** harden test discovery, releases, publication checks, and documentation
 - [ ] **v1.7.3:** durable managed-playlist provenance registry

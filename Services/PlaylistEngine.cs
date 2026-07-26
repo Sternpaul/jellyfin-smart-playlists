@@ -411,7 +411,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         {
             var now = DateTime.UtcNow;
             // 75% taste-matched, 25% exploration (from _config.DiversityWeight)
-            int totalSize = _config.MaxMoviesPerPlaylist;
+            int totalSize = PlaylistSizePolicy.Resolve(_config.MaxMoviesPerPlaylist, null, int.MaxValue);
             int exploreSize = (int)(totalSize * (_config.DiversityWeight / 100.0));
             int tasteSize = totalSize - exploreSize;
 
@@ -545,10 +545,13 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 }
             }
 
-            var picks = bestSim
+            var rankedPicks = bestSim
                 .OrderByDescending(kv => kv.Value)
-                .Take(10)
+                .ThenBy(kv => kv.Key)
                 .Select(kv => kv.Key)
+                .ToList();
+            var picks = rankedPicks
+                .Take(PlaylistSizePolicy.Resolve(_config.MaxMoviesPerPlaylist, 10, rankedPicks.Count))
                 .ToList();
 
             // Name the playlist after the seed that contributed the most of the chosen
@@ -561,7 +564,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             picks = ApplyConfiguredRotation(
                 previousPlaylists,
                 playlistName,
-                bestSim.OrderByDescending(item => item.Value).ThenBy(item => item.Key).Select(item => item.Key),
+                rankedPicks,
                 picks.Count);
             await CreateOrUpdateJellyfinPlaylistAsync(userId, playlistName, picks, cancellationToken);
         }
@@ -619,7 +622,11 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 .Select(x => x.M.ItemId)
                 .ToList();
 
-            var gems = ApplyConfiguredRotation(previousPlaylists, "Hidden Gems", rankedGems, Math.Min(15, rankedGems.Count));
+            var gems = ApplyConfiguredRotation(
+                previousPlaylists,
+                "Hidden Gems",
+                rankedGems,
+                PlaylistSizePolicy.Resolve(_config.MaxMoviesPerPlaylist, 15, rankedGems.Count));
 
             await CreateOrUpdateJellyfinPlaylistAsync(userId, "Hidden Gems", gems, cancellationToken);
             return gems;
@@ -656,7 +663,11 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 .Select(m => m.ItemId)
                 .ToList();
 
-            var recent = ApplyConfiguredRotation(previousPlaylists, "Recently Added", rankedRecent, Math.Min(15, rankedRecent.Count));
+            var recent = ApplyConfiguredRotation(
+                previousPlaylists,
+                "Recently Added",
+                rankedRecent,
+                PlaylistSizePolicy.Resolve(_config.MaxMoviesPerPlaylist, 15, rankedRecent.Count));
                 
             await CreateOrUpdateJellyfinPlaylistAsync(userId, "Recently Added", recent, cancellationToken);
         }
@@ -677,7 +688,11 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     .ToList();
 
                 var familiarName = $"{topSubcategory} For You";
-                var familiarPicks = ApplyConfiguredRotation(previousPlaylists, familiarName, rankedFamiliar, Math.Min(15, rankedFamiliar.Count));
+                var familiarPicks = ApplyConfiguredRotation(
+                    previousPlaylists,
+                    familiarName,
+                    rankedFamiliar,
+                    PlaylistSizePolicy.Resolve(_config.MaxMoviesPerPlaylist, 15, rankedFamiliar.Count));
                 if (familiarPicks.Any())
                     await CreateOrUpdateJellyfinPlaylistAsync(userId, familiarName, familiarPicks, cancellationToken);
                 picks.AddRange(familiarPicks);
@@ -702,7 +717,11 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                         .ToList();
                 }
 
-                var discovered = ApplyConfiguredRotation(previousPlaylists, "Discover: Hidden World", rankedDiscovered, Math.Min(8, rankedDiscovered.Count));
+                var discovered = ApplyConfiguredRotation(
+                    previousPlaylists,
+                    "Discover: Hidden World",
+                    rankedDiscovered,
+                    PlaylistSizePolicy.Resolve(_config.MaxMoviesPerPlaylist, 8, rankedDiscovered.Count));
                 if (discovered.Any())
                     await CreateOrUpdateJellyfinPlaylistAsync(userId, "Discover: Hidden World", discovered, cancellationToken);
                 picks.AddRange(discovered);
@@ -781,7 +800,11 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     .ToList();
             }
 
-            var wildPicks = ApplyConfiguredRotation(previousPlaylists, "Wild Card", rankedWild, Math.Min(10, rankedWild.Count));
+            var wildPicks = ApplyConfiguredRotation(
+                previousPlaylists,
+                "Wild Card",
+                rankedWild,
+                PlaylistSizePolicy.Resolve(_config.MaxMoviesPerPlaylist, 10, rankedWild.Count));
 
             await CreateOrUpdateJellyfinPlaylistAsync(userId, "Wild Card", wildPicks, cancellationToken);
             return wildPicks;
@@ -830,7 +853,11 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 return;
             }
 
-            toWatch = ApplyConfiguredRotation(previousPlaylists, "From Your Watchlist", toWatch, toWatch.Count);
+            toWatch = ApplyConfiguredRotation(
+                previousPlaylists,
+                "From Your Watchlist",
+                toWatch,
+                PlaylistSizePolicy.Resolve(_config.MaxMoviesPerPlaylist, null, toWatch.Count));
             await CreateOrUpdateJellyfinPlaylistAsync(userId, "From Your Watchlist", toWatch, cancellationToken);
         }
 
@@ -851,7 +878,11 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 .Select(x => x.Id)
                 .ToList();
 
-            var rated = ApplyConfiguredRotation(previousPlaylists, "Highly Rated by You", rankedRated, Math.Min(_config.MaxMoviesPerPlaylist, rankedRated.Count));
+            var rated = ApplyConfiguredRotation(
+                previousPlaylists,
+                "Highly Rated by You",
+                rankedRated,
+                PlaylistSizePolicy.Resolve(_config.MaxMoviesPerPlaylist, null, rankedRated.Count));
 
             if (rated.Any())
                 await CreateOrUpdateJellyfinPlaylistAsync(userId, "Highly Rated by You", rated, cancellationToken);
@@ -1300,6 +1331,12 @@ namespace Jellyfin.Plugin.AIRecommender.Services
 
         private async Task CreateOrUpdateJellyfinPlaylistAsync(Guid userId, string name, List<Guid> itemIds, CancellationToken cancellationToken)
         {
+            // Defense in depth: every generator is capped at the Jellyfin creation boundary,
+            // including future generators that might omit their source-specific size policy.
+            itemIds = itemIds
+                .Take(PlaylistSizePolicy.Resolve(_config.MaxMoviesPerPlaylist, null, itemIds.Count))
+                .ToList();
+
             // Look for existing private playlist owned by this user
             var allPlaylists = _libraryManager.GetItemList(new InternalItemsQuery
             {

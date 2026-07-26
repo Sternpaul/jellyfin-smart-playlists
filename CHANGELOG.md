@@ -2,6 +2,13 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.7.0
+- **Made `MaxMoviesPerPlaylist` a real global upper bound for every generated playlist.** `For You`, `Because You Watched`, `Hidden Gems`, `Recently Added`, familiar-subcategory, Discover, Wild Card, watchlist, and ratings playlists now all resolve their sizes through one policy.
+- Focused playlist types retain their intentional smaller defaults while respecting a lower administrator maximum; watchlist and ratings playlists use the configured global maximum.
+- Added a defense-in-depth cap at the Jellyfin playlist-creation boundary so future generators cannot accidentally exceed the configured maximum.
+- Valid maximums are 5–100 movies; invalid values safely fall back to 20, and candidate shortages produce smaller valid playlists.
+- Added boundary and source-default regression coverage and clarified the dashboard wording.
+
 ## v1.6.9
 - **Made `PlaylistRotationPercent` control actual playlist membership.** Each refresh captures that user's immediately previous plugin-playlist membership before cleanup, retains the configured stable share when those items remain eligible, and fills replacement slots from each generator's deterministic ranked candidate pool.
 - Replacement slots prefer genuinely new eligible movies and only reuse rotated-out members when the library does not contain enough alternatives. Played, removed, disabled, or otherwise ineligible items are never retained merely for stability.
