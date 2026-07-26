@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.6.5.0",
+        "changelog": "- **Stopped empty `Because You Watched` refreshes from crashing.** If watch history exists but no eligible unwatched candidates remain, the generator now returns without calling `First()` on an empty sequence.\n- **Fixed comma-separated classifier fallback.** Plain-text subcategories are now tokenized once and used directly instead of being passed to `JsonSerializer.Deserialize`, which previously threw on values such as `Action, Drama`.\n- Added regression tests for empty and populated anchor selection plus the real plain-text fallback response shape.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.6.5/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "e052ed336a9119ae7e5e311fe0b0e27b",
+        "timestamp": "2026-07-26T17:42:23Z"
+      },
+      {
         "version": "1.6.4.0",
         "changelog": "- **Made ratings replacement atomic.** Clearing a user's prior imported ratings and inserting the replacement set now occurs in one SQLite transaction; any insert failure rolls back and preserves the previous valid ratings.\n- **Deduplicated imported ratings before EF tracking.** Repeated rows for the same movie no longer trigger a duplicate composite-key exception. The last imported value wins deterministically.\n- Serialized ratings writes and made user-key deletion case-insensitive for legacy GUID text formats.\n- Added EF/SQLite regression tests for duplicate input and injected replacement failure rollback.",
         "targetAbi": "10.11.0.0",
