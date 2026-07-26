@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.7.2.0",
+        "changelog": "- **Fixed false-green root test discovery.** Added `Jellyfin.Plugin.AIRecommender.sln` with both production and xUnit projects, so plain root `dotnet test` runs the real suite instead of exiting successfully with zero tests.\n- The tag workflow now verifies tag/project version parity, runs the full Release test suite, and fails when the version-specific changelog section is missing instead of publishing placeholder notes.\n- Published releases are treated as immutable: the workflow refuses to delete or replace an existing tag release and serializes manifest publication.\n- Manifest publication now checks out the real `gh-pages` branch and validates version, ABI, exact source URL, non-placeholder changelog, and MD5 checksum before pushing.\n- The workflow performs a bounded public read-back and verifies the served manifest plus a checksum-matching ZIP containing exactly one plugin DLL.\n- Updated source-build and release documentation with the tested root commands and publication contract.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.7.2/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "5d6d19c4c45581b6db494cb877f6a4f6",
+        "timestamp": "2026-07-26T20:33:14Z"
+      },
+      {
         "version": "1.7.1.0",
         "changelog": "- **Unified recency, taste, and learning around one verified-playback rule:** only an actual Jellyfin playback stop strictly greater than 50% qualifies. Exactly 50%, shorter playback, unknown/reset positions, playback-progress saves, and manually toggling Played do not create signals.\n- Removed the contradictory `MinCompletionPercent` configuration and secondary learning filter. The old setting could not lower the verified threshold below 50%, while raising it allowed recency storage and learning behavior to disagree.\n- Removed the obsolete dashboard input and replaced it with explicit fixed-policy wording; updated the README settings and learning-loop documentation.\n- Added a regression proving the completion threshold is no longer administrator-configurable while preserving strict 49.9/50.0/50.1 boundary coverage.\n- This supersedes the configurable completion behavior described in the historical v1.5.1 release notes.",
         "targetAbi": "10.11.0.0",
