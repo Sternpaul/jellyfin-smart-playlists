@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.5.38.0",
+        "changelog": "- **Watched semantics fix (manual \"played\" mark now counts as watched).** A user marking a movie \"played\" in Jellyfin (or having watched it elsewhere) is a real watch signal. Previously `WatchHistoryService.OnUserDataSaved` set manual marks to `PlaybackPercentage = 0`, so they were excluded from playlists but did NOT feed the taste profile or trigger the punish/reward rebuild — inconsistent. Now a manual `Played` mark is treated as 100% watched, so it's excluded from recommendation playlists AND updates the user's taste profile / decay factor.\n- **FIXED \"From Your Watchlist\" dumping ALL matched movies.** `GenerateWatchlistPlaylistAsync` built the playlist from every matched Letterboxd entry regardless of watch state, so a fully- or partially-watched watchlist showed every film. A watchlist is a TO-WATCH list: the playlist now excludes films the user has already marked played, so it reflects what's left to watch.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.5.38/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "f728c559fb8071b975fa08150866263d",
+        "timestamp": "2026-07-26T12:08:06Z"
+      },
+      {
         "version": "1.5.37.0",
         "changelog": "- **FIXED Index crash + Letterboxd crash (`DbUpdateConcurrencyException: expected 1 row, affected 0`).** Root cause: `SaveMoviesAsync` used `FindAsync(lowercaseKey)` which is case-sensitive in SQLite; our pre-filled/backed-up DB stored uppercase GUID `ItemId`s, so the lookup missed and EF tried to INSERT instead of UPDATE → 0-row concurrency crash. Fixes: (1) case-insensitive `ItemId` lookup in `SaveMoviesAsync`; (2) `SaveUserRatingsAsync` now does a raw `DELETE` then insert (bypasses EF change-tracking, like `DeleteMoviesNotInAsync`); (3) same `FindAsync`→case-insensitive fix in `SaveUserWatchlistConfigAsync` and `UpsertAffinitiesAsync`; (4) updates now self-heal the key to lowercase so the DB converges to consistent casing. This was the actual cause of \"Index & Classify Library Failed\" and \"Failed to process ratings JSON\".",
         "targetAbi": "10.11.0.0",
