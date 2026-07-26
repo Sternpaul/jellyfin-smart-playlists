@@ -697,7 +697,20 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 return;
             }
 
-            await CreateOrUpdateJellyfinPlaylistAsync(userId, "From Your Watchlist", matchedIds, cancellationToken);
+            // A watchlist is a TO-WATCH list: exclude films the user has already seen
+            // (marked played anywhere), so the playlist reflects what's left to watch
+            // rather than dumping every matched entry.
+            var watchedIds = (await _watchHistoryService.GetWatchedMoviesAsync(userId, cancellationToken))
+                .Select(w => w.ItemId).ToHashSet();
+            var toWatch = matchedIds.Where(id => !watchedIds.Contains(id)).ToList();
+
+            if (!toWatch.Any())
+            {
+                _logger.LogInformation("Watchlist for user {UserId} is fully watched; skipping 'From Your Watchlist'.", userId);
+                return;
+            }
+
+            await CreateOrUpdateJellyfinPlaylistAsync(userId, "From Your Watchlist", toWatch, cancellationToken);
         }
 
         // v1.5.12: "Highly Rated by You" — the user's top-rated Letterboxd films that are

@@ -117,9 +117,12 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 }
                 else if (e.UserData.Played)
                 {
-                    // Marked played without position info (e.g. manual mark) -> treat as
-                    // 0% so it does NOT count as a learning signal (glance/test).
-                    pct = 0.0;
+                    // Marked played without position info (e.g. user manually ticked
+                    // "played" in the UI, or watched it elsewhere). Per design this IS a
+                    // real watch signal: the user has seen the film, so it should count
+                    // as watched for exclusion AND feed the taste profile + punish/reward.
+                    // Treat as fully watched (100%) rather than a glance/test.
+                    pct = 100.0;
                 }
 
                 // Fire an event that PlaylistEngine can listen to for real-time punishment + rebuild

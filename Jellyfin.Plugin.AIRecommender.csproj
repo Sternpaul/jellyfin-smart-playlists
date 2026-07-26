@@ -4,7 +4,7 @@
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Version>1.5.37.0</Version>
+    <Version>1.5.38.0</Version>
     <Authors>Sternpaul</Authors>
     <RepositoryUrl>https://github.com/Sternpaul/jellyfin-smart-playlists</RepositoryUrl>
     <Description>AI-powered smart playlists and recommendations for Jellyfin.</Description>
@@ -15,9 +15,14 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Jellyfin Core Dependencies -->
-    <PackageReference Include="Jellyfin.Model" Version="10.11.11" />
-    <PackageReference Include="Jellyfin.Controller" Version="10.11.11" />
+    <!-- Jellyfin Core Dependencies.
+         ExcludeAssets=All -> the host (Jellyfin) already provides these at runtime.
+         Copying them into the plugin output (via CopyLocalLockFileAssemblies) is wrong:
+         it ships Jellyfin's own system assemblies + native runtimes inside the plugin,
+         which crashes PluginManager.LoadAssemblies (Bad IL format on e_sqlite3.dll /
+         native binaries) and can cause assembly-binding conflicts. -->
+    <PackageReference Include="Jellyfin.Model" Version="10.11.11" PrivateAssets="all" IncludeAssets="compile" />
+    <PackageReference Include="Jellyfin.Controller" Version="10.11.11" PrivateAssets="all" IncludeAssets="compile" />
     
     <!-- SQLite for our local AI metadata cache -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.0" />
