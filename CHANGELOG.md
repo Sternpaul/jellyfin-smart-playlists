@@ -2,6 +2,12 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.6.3
+- **Made Jellyfin ItemId reassignment atomic.** The old movie-row deletion, dependent-state migration, and replacement insert now run in one SQLite transaction. If any step fails, the transaction rolls back and the original indexed movie remains intact instead of disappearing between commits.
+- **Preserved learned and imported state across library rebuilds.** Reassigned ItemIds now migrate `Affinities`, `SurfaceHistory`, `UserRatings`, and cached watchlist matches to the replacement key before the stale movie row is removed.
+- **Handled legacy GUID text and overlapping index writes.** Movie saves are serialized, lowercase legacy keys are canonicalized before tracked updates, and stale movie deletion is case-insensitive raw SQL inside the transaction. This prevents false `DbUpdateConcurrencyException` failures on upgraded databases.
+- Added real EF/SQLite regression tests for successful dependent migration, injected replacement-insert rollback, lowercase legacy keys, and concurrent save calls.
+
 ## v1.6.2
 - **Stopped refresh and user-disable operations from deleting unrelated personal playlists.** The clean-slate cleanup previously selected every playlist owned by the target user, regardless of whether AI Recommender created it, and deleted its backing file. Cleanup now requires both plugin recommendation-name provenance and matching ownership; ownerless plugin-pattern ghosts from older versions are still removed.
 - Added regression coverage proving that personal playlists and another user's plugin playlists survive, while the target user's plugin playlists and legacy ownerless ghosts are removed.

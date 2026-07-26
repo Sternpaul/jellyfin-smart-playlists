@@ -14,6 +14,7 @@ namespace Jellyfin.Plugin.AIRecommender.Data
     {
         private readonly string _dbPath;
         private readonly ILogger<MovieStore> _logger;
+        private readonly SemaphoreSlim _saveMoviesLock = new(1, 1);
 
         public string DataDirectory => Path.GetDirectoryName(_dbPath) ?? ".";
 
@@ -249,11 +250,15 @@ namespace Jellyfin.Plugin.AIRecommender.Data
 
         public async Task SaveMoviesAsync(IEnumerable<MovieMetadata> movies, CancellationToken cancellationToken = default)
         {
+            await _saveMoviesLock.WaitAsync(cancellationToken);
+            try
+            {
             // v1.5.29: dedupe in-memory by ImdbId first (a re-index pass may pass the
             // same ImdbId twice with a synced ItemId), then upsert each. Upserting by
             // ItemId alone would miss rows whose ItemId was updated to a new GUID, so we
             // also find by ImdbId and update that row's ItemId into the new value.
             using var db = GetContext();
+            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
             var seenImdb = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var movie in movies)
             {
@@ -281,8 +286,13 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                 }
                 else if (existing.ItemId == keyGuid)
                 {
-                    // Same key: plain field update. Keep movie.ItemId identical to the
-                    // tracked key so SetValues never attempts a key modification.
+                    // Same key: canonicalize the stored Guid text first. A legacy
+                    // lowercase key is found by the case-insensitive lookup above, but
+                    // EF's tracked UPDATE uses its canonical Guid text in the WHERE
+                    // clause and otherwise reports a false zero-row concurrency error.
+                    await db.Database.ExecuteSqlInterpolatedAsync(
+                        $"UPDATE Movies SET ItemId = {existing.ItemId} WHERE LOWER(ItemId) = {key}",
+                        cancellationToken);
                     movie.ItemId = existing.ItemId;
                     db.Entry(existing).CurrentValues.SetValues(movie);
                 }
@@ -294,9 +304,18 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                     // ("property 'MovieMetadata.ItemId' is part of a key and so cannot
                     // be modified") — the old in-place `existing.ItemId = keyGuid`
                     // crashed the whole index task here. Correct EF pattern: delete the
-                    // old row, flush, then insert a fresh row under the new key.
-                    db.Movies.Remove(existing);
-                    await db.SaveChangesAsync(cancellationToken);
+                    // old row, flush, then insert a fresh row under the new key. Keep
+                    // the sequence transactional and migrate dependent references.
+                    await MigrateItemReferencesAsync(db, existing.ItemId, keyGuid, cancellationToken);
+                    // Detach before deleting with case-insensitive SQL. Legacy databases
+                    // can store lowercase GUID text while EF's Guid converter emits a
+                    // differently-cased key in DELETE, producing a false 0-row
+                    // concurrency failure.
+                    db.Entry(existing).State = EntityState.Detached;
+                    var staleId = existing.ItemId.ToString().ToLowerInvariant();
+                    await db.Database.ExecuteSqlInterpolatedAsync(
+                        $"DELETE FROM Movies WHERE LOWER(ItemId) = {staleId}",
+                        cancellationToken);
                     // Guard: another row may already sit under the new key (duplicate
                     // from an older index run). Update it in place instead of inserting
                     // a conflicting PK.
@@ -310,10 +329,75 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                 if (!string.IsNullOrWhiteSpace(movie.ImdbId)) seenImdb.Add(movie.ImdbId);
             }
             await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
 
             // v1.5.32: confirm persistence — log the actual row count after commit.
             var totalRows = await db.Movies.CountAsync(cancellationToken);
             _logger.LogInformation("SaveMoviesAsync committed. DB now has {Total} movie rows.", totalRows);
+            }
+            catch (DbUpdateConcurrencyException ex)
+            {
+                var entries = string.Join("; ", ex.Entries.Select(entry =>
+                    $"{entry.Metadata.ClrType.Name}:{entry.State}:" +
+                    string.Join(",", entry.Properties
+                        .Where(property => property.Metadata.IsPrimaryKey())
+                        .Select(property => $"{property.Metadata.Name}={property.CurrentValue}"))));
+                _logger.LogError(ex, "SaveMoviesAsync concurrency failure entries: {Entries}", entries);
+                throw;
+            }
+            finally
+            {
+                _saveMoviesLock.Release();
+            }
+        }
+
+        private static async Task MigrateItemReferencesAsync(
+            AiDbContext db,
+            Guid oldItemId,
+            Guid newItemId,
+            CancellationToken cancellationToken)
+        {
+            var oldId = oldItemId.ToString().ToLowerInvariant();
+            var newId = newItemId.ToString().ToLowerInvariant();
+
+            // Composite-key rows cannot have ItemId modified while tracked. Copy them
+            // under the replacement key with SQLite conflict handling, then remove the
+            // stale-key rows. This also repairs remnants of a partial older migration.
+            await db.Database.ExecuteSqlInterpolatedAsync($@"
+                INSERT OR REPLACE INTO Affinities
+                    (UserId, ItemId, Affinity, PenaltyUntil, LastSurfaced, LastUpdated)
+                SELECT UserId, {newId}, Affinity, PenaltyUntil, LastSurfaced, LastUpdated
+                FROM Affinities WHERE LOWER(ItemId) = {oldId}", cancellationToken);
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"DELETE FROM Affinities WHERE LOWER(ItemId) = {oldId}", cancellationToken);
+
+            await db.Database.ExecuteSqlInterpolatedAsync($@"
+                INSERT OR REPLACE INTO UserRatings
+                    (UserId, ItemId, Rating, SourceTitle, LastUpdated)
+                SELECT UserId, {newId}, Rating, SourceTitle, LastUpdated
+                FROM UserRatings WHERE LOWER(ItemId) = {oldId}", cancellationToken);
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"DELETE FROM UserRatings WHERE LOWER(ItemId) = {oldId}", cancellationToken);
+
+            await db.Database.ExecuteSqlInterpolatedAsync(
+                $"UPDATE SurfaceHistory SET ItemId = {newId} WHERE LOWER(ItemId) = {oldId}",
+                cancellationToken);
+
+            // Cached watchlist matches are JSON. Update the text directly instead of
+            // tracking UserWatchlistConfig: legacy databases can store UserId keys in
+            // undashed form, and EF's dashed Guid UPDATE then affects zero rows.
+            var oldCompact = oldItemId.ToString("N");
+            var newCompact = newItemId.ToString("N");
+            await db.Database.ExecuteSqlInterpolatedAsync($@"
+                UPDATE UserWatchlists
+                SET MatchedItemIds = REPLACE(
+                    REPLACE(
+                        REPLACE(
+                            REPLACE(MatchedItemIds, {oldId}, {newId}),
+                            {oldId.ToUpperInvariant()}, {newId}),
+                        {oldCompact}, {newCompact}),
+                    {oldCompact.ToUpperInvariant()}, {newCompact})
+                WHERE MatchedItemIds IS NOT NULL", cancellationToken);
         }
 
         // v1.5.28: prune rows whose ItemId is no longer present in the Jellyfin
