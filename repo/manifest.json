@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.7.4.0",
+        "changelog": "- **Updates registered playlists in place.** Refreshes replace the ordered member list through Jellyfin's native playlist API while preserving the registered playlist GUID and metadata container.\n- Existing members are restored if Jellyfin's member replacement fails; a failed refresh does not pre-delete the user's previous playlists.\n- Registered slots not produced by a successful refresh are removed afterward by exact GUID, while persistent collections and unregistered legacy/personal playlists remain untouched.\n- Missing registered Jellyfin items are pruned safely and recreated under the same stable logical slot.\n- Added exact logical-key lookup and stale-lifecycle regressions.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.7.4/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "151a56463eb51a6e70e06dc1d7f5392e",
+        "timestamp": "2026-07-27T07:28:45Z"
+      },
+      {
         "version": "1.7.3.0",
         "changelog": "- **Added durable managed-playlist provenance.** The plugin database now records each managed playlist by user, stable logical key, exact Jellyfin playlist GUID, display name, and lifecycle kind.\n- **Stopped treating playlist names or ownership as ongoing deletion authority.** Refresh and disabled-user cleanup delete only exact GUIDs registered as rotating recommendations, so an unregistered personal playlist survives even if it uses plugin-like wording.\n- **Separated rotating recommendations from persistent collections in the schema.** Rotating cleanup cannot remove future collection registrations.\n- **Left legacy playlists unregistered and untouched.** Older versions stored no authoritative playlist marker, so v1.7.3 refuses to infer destructive provenance from names, owners, paths, or overlapping movie membership. The first refresh may therefore leave a legacy duplicate beside the newly registered playlist rather than risk deleting personal data.\n- **Registered the exact GUID returned by Jellyfin playlist creation.** Registration failures remove the just-created orphan and fail the refresh rather than leaving an untracked playlist.\n- Added fresh-database, in-place-upgrade, upsert, user isolation, lifecycle isolation, stable logical-key, and registered-ID cleanup regressions.",
         "targetAbi": "10.11.0.0",
