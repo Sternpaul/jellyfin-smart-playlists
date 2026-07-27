@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.7.6.0",
+        "changelog": "- **Added deterministic Primary and Backdrop artwork** for every dynamic playlist family using embedded, single-DLL-safe branded PNG assets.\n- `Because You Watched` copies artwork from the exact verified anchor movie when available, using read streams so source images are never moved or deleted; embedded artwork is the fallback.\n- Existing Primary or Backdrop images are treated as administrator-customized and are never overwritten.\n- Artwork is applied idempotently during both creation and in-place update and persisted through Jellyfin's native image APIs.\n- Added policy, family mapping, custom-art preservation, and embedded-resource regressions.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.7.6/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "a3df76032a844d8eba554ff2abad021d",
+        "timestamp": "2026-07-27T07:52:20Z"
+      },
+      {
         "version": "1.7.5.0",
         "changelog": "- **Added native Jellyfin playlist descriptions.** Every dynamic playlist now receives an `Overview` explaining its source signals, rotation behavior, current item count, and last refresh time.\n- Descriptions distinguish verified playback from manual Played state and avoid raw score internals, secrets, or private watch-history details beyond an existing `Because You Watched` title.\n- Metadata is persisted on creation and in-place update through Jellyfin's repository and playlist-file APIs, preserving stable IDs and artwork.\n- Failed member updates restore the prior description and refresh timestamp together with the previous members.\n- Added snapshot coverage for every current dynamic playlist family.",
         "targetAbi": "10.11.0.0",
