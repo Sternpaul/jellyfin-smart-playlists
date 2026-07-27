@@ -265,7 +265,7 @@ Releases are tag-only and immutable. The release workflow requires the tag and p
 - [x] **v1.7.2:** harden test discovery, releases, publication checks, and documentation
 - [x] **v1.7.3:** add durable managed-playlist provenance registry
 - [x] **v1.7.4:** update playlists in place while preserving IDs and metadata
-- [ ] **v1.7.5:** native Jellyfin playlist descriptions and explanations
+- [x] **v1.7.5:** native Jellyfin playlist descriptions and explanations
 - [ ] **v1.7.6:** deterministic primary/backdrop artwork with manual-art preservation
 - [ ] **v1.7.7:** persistent per-user composite and curated collections
 - [ ] **v1.7.8:** optional read-only Radarr collection catalog and completeness data

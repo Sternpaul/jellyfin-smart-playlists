@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.AIRecommender.Configuration;
 using Jellyfin.Plugin.AIRecommender.Data;
 using Jellyfin.Plugin.AIRecommender.Data.Models;
+using Jellyfin.Plugin.AIRecommender.Services.Playlists;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Library;
@@ -1419,6 +1420,8 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                             .Select(item => item.Item2.Id)
                             .Where(id => id != Guid.Empty)
                             .ToList();
+                        var previousOverview = existing.Overview;
+                        var previousDateLastMediaAdded = existing.DateLastMediaAdded;
                         try
                         {
                             if (existing.OwnerUserId != userId)
@@ -1441,6 +1444,13 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                                     registration.DisplayName,
                                     previousIds,
                                     cancellationToken);
+                                existing.Overview = previousOverview;
+                                existing.DateLastMediaAdded = previousDateLastMediaAdded;
+                                existing.OnMetadataChanged();
+                                await existing.UpdateToRepositoryAsync(
+                                    MediaBrowser.Controller.Library.ItemUpdateType.MetadataEdit,
+                                    cancellationToken);
+                                _playlistManager.SavePlaylistFile(existing);
                             }
                             catch (Exception rollbackError)
                             {
@@ -1500,9 +1510,12 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                         ?? throw new InvalidOperationException(
                             $"Jellyfin created playlist '{name}' ({createdPlaylistId}) but exact-ID lookup failed.");
                     created.OwnerUserId = userId;
+                    created.Overview = PlaylistDescriptionBuilder.Build(name, itemIds.Count, DateTime.UtcNow);
+                    created.OnMetadataChanged();
                     await created.UpdateToRepositoryAsync(
                         MediaBrowser.Controller.Library.ItemUpdateType.MetadataEdit,
                         cancellationToken);
+                    _playlistManager.SavePlaylistFile(created);
 
                     await _movieStore.UpsertManagedPlaylistAsync(
                         userId,
@@ -1549,11 +1562,14 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             if (items.Count != itemIds.Distinct().Count())
                 throw new InvalidOperationException($"Cannot update playlist '{name}': one or more items are missing or unsupported.");
 
+            var refreshedAt = DateTime.UtcNow;
             playlist.LinkedChildren = items.Select(LinkedChild.Create).ToArray();
             playlist.Name = name;
+            playlist.Overview = PlaylistDescriptionBuilder.Build(name, items.Count, refreshedAt);
             playlist.OwnerUserId = userId;
             playlist.OpenAccess = false;
-            playlist.DateLastMediaAdded = DateTime.UtcNow;
+            playlist.DateLastMediaAdded = refreshedAt;
+            playlist.OnMetadataChanged();
             await playlist.UpdateToRepositoryAsync(
                 MediaBrowser.Controller.Library.ItemUpdateType.MetadataEdit,
                 cancellationToken);

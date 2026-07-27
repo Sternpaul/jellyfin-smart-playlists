@@ -2,6 +2,13 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.7.5
+- **Added native Jellyfin playlist descriptions.** Every dynamic playlist now receives an `Overview` explaining its source signals, rotation behavior, current item count, and last refresh time.
+- Descriptions distinguish verified playback from manual Played state and avoid raw score internals, secrets, or private watch-history details beyond an existing `Because You Watched` title.
+- Metadata is persisted on creation and in-place update through Jellyfin's repository and playlist-file APIs, preserving stable IDs and artwork.
+- Failed member updates restore the prior description and refresh timestamp together with the previous members.
+- Added snapshot coverage for every current dynamic playlist family.
+
 ## v1.7.4
 - **Updates registered playlists in place.** Refreshes replace the ordered member list through Jellyfin's native playlist API while preserving the registered playlist GUID and metadata container.
 - Existing members are restored if Jellyfin's member replacement fails; a failed refresh does not pre-delete the user's previous playlists.
