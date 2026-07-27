@@ -70,6 +70,21 @@ public sealed class ManagedPlaylistRegistryTests : IDisposable
     }
 
     [Fact]
+    public async Task Exact_logical_key_lookup_returns_registered_slot()
+    {
+        var userId = Guid.NewGuid();
+        var playlistId = Guid.NewGuid();
+        var store = CreateStore();
+        await store.UpsertManagedPlaylistAsync(userId, "dynamic:for-you", playlistId, "For You", ManagedPlaylistKind.RotatingRecommendation);
+
+        var row = await store.GetManagedPlaylistAsync(userId, "dynamic:for-you");
+
+        Assert.NotNull(row);
+        Assert.Equal(playlistId, row!.PlaylistId);
+        Assert.Null(await store.GetManagedPlaylistAsync(userId, "dynamic:recently-added"));
+    }
+
+    [Fact]
     public async Task Removing_rotating_registrations_preserves_persistent_collections()
     {
         var userId = Guid.NewGuid();

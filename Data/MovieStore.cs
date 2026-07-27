@@ -708,6 +708,17 @@ namespace Jellyfin.Plugin.AIRecommender.Data
             return await query.OrderBy(playlist => playlist.LogicalKey).ToListAsync(cancellationToken);
         }
 
+        public async Task<ManagedPlaylist?> GetManagedPlaylistAsync(
+            Guid userId,
+            string logicalKey,
+            CancellationToken cancellationToken = default)
+        {
+            using var db = GetContext();
+            return await db.ManagedPlaylists.FindAsync(
+                new object[] { userId, logicalKey },
+                cancellationToken);
+        }
+
         public async Task UpsertManagedPlaylistAsync(
             Guid userId,
             string logicalKey,

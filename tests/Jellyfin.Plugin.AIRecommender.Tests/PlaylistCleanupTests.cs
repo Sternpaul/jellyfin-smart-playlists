@@ -90,4 +90,17 @@ public class PlaylistCleanupTests
         var rotatingId = Guid.NewGuid();
         Assert.False(ShouldDelete(persistentCollectionId, rotatingId));
     }
+
+    [Fact]
+    public void Only_registrations_untouched_since_refresh_start_are_stale()
+    {
+        var method = typeof(PlaylistEngine).GetMethod(
+            "IsManagedPlaylistStale",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+        var started = DateTime.UtcNow;
+        Assert.True((bool)method!.Invoke(null, new object[] { started.AddTicks(-1), started })!);
+        Assert.False((bool)method.Invoke(null, new object[] { started, started })!);
+        Assert.False((bool)method.Invoke(null, new object[] { started.AddTicks(1), started })!);
+    }
 }

@@ -2,6 +2,13 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.7.4
+- **Updates registered playlists in place.** Refreshes replace the ordered member list through Jellyfin's native playlist API while preserving the registered playlist GUID and metadata container.
+- Existing members are restored if Jellyfin's member replacement fails; a failed refresh does not pre-delete the user's previous playlists.
+- Registered slots not produced by a successful refresh are removed afterward by exact GUID, while persistent collections and unregistered legacy/personal playlists remain untouched.
+- Missing registered Jellyfin items are pruned safely and recreated under the same stable logical slot.
+- Added exact logical-key lookup and stale-lifecycle regressions.
+
 ## v1.7.3
 - **Added durable managed-playlist provenance.** The plugin database now records each managed playlist by user, stable logical key, exact Jellyfin playlist GUID, display name, and lifecycle kind.
 - **Stopped treating playlist names or ownership as ongoing deletion authority.** Refresh and disabled-user cleanup delete only exact GUIDs registered as rotating recommendations, so an unregistered personal playlist survives even if it uses plugin-like wording.

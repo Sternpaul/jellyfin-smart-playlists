@@ -236,10 +236,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             // Capture the immediately previous membership before cleanup. Rotation is
             // computed from this immutable per-refresh snapshot rather than shared state.
             var previousPlaylists = await CaptureRecommendationPlaylistMembersAsync(userId, cancellationToken);
-
-            // Clean slate: remove any existing recommendation playlists for this user
-            // before regenerating, so stale/disabled/renamed ones never linger.
-            await DeleteUserRecommendationPlaylistsAsync(userId, cancellationToken);
+            var refreshStartedAt = DateTime.UtcNow;
 
             // v1.5.0: reset the per-user exclusion log so the debug snapshot reflects THIS refresh.
             lock (_exclusionsLock)
@@ -305,6 +302,10 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             {
                 await GenerateRatingsPlaylistAsync(userId, ratings, previousPlaylists, cancellationToken);
             }
+
+            // Slots successfully created or updated above received a fresh UpdatedAt.
+            // Delete only untouched registrations after every generator succeeds.
+            await DeleteStaleUserRecommendationPlaylistsAsync(userId, refreshStartedAt, cancellationToken);
             
             _logger.LogInformation("Finished refreshing playlists for user {UserId}", userId);
         }
@@ -414,6 +415,31 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 userId,
                 ManagedPlaylistKind.RotatingRecommendation,
                 cancellationToken);
+            await DeleteManagedPlaylistRegistrationsAsync(userId, registrations, cancellationToken);
+        }
+
+        private async Task DeleteStaleUserRecommendationPlaylistsAsync(
+            Guid userId,
+            DateTime refreshStartedAt,
+            CancellationToken cancellationToken)
+        {
+            var staleRegistrations = (await _movieStore.GetManagedPlaylistsAsync(
+                    userId,
+                    ManagedPlaylistKind.RotatingRecommendation,
+                    cancellationToken))
+                .Where(registration => IsManagedPlaylistStale(registration.UpdatedAt, refreshStartedAt))
+                .ToList();
+            await DeleteManagedPlaylistRegistrationsAsync(userId, staleRegistrations, cancellationToken);
+        }
+
+        private static bool IsManagedPlaylistStale(DateTime updatedAt, DateTime refreshStartedAt)
+            => updatedAt < refreshStartedAt;
+
+        private async Task DeleteManagedPlaylistRegistrationsAsync(
+            Guid userId,
+            IReadOnlyCollection<ManagedPlaylist> registrations,
+            CancellationToken cancellationToken)
+        {
             var allPlaylists = _libraryManager.GetItemList(new InternalItemsQuery
             {
                 IncludeItemTypes = new[] { Jellyfin.Data.Enums.BaseItemKind.Playlist },
@@ -427,7 +453,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 if (playlist != null)
                 {
                     _logger.LogInformation(
-                        "Deleting registered playlist '{Name}' ({PlaylistId}) for user {UserId} (clean slate).",
+                        "Deleting registered playlist '{Name}' ({PlaylistId}) for user {UserId}.",
                         playlist.Name,
                         playlist.Id,
                         userId);
@@ -443,8 +469,6 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                         userId);
                 }
 
-                // Remove provenance only after the exact registered item was successfully
-                // deleted, or after its absence was explicitly confirmed above.
                 await _movieStore.RemoveManagedPlaylistAsync(
                     userId,
                     registration.PlaylistId,
@@ -1384,6 +1408,71 @@ namespace Jellyfin.Plugin.AIRecommender.Services
 
             if (itemIds.Any())
             {
+                var logicalKey = GetManagedPlaylistLogicalKey(name);
+                var registration = await _movieStore.GetManagedPlaylistAsync(userId, logicalKey, cancellationToken);
+                if (registration != null)
+                {
+                    var existing = _libraryManager.GetItemById<Playlist>(registration.PlaylistId);
+                    if (existing != null)
+                    {
+                        var previousIds = existing.GetManageableItems()
+                            .Select(item => item.Item2.Id)
+                            .Where(id => id != Guid.Empty)
+                            .ToList();
+                        try
+                        {
+                            if (existing.OwnerUserId != userId)
+                            {
+                                existing.OwnerUserId = userId;
+                                await existing.UpdateToRepositoryAsync(
+                                    MediaBrowser.Controller.Library.ItemUpdateType.MetadataEdit,
+                                    cancellationToken);
+                            }
+
+                            await UpdatePlaylistInPlaceAsync(existing, userId, name, itemIds, cancellationToken);
+                        }
+                        catch (Exception updateError)
+                        {
+                            try
+                            {
+                                await UpdatePlaylistInPlaceAsync(
+                                    existing,
+                                    userId,
+                                    registration.DisplayName,
+                                    previousIds,
+                                    cancellationToken);
+                            }
+                            catch (Exception rollbackError)
+                            {
+                                throw new AggregateException(
+                                    $"Failed to update managed playlist '{name}' and restore its prior members.",
+                                    updateError,
+                                    rollbackError);
+                            }
+
+                            throw;
+                        }
+
+                        await _movieStore.UpsertManagedPlaylistAsync(
+                            userId,
+                            logicalKey,
+                            registration.PlaylistId,
+                            name,
+                            ManagedPlaylistKind.RotatingRecommendation,
+                            cancellationToken);
+                        _logger.LogInformation(
+                            "Updated playlist '{Name}' for user {UserId} in place with {Count} items (Id: {PlaylistId}).",
+                            name,
+                            userId,
+                            itemIds.Count,
+                            registration.PlaylistId);
+                        await RecordPlaylistSurfaceAsync(userId, itemIds, name, cancellationToken);
+                        return;
+                    }
+
+                    await _movieStore.RemoveManagedPlaylistAsync(userId, registration.PlaylistId, cancellationToken);
+                }
+
                 var req = new MediaBrowser.Model.Playlists.PlaylistCreationRequest
                 {
                     Name = name,
@@ -1436,20 +1525,55 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     throw;
                 }
 
-                // Record surfacing for novelty tracking (so the same films don't recycle).
-                try
-                {
-                    await _movieStore.MarkSurfacedAsync(userId, itemIds, cancellationToken);
-                    await _movieStore.RecordSurfaceHistoryAsync(userId, itemIds, name, cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to record surfaced movies for playlist '{Name}'.", name);
-                }
+                await RecordPlaylistSurfaceAsync(userId, itemIds, name, cancellationToken);
             }
             else
             {
                 _logger.LogInformation("Skipped creating playlist '{Name}' because there were no items.", name);
+            }
+        }
+
+        private async Task UpdatePlaylistInPlaceAsync(
+            Playlist playlist,
+            Guid userId,
+            string name,
+            IReadOnlyCollection<Guid> itemIds,
+            CancellationToken cancellationToken)
+        {
+            var items = itemIds
+                .Select(_libraryManager.GetItemById)
+                .Where(item => item != null && item.SupportsAddingToPlaylist)
+                .Cast<BaseItem>()
+                .DistinctBy(item => item.Id)
+                .ToList();
+            if (items.Count != itemIds.Distinct().Count())
+                throw new InvalidOperationException($"Cannot update playlist '{name}': one or more items are missing or unsupported.");
+
+            playlist.LinkedChildren = items.Select(LinkedChild.Create).ToArray();
+            playlist.Name = name;
+            playlist.OwnerUserId = userId;
+            playlist.OpenAccess = false;
+            playlist.DateLastMediaAdded = DateTime.UtcNow;
+            await playlist.UpdateToRepositoryAsync(
+                MediaBrowser.Controller.Library.ItemUpdateType.MetadataEdit,
+                cancellationToken);
+            _playlistManager.SavePlaylistFile(playlist);
+        }
+
+        private async Task RecordPlaylistSurfaceAsync(
+            Guid userId,
+            IReadOnlyCollection<Guid> itemIds,
+            string name,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                await _movieStore.MarkSurfacedAsync(userId, itemIds, cancellationToken);
+                await _movieStore.RecordSurfaceHistoryAsync(userId, itemIds, name, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to record surfaced movies for playlist '{Name}'.", name);
             }
         }
     }
