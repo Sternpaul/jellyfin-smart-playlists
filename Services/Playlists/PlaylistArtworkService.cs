@@ -58,6 +58,7 @@ public sealed class PlaylistArtworkService
         IReadOnlyList<Guid> rankedItemIds,
         Guid? anchorItemId,
         ILibraryManager libraryManager,
+        bool playlistCreatedByCurrentOperation,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(playlist);
@@ -74,11 +75,13 @@ public sealed class PlaylistArtworkService
             playlist,
             ImageType.Primary,
             ManagedArtworkImageType.Primary,
+            playlistCreatedByCurrentOperation,
             cancellationToken);
         var backdropSnapshot = await CaptureSnapshotAsync(
             playlist,
             ImageType.Backdrop,
             ManagedArtworkImageType.Backdrop,
+            playlistCreatedByCurrentOperation,
             cancellationToken);
         var primaryMutation = new ImageMutationState();
         var backdropMutation = new ImageMutationState();
@@ -223,6 +226,18 @@ public sealed class PlaylistArtworkService
         string? existingImagePath,
         string? expectedGeneratedHash)
         => ShouldWriteImageCore(hasExistingImage, existingImagePath, expectedGeneratedHash, includeCurrentStatic: true);
+
+    public static bool ShouldWriteImage(
+        bool hasExistingImage,
+        string? existingImagePath,
+        string? expectedGeneratedHash,
+        bool playlistCreatedByCurrentOperation)
+    {
+        if (playlistCreatedByCurrentOperation && hasExistingImage)
+            return TryHashFile(existingImagePath, out _);
+
+        return ShouldWriteImage(hasExistingImage, existingImagePath, expectedGeneratedHash);
+    }
 
     private static bool ShouldWriteImageCore(
         bool hasExistingImage,
@@ -547,13 +562,18 @@ public sealed class PlaylistArtworkService
         Playlist playlist,
         ImageType imageType,
         ManagedArtworkImageType managedImageType,
+        bool playlistCreatedByCurrentOperation,
         CancellationToken cancellationToken)
     {
         var prior = await _movieStore.GetManagedPlaylistArtworkAsync(playlist.Id, managedImageType, cancellationToken);
         var existing = playlist.GetImageInfo(imageType, 0);
         var hasExisting = playlist.HasImage(imageType, 0);
         var hasReadableHash = TryHashFile(existing?.Path, out var observedHash);
-        var authorized = ShouldWriteImage(hasExisting, existing?.Path, prior?.GeneratedHash);
+        var authorized = ShouldWriteImage(
+            hasExisting,
+            existing?.Path,
+            prior?.GeneratedHash,
+            playlistCreatedByCurrentOperation);
         var relinquishOwnership = hasExisting
             && prior != null
             && hasReadableHash

@@ -113,6 +113,19 @@ public sealed class PlaylistArtworkV1710Tests : IDisposable
         Assert.False(PlaylistArtworkService.ShouldWriteImage(true, path, new string('A', 64)));
     }
 
+    [Fact]
+    public void Newly_created_playlist_can_replace_readable_unowned_jellyfin_collage()
+    {
+        var path = Path.Combine(_directory, "jellyfin-collage.png");
+        File.WriteAllBytes(path, "jellyfin-generated-four-poster-collage"u8.ToArray());
+
+        Assert.True(PlaylistArtworkService.ShouldWriteImage(
+            hasExistingImage: true,
+            existingImagePath: path,
+            expectedGeneratedHash: null,
+            playlistCreatedByCurrentOperation: true));
+    }
+
     [Theory]
     [InlineData(false, null, false, null, true)]
     [InlineData(false, null, true, "AAAA", false)]

@@ -2,6 +2,10 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.7.11
+- Fixed newly created recommendation playlists retaining Jellyfin's automatic four-poster Primary collage instead of receiving the contextual plugin artwork.
+- Replacement authorization is limited to the exact playlist created by the current refresh operation; existing playlists retain fail-closed custom-art preservation, and concurrent image changes still abort replacement.
+
 ## v1.7.10
 - Dynamic recommendation playlists now use the highest-ranked representative local movie as a contextual background; `Because You Watched` uses its verified watched anchor.
 - Generates deterministic 1000×1000 Primary and 1600×900 Backdrop PNGs locally with cover cropping, a bounded dark contrast treatment, readable title text, and a Jellyfin-themed blue-purple accent.

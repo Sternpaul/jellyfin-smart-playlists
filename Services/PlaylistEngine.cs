@@ -1596,6 +1596,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                                     representativeRanking,
                                     artworkAnchorItemId,
                                     _libraryManager,
+                                    playlistCreatedByCurrentOperation: false,
                                     cancellationToken);
                         }
                         catch (Exception updateError)
@@ -1716,6 +1717,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                             representativeRanking,
                             artworkAnchorItemId,
                             _libraryManager,
+                            playlistCreatedByCurrentOperation: true,
                             cancellationToken);
                 }
                 catch (Exception original)
