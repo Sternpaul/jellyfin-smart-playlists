@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.7.11.0",
+        "changelog": "- Fixed newly created recommendation playlists retaining Jellyfin's automatic four-poster Primary collage instead of receiving the contextual plugin artwork.\n- Replacement authorization is limited to the exact playlist created by the current refresh operation; existing playlists retain fail-closed custom-art preservation, and concurrent image changes still abort replacement.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.7.11/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "197ed145d13745c897d2e09a98d03911",
+        "timestamp": "2026-07-27T20:41:33Z"
+      },
+      {
         "version": "1.7.10.0",
         "changelog": "- Dynamic recommendation playlists now use the highest-ranked representative local movie as a contextual background; `Because You Watched` uses its verified watched anchor.\n- Generates deterministic 1000×1000 Primary and 1600×900 Backdrop PNGs locally with cover cropping, a bounded dark contrast treatment, readable title text, and a Jellyfin-themed blue-purple accent.\n- Prefers the representative movie's Backdrop, falls back to its Primary, then the next ranked movie with usable artwork, and finally the embedded v1.7.9 static asset.\n- Tracks exact generated and source-image SHA-256 hashes per playlist and image type, allowing plugin-owned artwork to refresh without overwriting unknown or administrator-customized Primary/Backdrop images.\n- Uses Jellyfin 10.11.11's host-provided SkiaSharp 3.116.1 while preserving the single-plugin-DLL package; no settings UI, network image fetch, bundled font, or external artwork dependency was added.\n- Added representative-ranking, image-source hierarchy, bounded deterministic composition, contrast, custom-art preservation, and existing-database provenance regressions.",
         "targetAbi": "10.11.0.0",
