@@ -2,6 +2,14 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.7.10
+- Dynamic recommendation playlists now use the highest-ranked representative local movie as a contextual background; `Because You Watched` uses its verified watched anchor.
+- Generates deterministic 1000×1000 Primary and 1600×900 Backdrop PNGs locally with cover cropping, a bounded dark contrast treatment, readable title text, and a Jellyfin-themed blue-purple accent.
+- Prefers the representative movie's Backdrop, falls back to its Primary, then the next ranked movie with usable artwork, and finally the embedded v1.7.9 static asset.
+- Tracks exact generated and source-image SHA-256 hashes per playlist and image type, allowing plugin-owned artwork to refresh without overwriting unknown or administrator-customized Primary/Backdrop images.
+- Uses Jellyfin 10.11.11's host-provided SkiaSharp 3.116.1 while preserving the single-plugin-DLL package; no settings UI, network image fetch, bundled font, or external artwork dependency was added.
+- Added representative-ranking, image-source hierarchy, bounded deterministic composition, contrast, custom-art preservation, and existing-database provenance regressions.
+
 ## v1.7.9
 - Replaced all 18 embedded dynamic-playlist Primary and Backdrop images with one-time-generated, static artwork using an original media-play motif, Jellyfin's permitted theme gradient, and accurate playlist labels.
 - Added a one-time migration that replaces only byte-identical legacy plugin artwork; custom, unknown, missing-path, and unreadable existing images remain untouched.

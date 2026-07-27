@@ -549,10 +549,17 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             finalPicks = ApplyDiversityCap(finalPicks, unwatched, _config.DiversityCapPercent, userId);
 
             var rotationRanking = finalPicks
-                .Concat(scoredMovies.Select(item => item.Movie.ItemId));
+                .Concat(scoredMovies.Select(item => item.Movie.ItemId))
+                .Distinct()
+                .ToList();
             finalPicks = ApplyConfiguredRotation(previousPlaylists, "For You", rotationRanking, finalPicks.Count);
 
-            await CreateOrUpdateJellyfinPlaylistAsync(userId, "For You", finalPicks, cancellationToken);
+            await CreateOrUpdateJellyfinPlaylistAsync(
+                userId,
+                "For You",
+                finalPicks,
+                cancellationToken,
+                artworkRankedItemIds: rotationRanking);
             return finalPicks;
         }
 
@@ -667,7 +674,13 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 playlistName,
                 rankedPicks,
                 picks.Count);
-            await CreateOrUpdateJellyfinPlaylistAsync(userId, playlistName, picks, cancellationToken, anchor.ItemId);
+            await CreateOrUpdateJellyfinPlaylistAsync(
+                userId,
+                playlistName,
+                picks,
+                cancellationToken,
+                anchor.ItemId,
+                artworkRankedItemIds: rankedPicks);
         }
 
         private static MovieMetadata? SelectBecauseYouWatchedAnchor(
@@ -729,7 +742,12 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 rankedGems,
                 PlaylistSizePolicy.Resolve(_config.MaxMoviesPerPlaylist, 15, rankedGems.Count));
 
-            await CreateOrUpdateJellyfinPlaylistAsync(userId, "Hidden Gems", gems, cancellationToken);
+            await CreateOrUpdateJellyfinPlaylistAsync(
+                userId,
+                "Hidden Gems",
+                gems,
+                cancellationToken,
+                artworkRankedItemIds: rankedGems);
             return gems;
         }
 
@@ -770,7 +788,12 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 rankedRecent,
                 PlaylistSizePolicy.Resolve(_config.MaxMoviesPerPlaylist, 15, rankedRecent.Count));
                 
-            await CreateOrUpdateJellyfinPlaylistAsync(userId, "Recently Added", recent, cancellationToken);
+            await CreateOrUpdateJellyfinPlaylistAsync(
+                userId,
+                "Recently Added",
+                recent,
+                cancellationToken,
+                artworkRankedItemIds: rankedRecent);
         }
 
         private async Task<List<Guid>> GenerateSubcategoryPlaylistsAsync(Guid userId, TasteProfile profile, List<MovieMetadata> unwatched, Dictionary<Guid, MovieAffinity> affinities, HashSet<Guid> claimed, IReadOnlyDictionary<string, IReadOnlyList<Guid>> previousPlaylists, CancellationToken cancellationToken)
@@ -795,7 +818,12 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     rankedFamiliar,
                     PlaylistSizePolicy.Resolve(_config.MaxMoviesPerPlaylist, 15, rankedFamiliar.Count));
                 if (familiarPicks.Any())
-                    await CreateOrUpdateJellyfinPlaylistAsync(userId, familiarName, familiarPicks, cancellationToken);
+                    await CreateOrUpdateJellyfinPlaylistAsync(
+                        userId,
+                        familiarName,
+                        familiarPicks,
+                        cancellationToken,
+                        artworkRankedItemIds: rankedFamiliar);
                 picks.AddRange(familiarPicks);
             }
             
@@ -824,7 +852,12 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     rankedDiscovered,
                     PlaylistSizePolicy.Resolve(_config.MaxMoviesPerPlaylist, 8, rankedDiscovered.Count));
                 if (discovered.Any())
-                    await CreateOrUpdateJellyfinPlaylistAsync(userId, "Discover: Hidden World", discovered, cancellationToken);
+                    await CreateOrUpdateJellyfinPlaylistAsync(
+                        userId,
+                        "Discover: Hidden World",
+                        discovered,
+                        cancellationToken,
+                        artworkRankedItemIds: rankedDiscovered);
                 picks.AddRange(discovered);
             }
             return picks;
@@ -907,7 +940,12 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 rankedWild,
                 PlaylistSizePolicy.Resolve(_config.MaxMoviesPerPlaylist, 10, rankedWild.Count));
 
-            await CreateOrUpdateJellyfinPlaylistAsync(userId, "Wild Card", wildPicks, cancellationToken);
+            await CreateOrUpdateJellyfinPlaylistAsync(
+                userId,
+                "Wild Card",
+                wildPicks,
+                cancellationToken,
+                artworkRankedItemIds: rankedWild);
             return wildPicks;
         }
 
@@ -954,12 +992,18 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 return;
             }
 
+            var rankedWatchlist = toWatch.ToList();
             toWatch = ApplyConfiguredRotation(
                 previousPlaylists,
                 "From Your Watchlist",
-                toWatch,
+                rankedWatchlist,
                 PlaylistSizePolicy.Resolve(_config.MaxMoviesPerPlaylist, null, toWatch.Count));
-            await CreateOrUpdateJellyfinPlaylistAsync(userId, "From Your Watchlist", toWatch, cancellationToken);
+            await CreateOrUpdateJellyfinPlaylistAsync(
+                userId,
+                "From Your Watchlist",
+                toWatch,
+                cancellationToken,
+                artworkRankedItemIds: rankedWatchlist);
         }
 
         // Letterboxd ratings prove prior viewing. Use 4-star-and-higher rated films only
@@ -983,7 +1027,12 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 maxCount);
 
             if (rotated.Any())
-                await CreateOrUpdateJellyfinPlaylistAsync(userId, playlistName, rotated, cancellationToken);
+                await CreateOrUpdateJellyfinPlaylistAsync(
+                    userId,
+                    playlistName,
+                    rotated,
+                    cancellationToken,
+                    artworkRankedItemIds: recommendations);
         }
 
         private double ScoreMovieAgainstProfile(MovieMetadata movie, TasteProfile profile)
@@ -1484,6 +1533,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             List<Guid> itemIds,
             CancellationToken cancellationToken,
             Guid? artworkAnchorItemId = null,
+            IReadOnlyList<Guid>? artworkRankedItemIds = null,
             string? logicalKeyOverride = null,
             ManagedPlaylistKind kind = ManagedPlaylistKind.RotatingRecommendation,
             string? overviewOverride = null)
@@ -1500,6 +1550,9 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             itemIds = itemIds
                 .Take(creationLimit)
                 .ToList();
+            var representativeRanking = RepresentativeArtworkSelector.RankFinalMembers(
+                artworkRankedItemIds ?? itemIds,
+                itemIds);
 
             if (itemIds.Any())
             {
@@ -1513,12 +1566,12 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     var existing = _libraryManager.GetItemById<Playlist>(registration.PlaylistId);
                     if (existing != null)
                     {
-                        var previousIds = existing.GetManageableItems()
-                            .Select(item => item.Item2.Id)
-                            .Where(id => id != Guid.Empty)
-                            .ToList();
                         var previousOverview = existing.Overview;
                         var previousDateLastMediaAdded = existing.DateLastMediaAdded;
+                        var previousName = existing.Name;
+                        var previousOwnerUserId = existing.OwnerUserId;
+                        var previousOpenAccess = existing.OpenAccess;
+                        var previousLinkedChildren = existing.LinkedChildren;
                         try
                         {
                             if (existing.OwnerUserId != userId)
@@ -1537,39 +1590,56 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                                 cancellationToken,
                                 overviewOverride);
                             if (kind == ManagedPlaylistKind.RotatingRecommendation)
-                                await _playlistArtworkService.ApplyIfMissingAsync(
+                                await _playlistArtworkService.ApplyManagedCompositeAsync(
                                     existing,
                                     name,
+                                    representativeRanking,
                                     artworkAnchorItemId,
                                     _libraryManager,
                                     cancellationToken);
                         }
                         catch (Exception updateError)
                         {
+                            var rollbackErrors = new List<Exception>();
                             try
                             {
-                                await UpdatePlaylistInPlaceAsync(
-                                    existing,
-                                    userId,
-                                    registration.DisplayName,
-                                    previousIds,
-                                    cancellationToken,
-                                    previousOverview);
+                                existing.LinkedChildren = previousLinkedChildren;
+                                existing.Name = previousName;
                                 existing.Overview = previousOverview;
+                                existing.OwnerUserId = previousOwnerUserId;
+                                existing.OpenAccess = previousOpenAccess;
                                 existing.DateLastMediaAdded = previousDateLastMediaAdded;
                                 existing.OnMetadataChanged();
+                            }
+                            catch (Exception rollbackError)
+                            {
+                                rollbackErrors.Add(rollbackError);
+                            }
+
+                            try
+                            {
                                 await existing.UpdateToRepositoryAsync(
                                     MediaBrowser.Controller.Library.ItemUpdateType.MetadataEdit,
-                                    cancellationToken);
+                                    CancellationToken.None);
+                            }
+                            catch (Exception rollbackError)
+                            {
+                                rollbackErrors.Add(rollbackError);
+                            }
+
+                            try
+                            {
                                 _playlistManager.SavePlaylistFile(existing);
                             }
                             catch (Exception rollbackError)
                             {
-                                throw new AggregateException(
-                                    $"Failed to update managed playlist '{name}' and restore its prior members.",
-                                    updateError,
-                                    rollbackError);
+                                rollbackErrors.Add(rollbackError);
                             }
+
+                            if (rollbackErrors.Count > 0)
+                                throw new AggregateException(
+                                    $"Failed to update managed playlist '{name}' and restore its prior state.",
+                                    new[] { updateError }.Concat(rollbackErrors));
 
                             throw;
                         }
@@ -1628,14 +1698,10 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                         MediaBrowser.Controller.Library.ItemUpdateType.MetadataEdit,
                         cancellationToken);
                     _playlistManager.SavePlaylistFile(created);
-                    if (kind == ManagedPlaylistKind.RotatingRecommendation)
-                        await _playlistArtworkService.ApplyIfMissingAsync(
-                            created,
-                            name,
-                            artworkAnchorItemId,
-                            _libraryManager,
-                            cancellationToken);
 
+                    // Confirm durable provenance before dynamic artwork stores its own
+                    // per-image ownership rows. The catch boundary removes both if any
+                    // later creation step fails.
                     await _movieStore.UpsertManagedPlaylistAsync(
                         userId,
                         logicalKey,
@@ -1643,16 +1709,55 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                         name,
                         kind,
                         cancellationToken);
+                    if (kind == ManagedPlaylistKind.RotatingRecommendation)
+                        await _playlistArtworkService.ApplyManagedCompositeAsync(
+                            created,
+                            name,
+                            representativeRanking,
+                            artworkAnchorItemId,
+                            _libraryManager,
+                            cancellationToken);
                 }
-                catch
+                catch (Exception original)
                 {
-                    var orphan = created ?? _libraryManager.GetItemById<Playlist>(createdPlaylistId);
-                    if (orphan != null)
+                    var rollbackErrors = new List<Exception>();
+                    var itemDeletedOrAbsent = false;
+                    try
                     {
-                        _libraryManager.DeleteItem(
-                            orphan,
-                            new MediaBrowser.Controller.Library.DeleteOptions { DeleteFileLocation = true });
+                        var orphan = created ?? _libraryManager.GetItemById<Playlist>(createdPlaylistId);
+                        if (orphan != null)
+                        {
+                            _libraryManager.DeleteItem(
+                                orphan,
+                                new MediaBrowser.Controller.Library.DeleteOptions { DeleteFileLocation = true });
+                        }
+
+                        itemDeletedOrAbsent = true;
                     }
+                    catch (Exception rollbackError)
+                    {
+                        rollbackErrors.Add(rollbackError);
+                    }
+
+                    // Keep exact registry/provenance if deletion fails so a later
+                    // managed cleanup can retry the same native playlist ID.
+                    if (itemDeletedOrAbsent)
+                    {
+                        try
+                        {
+                            await _movieStore.RemoveManagedPlaylistAsync(
+                                userId,
+                                createdPlaylistId,
+                                CancellationToken.None);
+                        }
+                        catch (Exception rollbackError)
+                        {
+                            rollbackErrors.Add(rollbackError);
+                        }
+                    }
+
+                    if (rollbackErrors.Count > 0)
+                        throw new AggregateException("Playlist creation and rollback both failed.", new[] { original }.Concat(rollbackErrors));
 
                     throw;
                 }

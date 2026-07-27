@@ -157,6 +157,19 @@ namespace Jellyfin.Plugin.AIRecommender.Data
             db.Database.ExecuteSqlRaw(
                 "CREATE UNIQUE INDEX IF NOT EXISTS IX_ManagedPlaylists_PlaylistId ON ManagedPlaylists (PlaylistId)");
             EnsureTable(db, @"
+                CREATE TABLE IF NOT EXISTS ManagedPlaylistArtwork (
+                    PlaylistId TEXT NOT NULL,
+                    ImageType INTEGER NOT NULL,
+                    GeneratedHash TEXT NOT NULL,
+                    SourceItemId TEXT NULL,
+                    SourceImageType INTEGER NOT NULL,
+                    SourceHash TEXT NOT NULL,
+                    RenderedTitle TEXT NOT NULL,
+                    TemplateVersion INTEGER NOT NULL,
+                    UpdatedAt TEXT NOT NULL,
+                    CONSTRAINT PK_ManagedPlaylistArtwork PRIMARY KEY (PlaylistId, ImageType)
+                )");
+            EnsureTable(db, @"
                 CREATE TABLE IF NOT EXISTS CollectionDefinitions (
                     Id TEXT NOT NULL,
                     Name TEXT NOT NULL COLLATE NOCASE,
@@ -778,6 +791,14 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                 if (existing.Kind != kind)
                     throw new InvalidOperationException(
                         $"Managed playlist '{logicalKey}' is registered as {existing.Kind}, not {kind}.");
+                if (existing.PlaylistId != playlistId)
+                {
+                    var staleArtwork = await db.ManagedPlaylistArtwork
+                        .Where(artwork => artwork.PlaylistId == existing.PlaylistId)
+                        .ToListAsync(cancellationToken);
+                    db.ManagedPlaylistArtwork.RemoveRange(staleArtwork);
+                }
+
                 existing.PlaylistId = playlistId;
                 existing.DisplayName = displayName;
                 existing.Kind = kind;
@@ -796,6 +817,14 @@ namespace Jellyfin.Plugin.AIRecommender.Data
             var rows = await db.ManagedPlaylists
                 .Where(playlist => playlist.UserId == userId && playlist.Kind == kind)
                 .ToListAsync(cancellationToken);
+            var playlistIds = rows.Select(playlist => playlist.PlaylistId).ToList();
+            if (playlistIds.Count > 0)
+            {
+                var artworkRows = await db.ManagedPlaylistArtwork
+                    .Where(artwork => playlistIds.Contains(artwork.PlaylistId))
+                    .ToListAsync(cancellationToken);
+                db.ManagedPlaylistArtwork.RemoveRange(artworkRows);
+            }
             db.ManagedPlaylists.RemoveRange(rows);
             await db.SaveChangesAsync(cancellationToken);
         }
@@ -812,7 +841,80 @@ namespace Jellyfin.Plugin.AIRecommender.Data
             if (row == null)
                 return;
 
+            var artworkRows = await db.ManagedPlaylistArtwork
+                .Where(artwork => artwork.PlaylistId == playlistId)
+                .ToListAsync(cancellationToken);
+            db.ManagedPlaylistArtwork.RemoveRange(artworkRows);
             db.ManagedPlaylists.Remove(row);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        public async Task<ManagedPlaylistArtwork?> GetManagedPlaylistArtworkAsync(
+            Guid playlistId,
+            ManagedArtworkImageType imageType,
+            CancellationToken cancellationToken = default)
+        {
+            using var db = GetContext();
+            return await db.ManagedPlaylistArtwork.FindAsync(
+                new object[] { playlistId, imageType },
+                cancellationToken);
+        }
+
+        public async Task SaveManagedPlaylistArtworkAsync(
+            ManagedPlaylistArtwork artwork,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(artwork);
+            if (artwork.PlaylistId == Guid.Empty)
+                throw new ArgumentException("Artwork provenance requires a playlist ID.", nameof(artwork));
+            if (artwork.GeneratedHash.Length != 64 || artwork.SourceHash.Length != 64)
+                throw new ArgumentException("Artwork provenance hashes must be SHA-256 hex strings.", nameof(artwork));
+
+            using var db = GetContext();
+            var existing = await db.ManagedPlaylistArtwork.FindAsync(
+                new object[] { artwork.PlaylistId, artwork.ImageType },
+                cancellationToken);
+            if (existing == null)
+            {
+                db.ManagedPlaylistArtwork.Add(artwork);
+            }
+            else
+            {
+                existing.GeneratedHash = artwork.GeneratedHash;
+                existing.SourceItemId = artwork.SourceItemId;
+                existing.SourceImageType = artwork.SourceImageType;
+                existing.SourceHash = artwork.SourceHash;
+                existing.RenderedTitle = artwork.RenderedTitle;
+                existing.TemplateVersion = artwork.TemplateVersion;
+                existing.UpdatedAt = artwork.UpdatedAt;
+            }
+
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        public async Task RemoveManagedPlaylistArtworkAsync(
+            Guid playlistId,
+            ManagedArtworkImageType imageType,
+            CancellationToken cancellationToken = default)
+            => await RemoveManagedPlaylistArtworksAsync(playlistId, new[] { imageType }, cancellationToken);
+
+        public async Task RemoveManagedPlaylistArtworksAsync(
+            Guid playlistId,
+            IReadOnlyCollection<ManagedArtworkImageType> imageTypes,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(imageTypes);
+            if (imageTypes.Count == 0)
+                return;
+
+            using var db = GetContext();
+            var existing = await db.ManagedPlaylistArtwork
+                .Where(artwork => artwork.PlaylistId == playlistId && imageTypes.Contains(artwork.ImageType))
+                .ToListAsync(cancellationToken);
+            if (existing.Count == 0)
+                return;
+
+            db.ManagedPlaylistArtwork.RemoveRange(existing);
             await db.SaveChangesAsync(cancellationToken);
         }
 

@@ -20,6 +20,7 @@ namespace Jellyfin.Plugin.AIRecommender.Data
         public DbSet<UserRating> UserRatings { get; set; }
         public DbSet<VerifiedWatch> VerifiedWatches { get; set; }
         public DbSet<ManagedPlaylist> ManagedPlaylists { get; set; }
+        public DbSet<ManagedPlaylistArtwork> ManagedPlaylistArtwork { get; set; }
         public DbSet<CollectionDefinition> CollectionDefinitions { get; set; }
         public DbSet<UserCollectionSubscription> UserCollectionSubscriptions { get; set; }
 
@@ -64,6 +65,9 @@ namespace Jellyfin.Plugin.AIRecommender.Data
             modelBuilder.Entity<ManagedPlaylist>()
                 .HasIndex(p => p.PlaylistId)
                 .IsUnique();
+
+            modelBuilder.Entity<ManagedPlaylistArtwork>()
+                .HasKey(artwork => new { artwork.PlaylistId, artwork.ImageType });
 
             modelBuilder.Entity<CollectionDefinition>()
                 .HasKey(definition => definition.Id);
