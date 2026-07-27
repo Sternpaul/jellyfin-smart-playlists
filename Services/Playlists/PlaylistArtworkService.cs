@@ -59,7 +59,8 @@ public sealed class PlaylistArtworkService
         if (name.Equals("Discover: Hidden World", StringComparison.OrdinalIgnoreCase)) return "discover";
         if (name.Equals("Wild Card", StringComparison.OrdinalIgnoreCase)) return "wild-card";
         if (name.Equals("From Your Watchlist", StringComparison.OrdinalIgnoreCase)) return "watchlist";
-        if (name.Equals("Highly Rated by You", StringComparison.OrdinalIgnoreCase)) return "highly-rated";
+        if (name.Equals("Highly Rated by You", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("More Like Your Favorites", StringComparison.OrdinalIgnoreCase)) return "highly-rated";
         return "subcategory";
     }
 

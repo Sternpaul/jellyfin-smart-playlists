@@ -53,6 +53,12 @@ public class PlaylistCleanupTests
     }
 
     [Fact]
+    public void Renamed_favorites_playlist_reuses_the_existing_managed_slot()
+    {
+        Assert.Equal(LogicalKey("Highly Rated by You"), LogicalKey("More Like Your Favorites"));
+    }
+
+    [Fact]
     public void Changed_because_you_watched_anchor_reuses_prior_logical_slot_members()
     {
         var previousMembers = new[] { Guid.NewGuid(), Guid.NewGuid() };

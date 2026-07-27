@@ -15,7 +15,7 @@ public sealed class PlaylistDescriptionTests
         { "Discover: Hidden World", "A varied discovery mix outside your usual strongest preferences, balanced by your configured discovery settings. Rotates on refresh." },
         { "Wild Card", "An intentionally adventurous unwatched pick from outside your usual recommendations. Rotates on refresh." },
         { "From Your Watchlist", "Unwatched films matched from your configured watchlist source and available in Jellyfin. Rotates on refresh." },
-        { "Highly Rated by You", "Available Jellyfin films connected to your highest external ratings. Rotates on refresh." },
+        { "More Like Your Favorites", "Unwatched, unrated films in Jellyfin ranked by similarity to your 4-star-and-higher Letterboxd favorites. Your rated films are taste anchors and are never included. Rotates on refresh." },
         { "Thriller For You", "Unwatched Thriller films matched to your verified viewing and taste profile. Rotates on refresh." },
         { "Because You Watched Arrival", "Movies most similar to Arrival and your other recent verified Jellyfin watches. Manual Played flags are not used as recent watches. Rotates on refresh." }
     };

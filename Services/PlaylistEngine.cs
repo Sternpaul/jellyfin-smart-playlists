@@ -332,7 +332,9 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             if (normalized.Equals("Discover: Hidden World", StringComparison.OrdinalIgnoreCase)) return "dynamic:discover";
             if (normalized.Equals("Wild Card", StringComparison.OrdinalIgnoreCase)) return "dynamic:wild-card";
             if (normalized.Equals("From Your Watchlist", StringComparison.OrdinalIgnoreCase)) return "dynamic:watchlist";
-            if (normalized.Equals("Highly Rated by You", StringComparison.OrdinalIgnoreCase)) return "dynamic:highly-rated";
+            if (normalized.Equals("Highly Rated by You", StringComparison.OrdinalIgnoreCase)
+                || normalized.Equals("More Like Your Favorites", StringComparison.OrdinalIgnoreCase))
+                return "dynamic:highly-rated";
 
             const string suffix = " For You";
             if (normalized.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
@@ -934,31 +936,28 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             await CreateOrUpdateJellyfinPlaylistAsync(userId, "From Your Watchlist", toWatch, cancellationToken);
         }
 
-        // v1.5.12: "Highly Rated by You" — the user's top-rated Letterboxd films that are
-        // in the library, ordered by rating. Prefers unwatched films (a recommendation
-        // list of things you'd love), then fills with watched ones if short.
+        // Letterboxd ratings prove prior viewing. Use 4-star-and-higher rated films only
+        // as similarity anchors, and surface different unwatched/unrated local films.
         private async Task GenerateRatingsPlaylistAsync(Guid userId, Dictionary<Guid, double> ratings, IReadOnlyDictionary<string, IReadOnlyList<Guid>> previousPlaylists, CancellationToken cancellationToken)
         {
-            var byId = (await _movieStore.GetAllMoviesAsync(cancellationToken)).ToDictionary(m => m.ItemId);
+            const string playlistName = "More Like Your Favorites";
+            var movies = await _movieStore.GetAllMoviesAsync(cancellationToken);
             var watched = (await _watchHistoryService.GetWatchedMoviesAsync(userId, cancellationToken)).Select(w => w.ItemId).ToHashSet();
-
-            var rankedRated = ratings
-                .Where(kv => byId.ContainsKey(kv.Key))
-                .Select(kv => new { Id = kv.Key, Rating = kv.Value, Watched = watched.Contains(kv.Key) })
-                .OrderByDescending(x => x.Watched ? 0 : 1) // unwatched first
-                .ThenByDescending(x => x.Rating)
-                .ThenBy(x => x.Id)
-                .Select(x => x.Id)
-                .ToList();
-
-            var rated = ApplyConfiguredRotation(
+            var maxCount = PlaylistSizePolicy.Resolve(_config.MaxMoviesPerPlaylist, null, movies.Count);
+            var recommendations = FavoriteSimilarityRecommendation.Rank(
+                movies,
+                ratings,
+                watched,
+                _similarityEngine.CalculateSimilarity,
+                maxCount);
+            var rotated = ApplyConfiguredRotation(
                 previousPlaylists,
-                "Highly Rated by You",
-                rankedRated,
-                PlaylistSizePolicy.Resolve(_config.MaxMoviesPerPlaylist, null, rankedRated.Count));
+                playlistName,
+                recommendations,
+                maxCount);
 
-            if (rated.Any())
-                await CreateOrUpdateJellyfinPlaylistAsync(userId, "Highly Rated by You", rated, cancellationToken);
+            if (rotated.Any())
+                await CreateOrUpdateJellyfinPlaylistAsync(userId, playlistName, rotated, cancellationToken);
         }
 
         private double ScoreMovieAgainstProfile(MovieMetadata movie, TasteProfile profile)

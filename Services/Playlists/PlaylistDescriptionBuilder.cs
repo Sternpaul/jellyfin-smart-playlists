@@ -31,8 +31,8 @@ public static class PlaylistDescriptionBuilder
             return "An intentionally adventurous unwatched pick from outside your usual recommendations. Rotates on refresh.";
         if (displayName.Equals("From Your Watchlist", StringComparison.OrdinalIgnoreCase))
             return "Unwatched films matched from your configured watchlist source and available in Jellyfin. Rotates on refresh.";
-        if (displayName.Equals("Highly Rated by You", StringComparison.OrdinalIgnoreCase))
-            return "Available Jellyfin films connected to your highest external ratings. Rotates on refresh.";
+        if (displayName.Equals("More Like Your Favorites", StringComparison.OrdinalIgnoreCase))
+            return "Unwatched, unrated films in Jellyfin ranked by similarity to your 4-star-and-higher Letterboxd favorites. Your rated films are taste anchors and are never included. Rotates on refresh.";
         if (displayName.EndsWith(" For You", StringComparison.OrdinalIgnoreCase))
         {
             var category = displayName[..^" For You".Length];

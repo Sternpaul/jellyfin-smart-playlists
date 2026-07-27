@@ -2,6 +2,13 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.7.7
+- Replaced the contradictory `Highly Rated by You` surface with **`More Like Your Favorites`**.
+- Letterboxd ratings now act as prior-viewing evidence: every rated title is excluded from this playlist rather than being presented as unwatched.
+- Uses up to ten classified 4★+ Letterboxd films as rating-weighted similarity anchors and ranks unwatched, unrated local films by their strongest anchor matches.
+- Preserves the existing durable logical slot, Jellyfin playlist ID, rotation history, and artwork family across the rename.
+- Updated native descriptions, configuration wording, documentation, and regression coverage.
+
 ## v1.7.6
 - **Added deterministic Primary and Backdrop artwork** for every dynamic playlist family using embedded, single-DLL-safe branded PNG assets.
 - `Because You Watched` copies artwork from the exact verified anchor movie when available, using read streams so source images are never moved or deleted; embedded artwork is the fallback.

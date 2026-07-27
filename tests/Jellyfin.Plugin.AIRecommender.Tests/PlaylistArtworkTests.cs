@@ -15,7 +15,7 @@ public sealed class PlaylistArtworkTests
         { "Discover: Hidden World", "discover" },
         { "Wild Card", "wild-card" },
         { "From Your Watchlist", "watchlist" },
-        { "Highly Rated by You", "highly-rated" },
+        { "More Like Your Favorites", "highly-rated" },
         { "Thriller For You", "subcategory" }
     };
 
