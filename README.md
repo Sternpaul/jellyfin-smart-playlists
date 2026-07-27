@@ -281,11 +281,12 @@ Releases are tag-only and immutable. The release workflow requires the tag and p
 - [x] **v1.7.6:** deterministic primary/backdrop artwork with manual-art preservation
 - [x] **v1.7.7:** replace contradictory rated-title playlist with unseen recommendations similar to 4★+ Letterboxd favorites
 - [x] **v1.7.8:** persistent per-user composite and curated collections
-- [ ] **v1.7.9:** optional read-only Radarr collection catalog and completeness data
-- [ ] **v1.7.10:** administrator-approved collection suggestions per user
-- [ ] **v1.7.11:** index and classify each TV series once (never every episode)
-- [ ] **v1.7.12:** store verified episode playback strictly above 50% and aggregate it by series
-- [ ] **v1.7.13:** blend one bounded series signal into movie taste without episode multiplication
+- [x] **v1.7.9:** static Jellyfin-themed playlist artwork with one-time legacy-art migration and custom-art preservation
+- [ ] **v1.7.10:** optional read-only Radarr collection catalog and completeness data
+- [ ] **v1.7.11:** administrator-approved collection suggestions per user
+- [ ] **v1.7.12:** index and classify each TV series once (never every episode)
+- [ ] **v1.7.13:** store verified episode playback strictly above 50% and aggregate it by series
+- [ ] **v1.7.14:** blend one bounded series signal into movie taste without episode multiplication
 
 ### Planned features after the series-aware taste work
 - **New For You:** recently added movies filtered by taste instead of a generic date-only list.

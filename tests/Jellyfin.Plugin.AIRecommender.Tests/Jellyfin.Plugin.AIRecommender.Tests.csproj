@@ -17,5 +17,6 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <ProjectReference Include="../../Jellyfin.Plugin.AIRecommender.csproj" />
+    <EmbeddedResource Include="Fixtures/legacy-watchlist-primary.png" />
   </ItemGroup>
 </Project>

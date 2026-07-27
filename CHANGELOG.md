@@ -2,6 +2,12 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.7.9
+- Replaced all 18 embedded dynamic-playlist Primary and Backdrop images with one-time-generated, static artwork using an original media-play motif, Jellyfin's permitted theme gradient, and accurate playlist labels.
+- Added a one-time migration that replaces only byte-identical legacy plugin artwork; custom, unknown, missing-path, and unreadable existing images remain untouched.
+- Kept artwork fully embedded in the single plugin DLL with no generator code, build dependency, runtime URL, or network fetch.
+- Added image-contract and migration-policy regressions.
+
 ## v1.7.8
 - Added administrator-defined persistent collections using explicit TMDB movie IDs and IMDb IDs already indexed in the local Jellyfin library.
 - Added per-user collection assignments, administrator-only CRUD/assignment APIs, and a dashboard management section.
