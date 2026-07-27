@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.7.5.0",
+        "changelog": "- **Added native Jellyfin playlist descriptions.** Every dynamic playlist now receives an `Overview` explaining its source signals, rotation behavior, current item count, and last refresh time.\n- Descriptions distinguish verified playback from manual Played state and avoid raw score internals, secrets, or private watch-history details beyond an existing `Because You Watched` title.\n- Metadata is persisted on creation and in-place update through Jellyfin's repository and playlist-file APIs, preserving stable IDs and artwork.\n- Failed member updates restore the prior description and refresh timestamp together with the previous members.\n- Added snapshot coverage for every current dynamic playlist family.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.7.5/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "c93edf44f37d32433400e3f98e2f2975",
+        "timestamp": "2026-07-27T07:40:27Z"
+      },
+      {
         "version": "1.7.4.0",
         "changelog": "- **Updates registered playlists in place.** Refreshes replace the ordered member list through Jellyfin's native playlist API while preserving the registered playlist GUID and metadata container.\n- Existing members are restored if Jellyfin's member replacement fails; a failed refresh does not pre-delete the user's previous playlists.\n- Registered slots not produced by a successful refresh are removed afterward by exact GUID, while persistent collections and unregistered legacy/personal playlists remain untouched.\n- Missing registered Jellyfin items are pruned safely and recreated under the same stable logical slot.\n- Added exact logical-key lookup and stale-lifecycle regressions.",
         "targetAbi": "10.11.0.0",
