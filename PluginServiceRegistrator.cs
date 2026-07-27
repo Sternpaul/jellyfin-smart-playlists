@@ -1,6 +1,7 @@
 using Jellyfin.Plugin.AIRecommender.Data;
 using Jellyfin.Plugin.AIRecommender.Services;
 using Jellyfin.Plugin.AIRecommender.Services.AI;
+using Jellyfin.Plugin.AIRecommender.Services.Playlists;
 using Jellyfin.Plugin.AIRecommender.Tasks;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Plugins;
@@ -33,6 +34,7 @@ namespace Jellyfin.Plugin.AIRecommender
             serviceCollection.AddSingleton<WatchHistoryService>();
             serviceCollection.AddSingleton<SimilarityEngine>();
             serviceCollection.AddSingleton<PlaylistEngine>();
+            serviceCollection.AddSingleton<PlaylistArtworkService>();
             serviceCollection.AddSingleton<LetterboxdService>();
             serviceCollection.AddSingleton<MovieClassifier>();
             serviceCollection.AddSingleton<MovieIndexer>();

@@ -2,6 +2,13 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.7.6
+- **Added deterministic Primary and Backdrop artwork** for every dynamic playlist family using embedded, single-DLL-safe branded PNG assets.
+- `Because You Watched` copies artwork from the exact verified anchor movie when available, using read streams so source images are never moved or deleted; embedded artwork is the fallback.
+- Existing Primary or Backdrop images are treated as administrator-customized and are never overwritten.
+- Artwork is applied idempotently during both creation and in-place update and persisted through Jellyfin's native image APIs.
+- Added policy, family mapping, custom-art preservation, and embedded-resource regressions.
+
 ## v1.7.5
 - **Added native Jellyfin playlist descriptions.** Every dynamic playlist now receives an `Overview` explaining its source signals, rotation behavior, current item count, and last refresh time.
 - Descriptions distinguish verified playback from manual Played state and avoid raw score internals, secrets, or private watch-history details beyond an existing `Because You Watched` title.

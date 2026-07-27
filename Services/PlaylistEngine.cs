@@ -26,6 +26,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         private readonly SimilarityEngine _similarityEngine;
         private readonly LetterboxdService _letterboxdService;
         private readonly TmdbKeywordService _tmdbKeywordService;
+        private readonly PlaylistArtworkService _playlistArtworkService;
         private PluginConfiguration _config => Plugin.Instance!.Configuration;
         private readonly ILogger<PlaylistEngine> _logger;
 
@@ -49,6 +50,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             SimilarityEngine similarityEngine,
             LetterboxdService letterboxdService,
             TmdbKeywordService tmdbKeywordService,
+            PlaylistArtworkService playlistArtworkService,
             ILogger<PlaylistEngine> logger)
         {
             _playlistManager = playlistManager;
@@ -58,6 +60,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             _similarityEngine = similarityEngine;
             _letterboxdService = letterboxdService;
             _tmdbKeywordService = tmdbKeywordService;
+            _playlistArtworkService = playlistArtworkService;
             _logger = logger;
             
             _watchHistoryService.WatchEventEmitted += OnMovieWatched;
@@ -636,7 +639,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 playlistName,
                 rankedPicks,
                 picks.Count);
-            await CreateOrUpdateJellyfinPlaylistAsync(userId, playlistName, picks, cancellationToken);
+            await CreateOrUpdateJellyfinPlaylistAsync(userId, playlistName, picks, cancellationToken, anchor.ItemId);
         }
 
         private static MovieMetadata? SelectBecauseYouWatchedAnchor(
@@ -1399,7 +1402,12 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             }
         }
 
-        private async Task CreateOrUpdateJellyfinPlaylistAsync(Guid userId, string name, List<Guid> itemIds, CancellationToken cancellationToken)
+        private async Task CreateOrUpdateJellyfinPlaylistAsync(
+            Guid userId,
+            string name,
+            List<Guid> itemIds,
+            CancellationToken cancellationToken,
+            Guid? artworkAnchorItemId = null)
         {
             // Defense in depth: every generator is capped at the Jellyfin creation boundary,
             // including future generators that might omit their source-specific size policy.
@@ -1433,6 +1441,12 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                             }
 
                             await UpdatePlaylistInPlaceAsync(existing, userId, name, itemIds, cancellationToken);
+                            await _playlistArtworkService.ApplyIfMissingAsync(
+                                existing,
+                                name,
+                                artworkAnchorItemId,
+                                _libraryManager,
+                                cancellationToken);
                         }
                         catch (Exception updateError)
                         {
@@ -1516,6 +1530,12 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                         MediaBrowser.Controller.Library.ItemUpdateType.MetadataEdit,
                         cancellationToken);
                     _playlistManager.SavePlaylistFile(created);
+                    await _playlistArtworkService.ApplyIfMissingAsync(
+                        created,
+                        name,
+                        artworkAnchorItemId,
+                        _libraryManager,
+                        cancellationToken);
 
                     await _movieStore.UpsertManagedPlaylistAsync(
                         userId,
