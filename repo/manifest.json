@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.7.9.0",
+        "changelog": "- Replaced all 18 embedded dynamic-playlist Primary and Backdrop images with one-time-generated, static artwork using an original media-play motif, Jellyfin's permitted theme gradient, and accurate playlist labels.\n- Added a one-time migration that replaces only byte-identical legacy plugin artwork; custom, unknown, missing-path, and unreadable existing images remain untouched.\n- Kept artwork fully embedded in the single plugin DLL with no generator code, build dependency, runtime URL, or network fetch.\n- Added image-contract and migration-policy regressions.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.7.9/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "92d1321a84900967ddfe67dae991d0a0",
+        "timestamp": "2026-07-27T11:56:56Z"
+      },
+      {
         "version": "1.7.8.0",
         "changelog": "- Added administrator-defined persistent collections using explicit TMDB movie IDs and IMDb IDs already indexed in the local Jellyfin library.\n- Added per-user collection assignments, administrator-only CRUD/assignment APIs, and a dashboard management section.\n- Persistent collections use stable definition-based logical keys, update exact registered Jellyfin playlists in place, preserve IDs and custom artwork, and never enter rotating recommendation cleanup.\n- Empty or temporarily unresolved definitions preserve the prior valid playlist; unassignment and deletion remove only exact persistent registrations in the `collection:` namespace.\n- Curated collections include watched and unwatched movies in release-year order, do not affect recommendation rotation, novelty history, or watch-event sibling learning, and are bounded to 100 explicit identifiers without silent truncation.\n- Added in-place schema upgrades, definition/subscription persistence, resolver, lifecycle, learning-isolation, description, and kind-mismatch regression coverage.",
         "targetAbi": "10.11.0.0",
