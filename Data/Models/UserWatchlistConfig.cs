@@ -24,7 +24,8 @@ namespace Jellyfin.Plugin.AIRecommender.Data.Models
         // Letterboxd's HTML (fragile, ToS-gray), the user points this at a JSON
         // export of their ratings (e.g. the raw GitHub URL of their own
         // letterboxd-lists/public/ratings.json). Each entry carries an imdb_id and a
-        // 0.5-5.0 rating, so matching to the library is exact. Blank = no ratings weight.
+        // rating greater than 0 and at most 5, so matching is exact. Blank means no
+        // ratings weight.
         public string? RatingsJsonUrl { get; set; }
         public bool EnableRatingsPlaylist { get; set; } = false;
 

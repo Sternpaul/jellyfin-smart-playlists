@@ -20,6 +20,8 @@ namespace Jellyfin.Plugin.AIRecommender.Data
         public DbSet<UserRating> UserRatings { get; set; }
         public DbSet<VerifiedWatch> VerifiedWatches { get; set; }
         public DbSet<ManagedPlaylist> ManagedPlaylists { get; set; }
+        public DbSet<CollectionDefinition> CollectionDefinitions { get; set; }
+        public DbSet<UserCollectionSubscription> UserCollectionSubscriptions { get; set; }
 
         protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
@@ -62,6 +64,26 @@ namespace Jellyfin.Plugin.AIRecommender.Data
             modelBuilder.Entity<ManagedPlaylist>()
                 .HasIndex(p => p.PlaylistId)
                 .IsUnique();
+
+            modelBuilder.Entity<CollectionDefinition>()
+                .HasKey(definition => definition.Id);
+
+            modelBuilder.Entity<CollectionDefinition>()
+                .Property(definition => definition.Name)
+                .UseCollation("NOCASE");
+
+            modelBuilder.Entity<CollectionDefinition>()
+                .HasIndex(definition => definition.Name)
+                .IsUnique();
+
+            modelBuilder.Entity<UserCollectionSubscription>()
+                .HasKey(subscription => new { subscription.UserId, subscription.CollectionDefinitionId });
+
+            modelBuilder.Entity<UserCollectionSubscription>()
+                .HasOne<CollectionDefinition>()
+                .WithMany()
+                .HasForeignKey(subscription => subscription.CollectionDefinitionId)
+                .OnDelete(DeleteBehavior.Cascade);
         }
     }
 }

@@ -212,11 +212,10 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         // ---- Ratings ingestion (v1.5.17) ----
 
         // Fetch a user's Letterboxd ratings from a JSON export (their own file,
-        // e.g. the raw GitHub URL of letterboxd-lists/public/ratings.json) and store
-        // matched library ratings as the dominant recommendation signal. This replaces
-        // the old HTML-scraping approach: it's exact (entries carry imdb_id + a 0.5-5.0
-        // rating), ToS-clean, and has no fragile DOM parsing. All failures are logged and
-        // swallowed so a fetch problem never breaks the rest of the playlist refresh.
+        // e.g. a raw static-host URL) and store matched library ratings as the dominant
+        // recommendation signal. This replaces the old HTML-scraping approach: entries
+        // carry imdb_id plus a numeric rating greater than 0 and at most 5. All failures
+        // are logged and swallowed so a fetch problem never breaks playlist refresh.
         public async Task FetchRatingsFromJsonAsync(Guid userId, CancellationToken cancellationToken = default)
         {
             var config = await _movieStore.GetUserWatchlistConfigAsync(userId, cancellationToken);

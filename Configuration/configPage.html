@@ -324,6 +324,51 @@
                         </button>
                     </div>
 
+                    <!-- ============ PERSISTENT COLLECTIONS ============ -->
+                    <div class="sectionTitleContainer"><h2 class="sectionTitle">📚 Persistent Collections</h2></div>
+                    <div class="fieldDescription" style="margin-bottom:14px;">
+                        Create durable per-user collections from TMDB movie IDs and/or IMDb IDs already indexed in Jellyfin. Collections update in place and never rotate with recommendations.
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="CollectionName">Collection name:</label>
+                        <input type="text" id="CollectionName" is="emby-input" />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="CollectionDescription">Description (optional):</label>
+                        <input type="text" id="CollectionDescription" is="emby-input" />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="CollectionType">Collection type:</label>
+                        <select is="emby-select" id="CollectionType" class="emby-select-withcolor">
+                            <option value="0">Explicit movie collection</option>
+                            <option value="1">Curated / composite universe</option>
+                        </select>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="CollectionTmdbIds">TMDB movie IDs:</label>
+                        <input type="text" id="CollectionTmdbIds" is="emby-input" placeholder="11, 1891, 1892" />
+                        <div class="fieldDescription">Comma-separated TMDB <b>movie</b> IDs, not collection IDs.</div>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="CollectionImdbIds">IMDb IDs:</label>
+                        <input type="text" id="CollectionImdbIds" is="emby-input" placeholder="tt0076759, tt0080684" />
+                    </div>
+                    <button is="emby-button" type="button" id="btnSaveCollection" class="raised emby-button">Create Collection</button>
+                    <div class="inputContainer" style="margin-top:18px;">
+                        <label class="inputLabel inputLabelUnfocused" for="CollectionDefinition">Existing collection:</label>
+                        <select is="emby-select" id="CollectionDefinition" class="emby-select-withcolor"></select>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="CollectionUser">Assign to user:</label>
+                        <select is="emby-select" id="CollectionUser" class="emby-select-withcolor"></select>
+                    </div>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                        <button is="emby-button" type="button" id="btnAssignCollection" class="raised emby-button">Assign</button>
+                        <button is="emby-button" type="button" id="btnUnassignCollection" class="raised emby-button">Unassign</button>
+                        <button is="emby-button" type="button" id="btnDeleteCollection" class="raised emby-button">Delete Collection</button>
+                    </div>
+                    <div id="CollectionStatus" class="fieldDescription" style="margin-top:10px;"></div>
+
                     <div style="margin-top: 40px;">
                         <button is="emby-button" type="submit" class="raised button-submit block emby-button">
                             <span>Save Global Settings</span>
@@ -337,6 +382,38 @@
             var AIRecommenderConfig = {
                 pluginUniqueId: '3D3D8BE7-67AB-4F65-9F31-3EAE8764BBA3'
             };
+            var collectionDefinitions = [];
+            var editingCollectionId = '';
+
+            function loadCollections() {
+                return ApiClient.getJSON(ApiClient.getUrl('AIRecommender/Collections')).then(function(items) {
+                    collectionDefinitions = items || [];
+                    var select = document.querySelector('#CollectionDefinition');
+                    select.innerHTML = '<option value="">(Select a collection)</option>';
+                    collectionDefinitions.forEach(function(item) {
+                        var option = document.createElement('option');
+                        option.value = item.Id;
+                        option.textContent = item.Name + ' (' + ((item.AssignedUserIds || []).length) + ' assigned)';
+                        select.appendChild(option);
+                    });
+                    document.querySelector('#CollectionStatus').textContent = collectionDefinitions.length + ' persistent collection(s) configured.';
+                });
+            }
+
+            function parseCommaSeparated(value) {
+                return value.split(',').map(function(x) { return x.trim(); }).filter(Boolean);
+            }
+
+            function resetCollectionEditor() {
+                editingCollectionId = '';
+                document.getElementById('CollectionDefinition').value = '';
+                document.getElementById('CollectionName').value = '';
+                document.querySelector('#CollectionDescription').value = '';
+                document.querySelector('#CollectionType').value = '0';
+                document.querySelector('#CollectionTmdbIds').value = '';
+                document.querySelector('#CollectionImdbIds').value = '';
+                document.querySelector('#btnSaveCollection').textContent = 'Create Collection';
+            }
 
             document.querySelector('#aiRecommenderConfigPage').addEventListener('pageshow', function () {
                 Dashboard.showLoadingMsg();
@@ -360,6 +437,8 @@
                     userSelect.innerHTML = '<option value="">(Select a user)</option>';
                     var debugSelect = document.querySelector('#DebugUser');
                     debugSelect.innerHTML = '<option value="">(current admin user)</option>';
+                    var collectionUser = document.querySelector('#CollectionUser');
+                    collectionUser.innerHTML = '<option value="">(Select a user)</option>';
                     var exList = document.querySelector('#userExclusionList');
                     if (exList) exList.innerHTML = '';
                     users.forEach(function (u) {
@@ -369,6 +448,7 @@
                         userSelect.appendChild(opt);
                         var dopt = opt.cloneNode(true);
                         debugSelect.appendChild(dopt);
+                        collectionUser.appendChild(opt.cloneNode(true));
 
                         // Exclusion checkbox (name shown, value = GUID)
                         if (exList) {
@@ -385,6 +465,10 @@
                         }
                     });
                     if (pendingConfig) { applyExclusions(pendingConfig); pendingConfig = null; }
+                });
+
+                loadCollections().catch(function() {
+                    document.querySelector('#CollectionStatus').textContent = 'Could not load persistent collections.';
                 });
 
                 ApiClient.getPluginConfiguration(AIRecommenderConfig.pluginUniqueId).then(function (config) {
@@ -486,6 +570,81 @@
                     Dashboard.hideLoadingMsg();
                     Dashboard.alert("Error starting Playlist Refresh task.");
                 });
+            });
+
+            document.querySelector('#btnSaveCollection').addEventListener('click', function() {
+                var tmdbRaw = parseCommaSeparated(document.querySelector('#CollectionTmdbIds').value);
+                var imdbIds = parseCommaSeparated(document.querySelector('#CollectionImdbIds').value);
+                var tmdbIds = tmdbRaw.map(function(x) { return Number(x); });
+                if (!document.querySelector('#CollectionName').value.trim() || tmdbIds.some(function(x) { return !Number.isInteger(x) || x <= 0; })) {
+                    Dashboard.alert('Enter a name and valid positive TMDB movie IDs.');
+                    return;
+                }
+                Dashboard.showLoadingMsg();
+                ApiClient.ajax({
+                    type: 'POST',
+                    url: ApiClient.getUrl('AIRecommender/Collections'),
+                    data: JSON.stringify({
+                        Id: editingCollectionId || '00000000-0000-0000-0000-000000000000',
+                        Name: document.querySelector('#CollectionName').value.trim(),
+                        Description: document.querySelector('#CollectionDescription').value.trim(),
+                        Type: parseInt(document.querySelector('#CollectionType').value, 10),
+                        TmdbMovieIds: tmdbIds,
+                        ImdbIds: imdbIds
+                    }),
+                    contentType: 'application/json'
+                }).then(function() {
+                    resetCollectionEditor();
+                    return loadCollections();
+                }).then(function() { Dashboard.hideLoadingMsg(); })
+                  .catch(function() { Dashboard.hideLoadingMsg(); Dashboard.alert('Could not save collection.'); });
+            });
+
+            function setCollectionAssignment(assigned) {
+                var definitionId = document.querySelector('#CollectionDefinition').value;
+                var userId = document.querySelector('#CollectionUser').value;
+                if (!definitionId || !userId) { Dashboard.alert('Select a collection and user.'); return; }
+                Dashboard.showLoadingMsg();
+                ApiClient.ajax({
+                    type: 'POST',
+                    url: ApiClient.getUrl('AIRecommender/Collections/Assignment'),
+                    data: JSON.stringify({ UserId: userId, CollectionDefinitionId: definitionId, Assigned: assigned }),
+                    contentType: 'application/json'
+                }).then(function() {
+                    return loadCollections();
+                }).then(function() { Dashboard.hideLoadingMsg(); })
+                  .catch(function() { Dashboard.hideLoadingMsg(); Dashboard.alert('Could not update collection assignment.'); });
+            }
+
+            document.querySelector('#btnAssignCollection').addEventListener('click', function() { setCollectionAssignment(true); });
+            document.querySelector('#btnUnassignCollection').addEventListener('click', function() { setCollectionAssignment(false); });
+            document.querySelector('#CollectionDefinition').addEventListener('change', function(event) {
+                var item = collectionDefinitions.find(function(x) { return x.Id === event.target.value; });
+                if (!item) {
+                    resetCollectionEditor();
+                    return;
+                }
+                editingCollectionId = item.Id;
+                document.querySelector('#CollectionName').value = item.Name || '';
+                document.querySelector('#CollectionDescription').value = item.Description || '';
+                document.querySelector('#CollectionType').value = item.Type === 'ExplicitMovies' ? '0' : '1';
+                document.querySelector('#CollectionTmdbIds').value = (item.TmdbMovieIds || []).join(', ');
+                document.querySelector('#CollectionImdbIds').value = (item.ImdbIds || []).join(', ');
+                document.querySelector('#btnSaveCollection').textContent = 'Update Collection';
+            });
+            document.querySelector('#btnDeleteCollection').addEventListener('click', function() {
+                var definitionId = document.querySelector('#CollectionDefinition').value;
+                if (!definitionId) { Dashboard.alert('Select a collection.'); return; }
+                if (!window.confirm('Delete this collection and remove its exact managed playlists from assigned users?')) return;
+                Dashboard.showLoadingMsg();
+                ApiClient.ajax({
+                    type: 'DELETE',
+                    url: ApiClient.getUrl('AIRecommender/Collections/' + definitionId)
+                }).then(function() {
+                    resetCollectionEditor();
+                    return loadCollections();
+                }).then(function() { Dashboard.hideLoadingMsg(); })
+                  .catch(function() { Dashboard.hideLoadingMsg(); Dashboard.alert('Could not delete collection.'); });
             });
 
             // v1.5.0: "What's happening right now" live debug panel.

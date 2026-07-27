@@ -2,6 +2,14 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.7.8
+- Added administrator-defined persistent collections using explicit TMDB movie IDs and IMDb IDs already indexed in the local Jellyfin library.
+- Added per-user collection assignments, administrator-only CRUD/assignment APIs, and a dashboard management section.
+- Persistent collections use stable definition-based logical keys, update exact registered Jellyfin playlists in place, preserve IDs and custom artwork, and never enter rotating recommendation cleanup.
+- Empty or temporarily unresolved definitions preserve the prior valid playlist; unassignment and deletion remove only exact persistent registrations in the `collection:` namespace.
+- Curated collections include watched and unwatched movies in release-year order, do not affect recommendation rotation, novelty history, or watch-event sibling learning, and are bounded to 100 explicit identifiers without silent truncation.
+- Added in-place schema upgrades, definition/subscription persistence, resolver, lifecycle, learning-isolation, description, and kind-mismatch regression coverage.
+
 ## v1.7.7
 - Replaced the contradictory `Highly Rated by You` surface with **`More Like Your Favorites`**.
 - Letterboxd ratings now act as prior-viewing evidence: every rated title is excluded from this playlist rather than being presented as unwatched.

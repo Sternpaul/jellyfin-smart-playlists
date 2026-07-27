@@ -11,6 +11,21 @@ public static class PlaylistDescriptionBuilder
         return $"{explanation} Contains {itemCount} {noun}. Last refreshed {refreshedAt.ToUniversalTime():yyyy-MM-dd HH:mm} UTC.";
     }
 
+    public static string BuildPersistentCollection(
+        string displayName,
+        string? administratorDescription,
+        int itemCount,
+        DateTime refreshedAt)
+    {
+        var noun = itemCount == 1 ? "film" : "films";
+        var detail = string.IsNullOrWhiteSpace(administratorDescription)
+            ? string.Empty
+            : $" {administratorDescription.Trim()}";
+        return $"{displayName} is a persistent collection assigned by your Jellyfin administrator.{detail} " +
+               $"Contains {itemCount} available {noun}, ordered by release year. " +
+               $"It does not rotate with recommendations. Last refreshed {refreshedAt.ToUniversalTime():yyyy-MM-dd HH:mm} UTC.";
+    }
+
     private static string GetExplanation(string displayName)
     {
         if (displayName.StartsWith("Because You Watched ", StringComparison.OrdinalIgnoreCase))

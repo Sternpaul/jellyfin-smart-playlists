@@ -9,7 +9,7 @@ namespace Jellyfin.Plugin.AIRecommender.Data.Models
     {
         public Guid UserId { get; set; }
         public Guid ItemId { get; set; }   // matched Jellyfin library ItemId
-        public double Rating { get; set; } // 0.5 .. 5.0 (Letterboxd half-star granularity)
+        public double Rating { get; set; } // Greater than 0 and at most 5.
         public string? SourceTitle { get; set; } // original title from Letterboxd (for debugging)
         public DateTime LastUpdated { get; set; }
     }

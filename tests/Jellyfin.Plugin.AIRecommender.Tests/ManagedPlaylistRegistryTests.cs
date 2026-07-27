@@ -129,4 +129,24 @@ public sealed class ManagedPlaylistRegistryTests : IDisposable
         Assert.Empty(await store.GetManagedPlaylistsAsync(firstUser));
         Assert.Single(await store.GetManagedPlaylistsAsync(secondUser));
     }
+
+    [Fact]
+    public async Task Upsert_refuses_to_change_a_registered_lifecycle_kind()
+    {
+        var userId = Guid.NewGuid();
+        var store = CreateStore();
+        await store.UpsertManagedPlaylistAsync(
+            userId,
+            "collection:one",
+            Guid.NewGuid(),
+            "One",
+            ManagedPlaylistKind.PersistentCollection);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => store.UpsertManagedPlaylistAsync(
+            userId,
+            "collection:one",
+            Guid.NewGuid(),
+            "One",
+            ManagedPlaylistKind.RotatingRecommendation));
+    }
 }

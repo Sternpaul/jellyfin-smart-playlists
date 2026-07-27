@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AIRecommender.Data;
@@ -8,6 +9,7 @@ using Jellyfin.Plugin.AIRecommender.Data.Models;
 using Jellyfin.Plugin.AIRecommender.Configuration;
 using Jellyfin.Plugin.AIRecommender.Services;
 using Jellyfin.Plugin.AIRecommender.Services.AI;
+using Jellyfin.Plugin.AIRecommender.Services.Collections;
 using MediaBrowser.Common.Api;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Tasks;
@@ -229,6 +231,160 @@ namespace Jellyfin.Plugin.AIRecommender.Api
             return NoContent();
         }
 
+        [HttpGet("Collections")]
+        public async Task<ActionResult> GetCollections(CancellationToken cancellationToken)
+        {
+            var definitions = await _movieStore.GetCollectionDefinitionsAsync(cancellationToken);
+            var subscriptions = await _movieStore.GetCollectionSubscriptionsAsync(cancellationToken);
+            return Ok(definitions.Select(definition => new
+            {
+                definition.Id,
+                definition.Name,
+                definition.Description,
+                definition.Type,
+                TmdbMovieIds = ParseJsonIds<int>(definition.TmdbMovieIdsJson),
+                ImdbIds = ParseJsonIds<string>(definition.ImdbIdsJson),
+                AssignedUserIds = subscriptions
+                    .Where(subscription => subscription.CollectionDefinitionId == definition.Id)
+                    .Select(subscription => subscription.UserId)
+                    .ToArray()
+            }));
+        }
+
+        [HttpPost("Collections")]
+        public async Task<ActionResult> SaveCollection(
+            [FromBody] CollectionDefinitionRequest request,
+            CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(request.Name))
+                return BadRequest("Collection name is required.");
+            if (request.Name.Trim().Length > 120)
+                return BadRequest("Collection name may contain at most 120 characters.");
+            if ((request.Description?.Length ?? 0) > 1000)
+                return BadRequest("Collection description may contain at most 1000 characters.");
+            if (!Enum.IsDefined(request.Type))
+                return BadRequest("Collection type is invalid.");
+            var tmdbMovieIds = request.TmdbMovieIds ?? new List<int>();
+            var imdbIds = request.ImdbIds ?? new List<string>();
+            if (tmdbMovieIds.Any(id => id <= 0))
+                return BadRequest("TMDB movie IDs must be positive integers.");
+            if (imdbIds.Any(string.IsNullOrWhiteSpace))
+                return BadRequest("IMDb IDs cannot be blank.");
+            if (imdbIds.Any(id => id.Trim().Length > 32))
+                return BadRequest("IMDb IDs may contain at most 32 characters.");
+            imdbIds = imdbIds
+                .Select(id => id.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            tmdbMovieIds = tmdbMovieIds.Distinct().ToList();
+            if (tmdbMovieIds.Count == 0 && imdbIds.Count == 0)
+                return BadRequest("At least one TMDB movie ID or IMDb ID is required.");
+            if (tmdbMovieIds.Count + imdbIds.Count > PersistentCollectionPolicy.MaximumMembers)
+                return BadRequest($"A collection may contain at most {PersistentCollectionPolicy.MaximumMembers} identifiers.");
+            var existingDefinitions = await _movieStore.GetCollectionDefinitionsAsync(cancellationToken);
+            if (request.Id != Guid.Empty && existingDefinitions.All(definition => definition.Id != request.Id))
+                return NotFound("Collection definition not found.");
+            if (existingDefinitions.Any(definition =>
+                    definition.Id != request.Id &&
+                    definition.Name.Equals(request.Name.Trim(), StringComparison.OrdinalIgnoreCase)))
+                return BadRequest("Collection names must be unique.");
+
+            var definition = new CollectionDefinition
+            {
+                Id = request.Id,
+                Name = request.Name.Trim(),
+                Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
+                Type = request.Type,
+                TmdbMovieIdsJson = JsonSerializer.Serialize(tmdbMovieIds.OrderBy(id => id)),
+                ImdbIdsJson = JsonSerializer.Serialize(imdbIds.OrderBy(id => id, StringComparer.OrdinalIgnoreCase))
+            };
+            await _movieStore.SaveCollectionDefinitionAsync(definition, cancellationToken);
+
+            await RefreshAffectedCollectionUsersAsync(
+                (await _movieStore.GetCollectionSubscriptionsAsync(cancellationToken))
+                    .Where(subscription => subscription.CollectionDefinitionId == definition.Id)
+                    .Select(subscription => subscription.UserId),
+                cancellationToken);
+
+            return Ok(new { definition.Id });
+        }
+
+        [HttpPost("Collections/Assignment")]
+        public async Task<ActionResult> SetCollectionAssignment(
+            [FromBody] CollectionAssignmentRequest request,
+            CancellationToken cancellationToken)
+        {
+            if (!UserExists(request.UserId))
+                return NotFound("User not found.");
+            if (!(await _movieStore.GetCollectionDefinitionsAsync(cancellationToken))
+                .Any(definition => definition.Id == request.CollectionDefinitionId))
+                return NotFound("Collection definition not found.");
+
+            await _movieStore.SetCollectionSubscriptionAsync(
+                request.UserId,
+                request.CollectionDefinitionId,
+                request.Assigned,
+                cancellationToken);
+            await _playlistEngine.RefreshPersistentCollectionsAsync(request.UserId, cancellationToken);
+            return NoContent();
+        }
+
+        [HttpDelete("Collections/{collectionDefinitionId:guid}")]
+        public async Task<ActionResult> DeleteCollection(
+            [FromRoute] Guid collectionDefinitionId,
+            CancellationToken cancellationToken)
+        {
+            var affectedUsers = (await _movieStore.GetCollectionSubscriptionsAsync(cancellationToken))
+                .Where(subscription => subscription.CollectionDefinitionId == collectionDefinitionId)
+                .Select(subscription => subscription.UserId)
+                .Distinct()
+                .ToList();
+            await _movieStore.DeleteCollectionDefinitionAsync(collectionDefinitionId, cancellationToken);
+            await RefreshAffectedCollectionUsersAsync(affectedUsers, cancellationToken);
+            return NoContent();
+        }
+
+        [HttpPost("Collections/Refresh")]
+        public async Task<ActionResult> RefreshCollections(
+            [FromQuery][Required] Guid userId,
+            CancellationToken cancellationToken)
+        {
+            if (!UserExists(userId))
+                return NotFound("User not found.");
+            await _playlistEngine.RefreshPersistentCollectionsAsync(userId, cancellationToken);
+            return NoContent();
+        }
+
+        private bool UserExists(Guid userId) =>
+            _userManager.GetUsers().Any(user => user.Id == userId);
+
+        private async Task RefreshAffectedCollectionUsersAsync(
+            IEnumerable<Guid> userIds,
+            CancellationToken cancellationToken)
+        {
+            var failures = new List<Exception>();
+            foreach (var userId in userIds.Distinct())
+            {
+                try
+                {
+                    await _playlistEngine.RefreshPersistentCollectionsAsync(userId, cancellationToken);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    failures.Add(exception);
+                }
+            }
+
+            if (failures.Count > 0)
+                throw new AggregateException("One or more persistent collection reconciliations failed.", failures);
+        }
+
+        private static IReadOnlyList<T> ParseJsonIds<T>(string json)
+        {
+            try { return JsonSerializer.Deserialize<List<T>>(json) ?? new List<T>(); }
+            catch (JsonException) { return new List<T>(); }
+        }
+
         // v1.5.0: read-only "what's happening" snapshot for the config-page debug panel.
         [HttpGet("Debug/{userId}")]
         [ProducesResponseType(StatusCodes.Status200OK)]
@@ -250,5 +406,25 @@ namespace Jellyfin.Plugin.AIRecommender.Api
     public class ChatResponse
     {
         public string Reply { get; set; } = string.Empty;
+    }
+
+    public sealed class CollectionDefinitionRequest
+    {
+        public Guid Id { get; set; }
+        [Required]
+        public string Name { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public CollectionDefinitionType Type { get; set; }
+        public List<int> TmdbMovieIds { get; set; } = new();
+        public List<string> ImdbIds { get; set; } = new();
+    }
+
+    public sealed class CollectionAssignmentRequest
+    {
+        [Required]
+        public Guid UserId { get; set; }
+        [Required]
+        public Guid CollectionDefinitionId { get; set; }
+        public bool Assigned { get; set; }
     }
 }

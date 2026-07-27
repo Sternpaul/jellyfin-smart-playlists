@@ -8,6 +8,7 @@ using Jellyfin.Plugin.AIRecommender.Configuration;
 using Jellyfin.Plugin.AIRecommender.Data;
 using Jellyfin.Plugin.AIRecommender.Data.Models;
 using Jellyfin.Plugin.AIRecommender.Services.Playlists;
+using Jellyfin.Plugin.AIRecommender.Services.Collections;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Library;
@@ -97,7 +98,17 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                                       .ToString("o");
 
             // 1. Find which playlists the watched movie currently lives in (the "source" playlists).
-            var sourcePlaylistMovies = GetMoviesInPlaylistsContaining(userId, watchedMovieId);
+            var persistentRegistrations = await _movieStore.GetManagedPlaylistsAsync(
+                userId,
+                ManagedPlaylistKind.PersistentCollection,
+                cancellationToken);
+            var sourcePlaylistMovies = GetMoviesInPlaylistsContaining(
+                userId,
+                watchedMovieId,
+                persistentRegistrations
+                    .Where(PersistentCollectionPolicy.IsOwnedCollectionRegistration)
+                    .Select(registration => registration.PlaylistId)
+                    .ToHashSet());
             var changed = new List<MovieAffinity>();
 
             // 2. PUNISH siblings: every OTHER movie in a source playlist gets a penalty
@@ -149,9 +160,13 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             await RefreshUserPlaylistsCoreAsync(userId, cancellationToken);
         }
 
-        // Returns the ItemIds of all OTHER movies sharing a playlist with the given movie,
-        // limited to playlists owned by the user.
-        private HashSet<Guid> GetMoviesInPlaylistsContaining(Guid userId, Guid movieId)
+        // Returns the ItemIds of all OTHER movies sharing an owner-scoped playlist,
+        // excluding exact persistent collection registrations so curated membership
+        // never becomes recommendation-learning evidence.
+        private HashSet<Guid> GetMoviesInPlaylistsContaining(
+            Guid userId,
+            Guid movieId,
+            IReadOnlySet<Guid> excludedPersistentPlaylistIds)
         {
             var result = new HashSet<Guid>();
             var playlists = _libraryManager.GetItemList(new InternalItemsQuery
@@ -159,7 +174,13 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 IncludeItemTypes = new[] { Jellyfin.Data.Enums.BaseItemKind.Playlist },
                 IsVirtualItem = false,
                 Recursive = true
-            }).OfType<Playlist>().Where(p => p.OwnerUserId == userId).ToList();
+            }).OfType<Playlist>()
+                .Where(playlist => PersistentCollectionPolicy.ShouldUsePlaylistForLearning(
+                    playlist.OwnerUserId,
+                    playlist.Id,
+                    userId,
+                    excludedPersistentPlaylistIds))
+                .ToList();
 
             foreach (var pl in playlists)
             {
@@ -224,6 +245,12 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             // so Because You Watched respects TMDB keyword overlap.
             _similarityEngine.KeywordWeight = _config.KeywordWeight;
 
+            // Persistent administrator-assigned collections are independent from the
+            // recommendation lifecycle. Refresh them even when recommendations are
+            // disabled for this user; rotating cleanup is kind-scoped and cannot select
+            // these registrations.
+            await RefreshPersistentCollectionsCoreAsync(userId, cancellationToken);
+
             // NOTE: TMDB keyword enrichment runs ONCE per refresh (see EnrichKeywordsOnceAsync),
             // not here, so it isn't repeated for every user. It writes to the shared DB.
 
@@ -258,10 +285,9 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             var tasteProfile = await _watchHistoryService.GetUserTasteProfileAsync(userId, cancellationToken);
             var (unwatchedMovies, affinities) = await GetUnwatchedClassifiedMoviesAsync(userId, cancellationToken);
 
-            // v1.5.12: pull the user's Letterboxd ratings (public page scrape) and use
-            // them as the dominant recommendation signal. Failures are swallowed inside.
-            // If no username is configured, clear any stale ratings so NO ratings weight
-            // is ever applied for this user.
+            // Pull the user's configured ratings JSON and use matched ratings as the
+            // dominant recommendation signal. Failures are swallowed inside. If no URL
+            // is configured, clear stale ratings so no ratings weight applies.
             var userRatingsConfig = await _movieStore.GetUserWatchlistConfigAsync(userId, cancellationToken);
             if (string.IsNullOrWhiteSpace(userRatingsConfig?.RatingsJsonUrl))
                 await _movieStore.SaveUserRatingsAsync(userId, Array.Empty<UserRating>(), cancellationToken);
@@ -1401,25 +1427,89 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             }
         }
 
+        public Task RefreshPersistentCollectionsAsync(Guid userId, CancellationToken cancellationToken = default)
+            => _refreshExecutionGate.RunAsync(
+                gateToken => RefreshPersistentCollectionsCoreAsync(userId, gateToken),
+                cancellationToken);
+
+        private async Task RefreshPersistentCollectionsCoreAsync(Guid userId, CancellationToken cancellationToken)
+        {
+            var definitions = await _movieStore.GetCollectionDefinitionsForUserAsync(userId, cancellationToken);
+            var activeKeys = definitions
+                .Select(definition => PersistentCollectionPolicy.LogicalKey(definition.Id))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var allMovies = await _movieStore.GetAllMoviesAsync(cancellationToken);
+
+            foreach (var definition in definitions)
+            {
+                var members = CollectionResolver.Resolve(definition, allMovies)
+                    .Select(movie => movie.ItemId)
+                    .ToList();
+                if (members.Count == 0)
+                {
+                    _logger.LogWarning(
+                        "Persistent collection '{Name}' for user {UserId} resolved no local movies; preserving any prior playlist.",
+                        definition.Name,
+                        userId);
+                    continue;
+                }
+
+                await CreateOrUpdateJellyfinPlaylistAsync(
+                    userId,
+                    definition.Name,
+                    members,
+                    cancellationToken,
+                    logicalKeyOverride: PersistentCollectionPolicy.LogicalKey(definition.Id),
+                    kind: ManagedPlaylistKind.PersistentCollection,
+                    overviewOverride: PlaylistDescriptionBuilder.BuildPersistentCollection(
+                        definition.Name,
+                        definition.Description,
+                        members.Count,
+                        DateTime.UtcNow));
+            }
+
+            var stale = (await _movieStore.GetManagedPlaylistsAsync(
+                    userId,
+                    ManagedPlaylistKind.PersistentCollection,
+                    cancellationToken))
+                .Where(PersistentCollectionPolicy.IsOwnedCollectionRegistration)
+                .Where(registration => !activeKeys.Contains(registration.LogicalKey))
+                .ToList();
+            await DeleteManagedPlaylistRegistrationsAsync(userId, stale, cancellationToken);
+        }
+
         private async Task CreateOrUpdateJellyfinPlaylistAsync(
             Guid userId,
             string name,
             List<Guid> itemIds,
             CancellationToken cancellationToken,
-            Guid? artworkAnchorItemId = null)
+            Guid? artworkAnchorItemId = null,
+            string? logicalKeyOverride = null,
+            ManagedPlaylistKind kind = ManagedPlaylistKind.RotatingRecommendation,
+            string? overviewOverride = null)
         {
-            // Defense in depth: every generator is capped at the Jellyfin creation boundary,
-            // including future generators that might omit their source-specific size policy.
+            // Persistent collections represent the administrator's full curated set and
+            // are independent of the recommendation-size preference. Jellyfin remains
+            // bounded to 100 members per managed playlist.
+            if (kind == ManagedPlaylistKind.PersistentCollection && itemIds.Count > PersistentCollectionPolicy.MaximumMembers)
+                throw new InvalidOperationException(
+                    $"Persistent collection '{name}' resolves to {itemIds.Count} movies; the maximum is {PersistentCollectionPolicy.MaximumMembers}.");
+            var creationLimit = kind == ManagedPlaylistKind.PersistentCollection
+                ? itemIds.Count
+                : PlaylistSizePolicy.Resolve(_config.MaxMoviesPerPlaylist, null, itemIds.Count);
             itemIds = itemIds
-                .Take(PlaylistSizePolicy.Resolve(_config.MaxMoviesPerPlaylist, null, itemIds.Count))
+                .Take(creationLimit)
                 .ToList();
 
             if (itemIds.Any())
             {
-                var logicalKey = GetManagedPlaylistLogicalKey(name);
+                var logicalKey = logicalKeyOverride ?? GetManagedPlaylistLogicalKey(name);
                 var registration = await _movieStore.GetManagedPlaylistAsync(userId, logicalKey, cancellationToken);
                 if (registration != null)
                 {
+                    if (registration.Kind != kind)
+                        throw new InvalidOperationException(
+                            $"Managed playlist '{logicalKey}' is registered as {registration.Kind}, not {kind}.");
                     var existing = _libraryManager.GetItemById<Playlist>(registration.PlaylistId);
                     if (existing != null)
                     {
@@ -1439,13 +1529,20 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                                     cancellationToken);
                             }
 
-                            await UpdatePlaylistInPlaceAsync(existing, userId, name, itemIds, cancellationToken);
-                            await _playlistArtworkService.ApplyIfMissingAsync(
+                            await UpdatePlaylistInPlaceAsync(
                                 existing,
+                                userId,
                                 name,
-                                artworkAnchorItemId,
-                                _libraryManager,
-                                cancellationToken);
+                                itemIds,
+                                cancellationToken,
+                                overviewOverride);
+                            if (kind == ManagedPlaylistKind.RotatingRecommendation)
+                                await _playlistArtworkService.ApplyIfMissingAsync(
+                                    existing,
+                                    name,
+                                    artworkAnchorItemId,
+                                    _libraryManager,
+                                    cancellationToken);
                         }
                         catch (Exception updateError)
                         {
@@ -1456,7 +1553,8 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                                     userId,
                                     registration.DisplayName,
                                     previousIds,
-                                    cancellationToken);
+                                    cancellationToken,
+                                    previousOverview);
                                 existing.Overview = previousOverview;
                                 existing.DateLastMediaAdded = previousDateLastMediaAdded;
                                 existing.OnMetadataChanged();
@@ -1481,7 +1579,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                             logicalKey,
                             registration.PlaylistId,
                             name,
-                            ManagedPlaylistKind.RotatingRecommendation,
+                            kind,
                             cancellationToken);
                         _logger.LogInformation(
                             "Updated playlist '{Name}' for user {UserId} in place with {Count} items (Id: {PlaylistId}).",
@@ -1489,7 +1587,8 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                             userId,
                             itemIds.Count,
                             registration.PlaylistId);
-                        await RecordPlaylistSurfaceAsync(userId, itemIds, name, cancellationToken);
+                        if (kind == ManagedPlaylistKind.RotatingRecommendation)
+                            await RecordPlaylistSurfaceAsync(userId, itemIds, name, cancellationToken);
                         return;
                     }
 
@@ -1523,25 +1622,26 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                         ?? throw new InvalidOperationException(
                             $"Jellyfin created playlist '{name}' ({createdPlaylistId}) but exact-ID lookup failed.");
                     created.OwnerUserId = userId;
-                    created.Overview = PlaylistDescriptionBuilder.Build(name, itemIds.Count, DateTime.UtcNow);
+                    created.Overview = overviewOverride ?? PlaylistDescriptionBuilder.Build(name, itemIds.Count, DateTime.UtcNow);
                     created.OnMetadataChanged();
                     await created.UpdateToRepositoryAsync(
                         MediaBrowser.Controller.Library.ItemUpdateType.MetadataEdit,
                         cancellationToken);
                     _playlistManager.SavePlaylistFile(created);
-                    await _playlistArtworkService.ApplyIfMissingAsync(
-                        created,
-                        name,
-                        artworkAnchorItemId,
-                        _libraryManager,
-                        cancellationToken);
+                    if (kind == ManagedPlaylistKind.RotatingRecommendation)
+                        await _playlistArtworkService.ApplyIfMissingAsync(
+                            created,
+                            name,
+                            artworkAnchorItemId,
+                            _libraryManager,
+                            cancellationToken);
 
                     await _movieStore.UpsertManagedPlaylistAsync(
                         userId,
-                        GetManagedPlaylistLogicalKey(name),
+                        logicalKey,
                         createdPlaylistId,
                         name,
-                        ManagedPlaylistKind.RotatingRecommendation,
+                        kind,
                         cancellationToken);
                 }
                 catch
@@ -1557,7 +1657,8 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     throw;
                 }
 
-                await RecordPlaylistSurfaceAsync(userId, itemIds, name, cancellationToken);
+                if (kind == ManagedPlaylistKind.RotatingRecommendation)
+                    await RecordPlaylistSurfaceAsync(userId, itemIds, name, cancellationToken);
             }
             else
             {
@@ -1570,7 +1671,8 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             Guid userId,
             string name,
             IReadOnlyCollection<Guid> itemIds,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            string? overviewOverride = null)
         {
             var items = itemIds
                 .Select(_libraryManager.GetItemById)
@@ -1584,7 +1686,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             var refreshedAt = DateTime.UtcNow;
             playlist.LinkedChildren = items.Select(LinkedChild.Create).ToArray();
             playlist.Name = name;
-            playlist.Overview = PlaylistDescriptionBuilder.Build(name, items.Count, refreshedAt);
+            playlist.Overview = overviewOverride ?? PlaylistDescriptionBuilder.Build(name, items.Count, refreshedAt);
             playlist.OwnerUserId = userId;
             playlist.OpenAccess = false;
             playlist.DateLastMediaAdded = refreshedAt;

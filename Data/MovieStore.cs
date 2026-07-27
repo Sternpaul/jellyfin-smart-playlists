@@ -156,6 +156,31 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                 )");
             db.Database.ExecuteSqlRaw(
                 "CREATE UNIQUE INDEX IF NOT EXISTS IX_ManagedPlaylists_PlaylistId ON ManagedPlaylists (PlaylistId)");
+            EnsureTable(db, @"
+                CREATE TABLE IF NOT EXISTS CollectionDefinitions (
+                    Id TEXT NOT NULL,
+                    Name TEXT NOT NULL COLLATE NOCASE,
+                    Description TEXT NULL,
+                    Type INTEGER NOT NULL,
+                    TmdbMovieIdsJson TEXT NOT NULL,
+                    ImdbIdsJson TEXT NOT NULL,
+                    CreatedAt TEXT NOT NULL,
+                    UpdatedAt TEXT NOT NULL,
+                    CONSTRAINT PK_CollectionDefinitions PRIMARY KEY (Id)
+                )");
+            db.Database.ExecuteSqlRaw(
+                "CREATE UNIQUE INDEX IF NOT EXISTS IX_CollectionDefinitions_Name ON CollectionDefinitions (Name COLLATE NOCASE)");
+            EnsureTable(db, @"
+                CREATE TABLE IF NOT EXISTS UserCollectionSubscriptions (
+                    UserId TEXT NOT NULL,
+                    CollectionDefinitionId TEXT NOT NULL,
+                    CreatedAt TEXT NOT NULL,
+                    CONSTRAINT PK_UserCollectionSubscriptions PRIMARY KEY (UserId, CollectionDefinitionId),
+                    CONSTRAINT FK_UserCollectionSubscriptions_CollectionDefinitions_CollectionDefinitionId
+                        FOREIGN KEY (CollectionDefinitionId) REFERENCES CollectionDefinitions (Id) ON DELETE CASCADE
+                )");
+            db.Database.ExecuteSqlRaw(
+                "CREATE INDEX IF NOT EXISTS IX_UserCollectionSubscriptions_CollectionDefinitionId ON UserCollectionSubscriptions (CollectionDefinitionId)");
             MigrateAddMovieKeywordColumns(db);
             MigrateAddUserWatchlistColumns(db);
             // v1.5.28: one-time repair for databases created before the
@@ -750,6 +775,9 @@ namespace Jellyfin.Plugin.AIRecommender.Data
             }
             else
             {
+                if (existing.Kind != kind)
+                    throw new InvalidOperationException(
+                        $"Managed playlist '{logicalKey}' is registered as {existing.Kind}, not {kind}.");
                 existing.PlaylistId = playlistId;
                 existing.DisplayName = displayName;
                 existing.Kind = kind;
@@ -785,6 +813,127 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                 return;
 
             db.ManagedPlaylists.Remove(row);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        // ---- Persistent collection definitions and per-user assignments (v1.7.8) ----
+
+        public async Task<List<CollectionDefinition>> GetCollectionDefinitionsAsync(
+            CancellationToken cancellationToken = default)
+        {
+            using var db = GetContext();
+            return await db.CollectionDefinitions
+                .OrderBy(definition => definition.Name)
+                .ThenBy(definition => definition.Id)
+                .ToListAsync(cancellationToken);
+        }
+
+        public async Task<List<CollectionDefinition>> GetCollectionDefinitionsForUserAsync(
+            Guid userId,
+            CancellationToken cancellationToken = default)
+        {
+            using var db = GetContext();
+            return await (
+                from definition in db.CollectionDefinitions
+                join subscription in db.UserCollectionSubscriptions
+                    on definition.Id equals subscription.CollectionDefinitionId
+                where subscription.UserId == userId
+                orderby definition.Name, definition.Id
+                select definition)
+                .ToListAsync(cancellationToken);
+        }
+
+        public async Task SaveCollectionDefinitionAsync(
+            CollectionDefinition definition,
+            CancellationToken cancellationToken = default)
+        {
+            if (definition == null) throw new ArgumentNullException(nameof(definition));
+            if (string.IsNullOrWhiteSpace(definition.Name))
+                throw new ArgumentException("A collection name is required.", nameof(definition));
+
+            using var db = GetContext();
+            var now = DateTime.UtcNow;
+            if (definition.Id == Guid.Empty)
+                definition.Id = Guid.NewGuid();
+            var existing = await db.CollectionDefinitions.FindAsync(
+                new object[] { definition.Id },
+                cancellationToken);
+            if (existing == null)
+            {
+                definition.Name = definition.Name.Trim();
+                definition.TmdbMovieIdsJson = string.IsNullOrWhiteSpace(definition.TmdbMovieIdsJson) ? "[]" : definition.TmdbMovieIdsJson;
+                definition.ImdbIdsJson = string.IsNullOrWhiteSpace(definition.ImdbIdsJson) ? "[]" : definition.ImdbIdsJson;
+                definition.CreatedAt = now;
+                definition.UpdatedAt = now;
+                db.CollectionDefinitions.Add(definition);
+            }
+            else
+            {
+                existing.Name = definition.Name.Trim();
+                existing.Description = definition.Description;
+                existing.Type = definition.Type;
+                existing.TmdbMovieIdsJson = string.IsNullOrWhiteSpace(definition.TmdbMovieIdsJson) ? "[]" : definition.TmdbMovieIdsJson;
+                existing.ImdbIdsJson = string.IsNullOrWhiteSpace(definition.ImdbIdsJson) ? "[]" : definition.ImdbIdsJson;
+                existing.UpdatedAt = now;
+            }
+
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        public async Task SetCollectionSubscriptionAsync(
+            Guid userId,
+            Guid collectionDefinitionId,
+            bool assigned,
+            CancellationToken cancellationToken = default)
+        {
+            using var db = GetContext();
+            var key = new object[] { userId, collectionDefinitionId };
+            var existing = await db.UserCollectionSubscriptions.FindAsync(key, cancellationToken);
+            if (assigned && existing == null)
+            {
+                if (!await db.CollectionDefinitions.AnyAsync(
+                    definition => definition.Id == collectionDefinitionId,
+                    cancellationToken))
+                    throw new InvalidOperationException("Collection definition does not exist.");
+                db.UserCollectionSubscriptions.Add(new UserCollectionSubscription
+                {
+                    UserId = userId,
+                    CollectionDefinitionId = collectionDefinitionId,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+            else if (!assigned && existing != null)
+            {
+                db.UserCollectionSubscriptions.Remove(existing);
+            }
+
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        public async Task<List<UserCollectionSubscription>> GetCollectionSubscriptionsAsync(
+            CancellationToken cancellationToken = default)
+        {
+            using var db = GetContext();
+            return await db.UserCollectionSubscriptions
+                .OrderBy(subscription => subscription.CollectionDefinitionId)
+                .ThenBy(subscription => subscription.UserId)
+                .ToListAsync(cancellationToken);
+        }
+
+        public async Task DeleteCollectionDefinitionAsync(
+            Guid collectionDefinitionId,
+            CancellationToken cancellationToken = default)
+        {
+            using var db = GetContext();
+            var subscriptions = await db.UserCollectionSubscriptions
+                .Where(subscription => subscription.CollectionDefinitionId == collectionDefinitionId)
+                .ToListAsync(cancellationToken);
+            db.UserCollectionSubscriptions.RemoveRange(subscriptions);
+            var definition = await db.CollectionDefinitions.FindAsync(
+                new object[] { collectionDefinitionId },
+                cancellationToken);
+            if (definition != null)
+                db.CollectionDefinitions.Remove(definition);
             await db.SaveChangesAsync(cancellationToken);
         }
     }
