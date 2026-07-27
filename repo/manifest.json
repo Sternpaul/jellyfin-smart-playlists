@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.7.7.0",
+        "changelog": "- Replaced the contradictory `Highly Rated by You` surface with **`More Like Your Favorites`**.\n- Letterboxd ratings now act as prior-viewing evidence: every rated title is excluded from this playlist rather than being presented as unwatched.\n- Uses up to ten classified 4★+ Letterboxd films as rating-weighted similarity anchors and ranks unwatched, unrated local films by their strongest anchor matches.\n- Preserves the existing durable logical slot, Jellyfin playlist ID, rotation history, and artwork family across the rename.\n- Updated native descriptions, configuration wording, documentation, and regression coverage.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.7.7/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "2029e75d40d36de6cca05fd4e53aa27d",
+        "timestamp": "2026-07-27T09:27:00Z"
+      },
+      {
         "version": "1.7.6.0",
         "changelog": "- **Added deterministic Primary and Backdrop artwork** for every dynamic playlist family using embedded, single-DLL-safe branded PNG assets.\n- `Because You Watched` copies artwork from the exact verified anchor movie when available, using read streams so source images are never moved or deleted; embedded artwork is the fallback.\n- Existing Primary or Backdrop images are treated as administrator-customized and are never overwritten.\n- Artwork is applied idempotently during both creation and in-place update and persisted through Jellyfin's native image APIs.\n- Added policy, family mapping, custom-art preservation, and embedded-resource regressions.",
         "targetAbi": "10.11.0.0",
