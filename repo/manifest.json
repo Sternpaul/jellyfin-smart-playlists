@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.7.10.0",
+        "changelog": "- Dynamic recommendation playlists now use the highest-ranked representative local movie as a contextual background; `Because You Watched` uses its verified watched anchor.\n- Generates deterministic 1000×1000 Primary and 1600×900 Backdrop PNGs locally with cover cropping, a bounded dark contrast treatment, readable title text, and a Jellyfin-themed blue-purple accent.\n- Prefers the representative movie's Backdrop, falls back to its Primary, then the next ranked movie with usable artwork, and finally the embedded v1.7.9 static asset.\n- Tracks exact generated and source-image SHA-256 hashes per playlist and image type, allowing plugin-owned artwork to refresh without overwriting unknown or administrator-customized Primary/Backdrop images.\n- Uses Jellyfin 10.11.11's host-provided SkiaSharp 3.116.1 while preserving the single-plugin-DLL package; no settings UI, network image fetch, bundled font, or external artwork dependency was added.\n- Added representative-ranking, image-source hierarchy, bounded deterministic composition, contrast, custom-art preservation, and existing-database provenance regressions.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.7.10/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "50eb0d03b11dbc5ee7d5e8ee77163aea",
+        "timestamp": "2026-07-27T14:14:55Z"
+      },
+      {
         "version": "1.7.9.0",
         "changelog": "- Replaced all 18 embedded dynamic-playlist Primary and Backdrop images with one-time-generated, static artwork using an original media-play motif, Jellyfin's permitted theme gradient, and accurate playlist labels.\n- Added a one-time migration that replaces only byte-identical legacy plugin artwork; custom, unknown, missing-path, and unreadable existing images remain untouched.\n- Kept artwork fully embedded in the single plugin DLL with no generator code, build dependency, runtime URL, or network fetch.\n- Added image-contract and migration-policy regressions.",
         "targetAbi": "10.11.0.0",
