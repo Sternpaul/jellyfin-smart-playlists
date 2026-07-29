@@ -298,6 +298,18 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 catch (Exception ex) { _logger.LogWarning(ex, "Ratings fetch failed for {UserId}; continuing without ratings.", userId); }
             }
             var ratings = await _movieStore.GetUserRatingsAsync(userId, cancellationToken);
+            if (ratings.Count > 0)
+            {
+                foreach (var ratedItemId in ratings.Keys)
+                    RecordExclusion(userId, ratedItemId, "Listed in ratings JSON (treated as watched)");
+
+                var beforeRatingsExclusion = unwatchedMovies.Count;
+                unwatchedMovies = RatingsWatchedPolicy.ExcludeRatedMovies(unwatchedMovies, ratings);
+                _logger.LogInformation(
+                    "Excluded {Count} locally matched ratings-JSON films from recommendations for user {UserId}.",
+                    beforeRatingsExclusion - unwatchedMovies.Count,
+                    userId);
+            }
 
             // v1.5.4: periodically snapshot the taste profile so the config page can
             // show how tastes drift over time (weekly, at most).

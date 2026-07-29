@@ -294,7 +294,7 @@ Releases are tag-only and immutable. The release workflow requires the tag and p
 - [x] **v1.7.10:** personalized representative-movie playlist artwork with locally composited themed titles and custom-art preservation
 - [x] **v1.7.11:** replace Jellyfin's initial four-poster collage on newly created recommendation playlists without weakening existing custom-art protection
 - [x] **v1.7.12:** apply contextual artwork before adding members can queue Jellyfin's four-poster collage refresh
-- [ ] **v1.7.13:** exclude every locally matched ratings-JSON title from all recommendation playlists
+- [x] **v1.7.13:** exclude every locally matched ratings-JSON title from all recommendation playlists
 - [ ] **v1.7.14:** optional read-only Radarr collection catalog and completeness data
 - [ ] **v1.7.15:** administrator-approved collection suggestions per user
 - [ ] **v1.7.16:** index and classify each TV series once and aggregate verified episode playback

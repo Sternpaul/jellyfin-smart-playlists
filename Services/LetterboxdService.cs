@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AIRecommender.Data;
 using Jellyfin.Plugin.AIRecommender.Data.Models;
+using Jellyfin.Plugin.AIRecommender.Services.Playlists;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.AIRecommender.Services
@@ -214,7 +215,8 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         // Fetch a user's Letterboxd ratings from a JSON export (their own file,
         // e.g. a raw static-host URL) and store matched library ratings as the dominant
         // recommendation signal. This replaces the old HTML-scraping approach: entries
-        // carry imdb_id plus a numeric rating greater than 0 and at most 5. All failures
+        // carry imdb_id plus a numeric rating. Every matched entry is retained as proof
+        // of viewing; invalid scores become zero-weight watched-only markers. All failures
         // are logged and swallowed so a fetch problem never breaks playlist refresh.
         public async Task FetchRatingsFromJsonAsync(Guid userId, CancellationToken cancellationToken = default)
         {
@@ -261,8 +263,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 {
                     if (e == null || string.IsNullOrWhiteSpace(e.imdb_id)) continue;
                     if (!imdbDict.TryGetValue(e.imdb_id!, out var movie)) continue;
-                    var rating = e.rating;
-                    if (rating <= 0 || rating > 5) continue;
+                    var rating = RatingsWatchedPolicy.NormalizeImportedScore(e.rating);
                     ratings.Add(new UserRating
                     {
                         UserId = userId,

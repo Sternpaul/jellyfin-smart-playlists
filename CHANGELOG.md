@@ -2,6 +2,10 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.7.13
+- Every ratings-JSON film successfully matched to a local Jellyfin movie by IMDb ID is now treated as watched and excluded once at the shared per-user recommendation-candidate boundary, regardless of rating score.
+- Matched entries with missing or invalid 0–5 scores are retained as zero-weight watched markers rather than discarded. Ratings remain available as taste anchors, while empty, malformed, or wholly unmatched imports continue preserving the previous valid set.
+
 ## v1.7.12
 - Fixed the remaining creation race where Jellyfin's asynchronous high-priority playlist metadata refresh could generate its four-poster Primary collage after the plugin snapshot.
 - New managed playlists are now created as empty video playlists, receive contextual artwork, and only then receive their members; Jellyfin's subsequent queued refresh sees existing artwork and preserves it. No timing delay or weakened custom-art protection is used.
