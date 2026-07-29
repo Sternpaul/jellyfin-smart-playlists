@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.7.13.0",
+        "changelog": "- Every ratings-JSON film successfully matched to a local Jellyfin movie by IMDb ID is now treated as watched and excluded once at the shared per-user recommendation-candidate boundary, regardless of rating score.\n- Matched entries with missing or invalid 0–5 scores are retained as zero-weight watched markers rather than discarded. Ratings remain available as taste anchors, while empty, malformed, or wholly unmatched imports continue preserving the previous valid set.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.7.13/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "482629860a1045abc8faf9831700aafe",
+        "timestamp": "2026-07-29T16:19:19Z"
+      },
+      {
         "version": "1.7.12.0",
         "changelog": "- Fixed the remaining creation race where Jellyfin's asynchronous high-priority playlist metadata refresh could generate its four-poster Primary collage after the plugin snapshot.\n- New managed playlists are now created as empty video playlists, receive contextual artwork, and only then receive their members; Jellyfin's subsequent queued refresh sees existing artwork and preserves it. No timing delay or weakened custom-art protection is used.",
         "targetAbi": "10.11.0.0",
