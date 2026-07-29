@@ -194,6 +194,8 @@ Generated-image and source-image SHA-256 fingerprints are stored separately for 
 
 Starting with v1.7.11, the plugin replaces Jellyfin's automatic four-poster Primary collage only when it has just created that exact recommendation playlist in the current refresh. Unknown artwork on an already-existing playlist remains protected as custom artwork.
 
+v1.7.12 creates each new managed playlist as an empty video playlist, applies contextual artwork, and only then adds members. Jellyfin's queued member refresh therefore observes existing artwork and does not race in a four-poster collage.
+
 ### Persistent Collections (v1.7.8+)
 Administrators manage persistent definitions in **Dashboard → Plugins → AI Recommender → Persistent Collections**. Choose **Explicit movie list** or **Curated/composite universe**, give the definition a unique name, and enter TMDB movie IDs and/or IMDb IDs. These identifiers are resolved only against movies already indexed in the local Jellyfin library; the plugin does not download media or expand a TMDB collection automatically.
 
@@ -291,11 +293,12 @@ Releases are tag-only and immutable. The release workflow requires the tag and p
 - [x] **v1.7.9:** static Jellyfin-themed playlist artwork with one-time legacy-art migration and custom-art preservation
 - [x] **v1.7.10:** personalized representative-movie playlist artwork with locally composited themed titles and custom-art preservation
 - [x] **v1.7.11:** replace Jellyfin's initial four-poster collage on newly created recommendation playlists without weakening existing custom-art protection
-- [ ] **v1.7.12:** optional read-only Radarr collection catalog and completeness data
-- [ ] **v1.7.13:** administrator-approved collection suggestions per user
-- [ ] **v1.7.14:** index and classify each TV series once (never every episode)
-- [ ] **v1.7.15:** store verified episode playback strictly above 50% and aggregate it by series
-- [ ] **v1.7.16:** blend one bounded series signal into movie taste without episode multiplication
+- [x] **v1.7.12:** apply contextual artwork before adding members can queue Jellyfin's four-poster collage refresh
+- [ ] **v1.7.13:** exclude every locally matched ratings-JSON title from all recommendation playlists
+- [ ] **v1.7.14:** optional read-only Radarr collection catalog and completeness data
+- [ ] **v1.7.15:** administrator-approved collection suggestions per user
+- [ ] **v1.7.16:** index and classify each TV series once and aggregate verified episode playback
+- [ ] **v1.7.17:** blend one bounded series signal into movie taste without episode multiplication
 
 ### Planned features after the series-aware taste work
 - **New For You:** recently added movies filtered by taste instead of a generic date-only list.

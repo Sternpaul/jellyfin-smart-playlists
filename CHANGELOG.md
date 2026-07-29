@@ -2,6 +2,10 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.7.12
+- Fixed the remaining creation race where Jellyfin's asynchronous high-priority playlist metadata refresh could generate its four-poster Primary collage after the plugin snapshot.
+- New managed playlists are now created as empty video playlists, receive contextual artwork, and only then receive their members; Jellyfin's subsequent queued refresh sees existing artwork and preserves it. No timing delay or weakened custom-art protection is used.
+
 ## v1.7.11
 - Fixed newly created recommendation playlists retaining Jellyfin's automatic four-poster Primary collage instead of receiving the contextual plugin artwork.
 - Replacement authorization is limited to the exact playlist created by the current refresh operation; existing playlists retain fail-closed custom-art preservation, and concurrent image changes still abort replacement.

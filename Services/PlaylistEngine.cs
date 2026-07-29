@@ -28,6 +28,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         private readonly LetterboxdService _letterboxdService;
         private readonly TmdbKeywordService _tmdbKeywordService;
         private readonly PlaylistArtworkService _playlistArtworkService;
+
         private PluginConfiguration _config => Plugin.Instance!.Configuration;
         private readonly ILogger<PlaylistEngine> _logger;
 
@@ -1666,14 +1667,11 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     await _movieStore.RemoveManagedPlaylistAsync(userId, registration.PlaylistId, cancellationToken);
                 }
 
-                var req = new MediaBrowser.Model.Playlists.PlaylistCreationRequest
-                {
-                    Name = name,
-                    UserId = userId,
-                    ItemIdList = itemIds,
-                    Public = false
-                };
-                
+                // Create the exact video playlist without members first. Jellyfin only
+                // queues its automatic collage refresh when members are added, so plugin
+                // artwork can be persisted before that provider observes the playlist.
+                var req = ManagedPlaylistCreationPolicy.CreateEmptyVideoRequest(name, userId);
+
                 // Await creation so the refresh execution gate remains held until
                 // Jellyfin has persisted the playlist. Otherwise another user's
                 // cleanup can race the still-ownerless playlist creation task.
@@ -1719,6 +1717,14 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                             _libraryManager,
                             playlistCreatedByCurrentOperation: true,
                             cancellationToken);
+
+                    // Add members only after contextual Primary/Backdrop images exist.
+                    // Jellyfin's queued metadata refresh therefore preserves them rather
+                    // than generating its default four-poster collage.
+                    await _playlistManager.AddItemToPlaylistAsync(
+                        createdPlaylistId,
+                        itemIds,
+                        userId);
                 }
                 catch (Exception original)
                 {

@@ -126,6 +126,15 @@ public sealed class PlaylistArtworkV1710Tests : IDisposable
             playlistCreatedByCurrentOperation: true));
     }
 
+    [Fact]
+    public void New_managed_playlist_is_created_empty_before_artwork_and_members()
+    {
+        var request = ManagedPlaylistCreationPolicy.CreateEmptyVideoRequest("For You", Guid.NewGuid());
+
+        Assert.Empty(request.ItemIdList);
+        Assert.Equal(Jellyfin.Data.Enums.MediaType.Video, request.MediaType);
+    }
+
     [Theory]
     [InlineData(false, null, false, null, true)]
     [InlineData(false, null, true, "AAAA", false)]
