@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "1.7.12.0",
+        "changelog": "- Fixed the remaining creation race where Jellyfin's asynchronous high-priority playlist metadata refresh could generate its four-poster Primary collage after the plugin snapshot.\n- New managed playlists are now created as empty video playlists, receive contextual artwork, and only then receive their members; Jellyfin's subsequent queued refresh sees existing artwork and preserves it. No timing delay or weakened custom-art protection is used.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v1.7.12/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "4525e2996454b685c15bf6f6b916aa24",
+        "timestamp": "2026-07-29T15:58:54Z"
+      },
+      {
         "version": "1.7.11.0",
         "changelog": "- Fixed newly created recommendation playlists retaining Jellyfin's automatic four-poster Primary collage instead of receiving the contextual plugin artwork.\n- Replacement authorization is limited to the exact playlist created by the current refresh operation; existing playlists retain fail-closed custom-art preservation, and concurrent image changes still abort replacement.",
         "targetAbi": "10.11.0.0",
