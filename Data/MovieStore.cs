@@ -303,6 +303,20 @@ namespace Jellyfin.Plugin.AIRecommender.Data
             return await db.Movies.ToListAsync(cancellationToken);
         }
 
+        public async Task<List<MovieMetadata>> GetMoviesByIdsAsync(
+            IReadOnlyCollection<Guid> itemIds,
+            CancellationToken cancellationToken = default)
+        {
+            if (itemIds.Count == 0)
+                return new List<MovieMetadata>();
+
+            var distinctIds = itemIds.Distinct().ToList();
+            using var db = GetContext();
+            return await db.Movies
+                .Where(movie => distinctIds.Contains(movie.ItemId))
+                .ToListAsync(cancellationToken);
+        }
+
         public async Task<List<MovieMetadata>> GetUnclassifiedMoviesAsync(CancellationToken cancellationToken = default)
         {
             using var db = GetContext();

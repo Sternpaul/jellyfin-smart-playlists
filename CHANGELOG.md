@@ -2,6 +2,10 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.7.15
+- Replaced generated playlist descriptions with concise, viewer-facing explanations of why the current selection belongs: each sentence combines the playlist's recommendation purpose with the dominant subcategories, themes, and mood from its exact current members.
+- Removed item counts, refresh timestamps, rotation notices, manual Played-flag semantics, and other operational details already visible in Jellyfin or irrelevant to viewers. Persistent collections now show their administrator-authored description directly, with a short understandable fallback when none is provided.
+
 ## v1.7.14
 - Existing registered rotating playlists now automatically migrate Jellyfin's legacy 600×600 four-poster Primary collage to contextual plugin artwork on their next refresh.
 - Migration is fail-closed: it requires no prior Primary ownership row plus the exact playlist-ID-scoped Jellyfin dynamic-image cache path and PNG dimensions observed in production. Backdrops, playlist-directory images, other item IDs, other dimensions, unreadable files, persistent collections, and administrator-customized artwork remain protected.

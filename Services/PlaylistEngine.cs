@@ -1525,9 +1525,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     kind: ManagedPlaylistKind.PersistentCollection,
                     overviewOverride: PlaylistDescriptionBuilder.BuildPersistentCollection(
                         definition.Name,
-                        definition.Description,
-                        members.Count,
-                        DateTime.UtcNow));
+                        definition.Description));
             }
 
             var stale = (await _movieStore.GetManagedPlaylistsAsync(
@@ -1569,6 +1567,13 @@ namespace Jellyfin.Plugin.AIRecommender.Services
 
             if (itemIds.Any())
             {
+                var resolvedOverview = overviewOverride;
+                if (resolvedOverview == null)
+                {
+                    var currentMovies = await _movieStore.GetMoviesByIdsAsync(itemIds, cancellationToken);
+                    resolvedOverview = PlaylistDescriptionBuilder.Build(name, currentMovies);
+                }
+
                 var logicalKey = logicalKeyOverride ?? GetManagedPlaylistLogicalKey(name);
                 var registration = await _movieStore.GetManagedPlaylistAsync(userId, logicalKey, cancellationToken);
                 if (registration != null)
@@ -1601,7 +1606,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                                 name,
                                 itemIds,
                                 cancellationToken,
-                                overviewOverride);
+                                resolvedOverview);
                             if (kind == ManagedPlaylistKind.RotatingRecommendation)
                                 await _playlistArtworkService.ApplyManagedCompositeAsync(
                                     existing,
@@ -1703,7 +1708,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                         ?? throw new InvalidOperationException(
                             $"Jellyfin created playlist '{name}' ({createdPlaylistId}) but exact-ID lookup failed.");
                     created.OwnerUserId = userId;
-                    created.Overview = overviewOverride ?? PlaylistDescriptionBuilder.Build(name, itemIds.Count, DateTime.UtcNow);
+                    created.Overview = resolvedOverview;
                     created.OnMetadataChanged();
                     await created.UpdateToRepositoryAsync(
                         MediaBrowser.Controller.Library.ItemUpdateType.MetadataEdit,
@@ -1811,7 +1816,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             var refreshedAt = DateTime.UtcNow;
             playlist.LinkedChildren = items.Select(LinkedChild.Create).ToArray();
             playlist.Name = name;
-            playlist.Overview = overviewOverride ?? PlaylistDescriptionBuilder.Build(name, items.Count, refreshedAt);
+            playlist.Overview = overviewOverride;
             playlist.OwnerUserId = userId;
             playlist.OpenAccess = false;
             playlist.DateLastMediaAdded = refreshedAt;

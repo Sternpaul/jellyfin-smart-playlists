@@ -187,6 +187,11 @@ and reconcile assigned persistent collections without rotating them.
 | Enable Ratings Playlist | Off | "More Like Your Favorites" |
 | Exclude user from recommendations | Off | Removes only exact registered rotating recommendations; assigned persistent collections remain |
 
+### User-facing playlist descriptions (v1.7.15+)
+Each recommendation playlist's description is rebuilt from its exact current members. One short sentence explains the playlist's selection purpose and summarizes its dominant classified subcategories, themes, and mood—for example, a taste-matched mix of psychological thrillers and historical dramas with friendship themes and a tense mood. Descriptions do not repeat item counts or refresh times and do not expose rotation rules or internal watch-state semantics. `Because You Watched` names its existing anchor; other descriptions do not list individual movie titles.
+
+Persistent collections display the administrator-authored description directly. When none is supplied, Jellyfin shows a short fallback explaining that the collection was selected by the administrator and ordered by release year.
+
 ### Automatic contextual playlist artwork (v1.7.10+)
 Dynamic recommendation playlists automatically receive personalized Primary and Backdrop images with no administrator settings required. The plugin selects the highest-ranked representative movie from that user's playlist ranking (`Because You Watched` uses its verified watched anchor), prefers a local Jellyfin Backdrop, falls back to Primary and then later ranked movies, and composites the playlist title over a darkened cover crop with the blue-purple theme accent. If no source image can be read safely, the embedded v1.7.9 artwork remains the deterministic fallback.
 
@@ -298,10 +303,11 @@ Releases are tag-only and immutable. The release workflow requires the tag and p
 - [x] **v1.7.12:** apply contextual artwork before adding members can queue Jellyfin's four-poster collage refresh
 - [x] **v1.7.13:** exclude every locally matched ratings-JSON title from all recommendation playlists
 - [x] **v1.7.14:** safely migrate existing registered playlists from Jellyfin's legacy four-poster Primary collage
-- [ ] **v1.7.15:** optional read-only Radarr collection catalog and completeness data
-- [ ] **v1.7.16:** administrator-approved collection suggestions per user
-- [ ] **v1.7.17:** index and classify each TV series once and aggregate verified episode playback
-- [ ] **v1.7.18:** blend one bounded series signal into movie taste without episode multiplication
+- [x] **v1.7.15:** concise current-selection descriptions based on real subcategories, themes, and mood
+- [ ] **v1.7.16:** optional read-only Radarr collection catalog and completeness data
+- [ ] **v1.7.17:** administrator-approved collection suggestions per user
+- [ ] **v1.7.18:** index and classify each TV series once and aggregate verified episode playback
+- [ ] **v1.7.19:** blend one bounded series signal into movie taste without episode multiplication
 
 ### Planned features after the series-aware taste work
 - **New For You:** recently added movies filtered by taste instead of a generic date-only list.

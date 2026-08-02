@@ -177,16 +177,16 @@ public sealed class PersistentCollectionTests : IDisposable
     }
 
     [Fact]
-    public void Persistent_description_never_claims_unwatched_or_rotating_behavior()
+    public void Persistent_description_uses_the_administrator_reason_without_operational_details()
     {
         var description = PlaylistDescriptionBuilder.BuildPersistentCollection(
             "Saga",
-            "Release-order viewing.",
-            3,
-            new DateTime(2026, 7, 27, 10, 0, 0, DateTimeKind.Utc));
+            "Release-order viewing.");
 
-        Assert.Contains("persistent collection", description, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("does not rotate", description, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("Release-order viewing.", description);
+        Assert.DoesNotContain("rotate", description, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("contains", description, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("refresh", description, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("unwatched", description, StringComparison.OrdinalIgnoreCase);
     }
 
