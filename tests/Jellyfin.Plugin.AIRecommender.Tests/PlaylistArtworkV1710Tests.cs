@@ -127,6 +127,49 @@ public sealed class PlaylistArtworkV1710Tests : IDisposable
     }
 
     [Fact]
+    public void Existing_managed_playlist_can_migrate_exact_jellyfin_dynamic_primary_collage()
+    {
+        var playlistId = Guid.NewGuid();
+        var id = playlistId.ToString("N");
+        var path = Path.Combine(_directory, "metadata", "library", id[..2], id, "poster.png");
+        WritePngHeader(path, 600, 600);
+
+        Assert.True(PlaylistArtworkService.IsReplaceableLegacyJellyfinPrimaryCollage(
+            playlistId,
+            ManagedArtworkImageType.Primary,
+            hasExistingImage: true,
+            path,
+            expectedGeneratedHash: null));
+    }
+
+    [Fact]
+    public void Legacy_collage_migration_preserves_every_ambiguous_or_custom_variant()
+    {
+        var playlistId = Guid.NewGuid();
+        var id = playlistId.ToString("N");
+        var exact = Path.Combine(_directory, "metadata", "library", id[..2], id, "poster.png");
+        var custom = Path.Combine(_directory, "data", "playlists", "For You", "folder.png");
+        var otherId = Guid.NewGuid().ToString("N");
+        var other = Path.Combine(_directory, "metadata", "library", otherId[..2], otherId, "poster.png");
+        WritePngHeader(exact, 1000, 1000);
+        WritePngHeader(custom, 600, 600);
+        WritePngHeader(other, 600, 600);
+
+        Assert.False(PlaylistArtworkService.IsReplaceableLegacyJellyfinPrimaryCollage(
+            playlistId, ManagedArtworkImageType.Primary, true, exact, null));
+        Assert.False(PlaylistArtworkService.IsReplaceableLegacyJellyfinPrimaryCollage(
+            playlistId, ManagedArtworkImageType.Primary, true, custom, null));
+        Assert.False(PlaylistArtworkService.IsReplaceableLegacyJellyfinPrimaryCollage(
+            playlistId, ManagedArtworkImageType.Primary, true, other, null));
+        Assert.False(PlaylistArtworkService.IsReplaceableLegacyJellyfinPrimaryCollage(
+            playlistId, ManagedArtworkImageType.Backdrop, true, custom, null));
+        Assert.False(PlaylistArtworkService.IsReplaceableLegacyJellyfinPrimaryCollage(
+            playlistId, ManagedArtworkImageType.Primary, false, custom, null));
+        Assert.False(PlaylistArtworkService.IsReplaceableLegacyJellyfinPrimaryCollage(
+            playlistId, ManagedArtworkImageType.Primary, true, custom, new string('A', 64)));
+    }
+
+    [Fact]
     public void New_managed_playlist_is_created_empty_before_artwork_and_members()
     {
         var request = ManagedPlaylistCreationPolicy.CreateEmptyVideoRequest("For You", Guid.NewGuid());
@@ -283,4 +326,15 @@ public sealed class PlaylistArtworkV1710Tests : IDisposable
 
     private static void InvokeInitialize(MovieStore store) =>
         typeof(MovieStore).GetMethod("InitializeDatabase", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(store, null);
+
+    private static void WritePngHeader(string path, int width, int height)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var bytes = new byte[24];
+        byte[] signature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        signature.CopyTo(bytes, 0);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(bytes.AsSpan(16, 4), width);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32BigEndian(bytes.AsSpan(20, 4), height);
+        File.WriteAllBytes(path, bytes);
+    }
 }

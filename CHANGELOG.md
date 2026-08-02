@@ -2,6 +2,10 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v1.7.14
+- Existing registered rotating playlists now automatically migrate Jellyfin's legacy 600×600 four-poster Primary collage to contextual plugin artwork on their next refresh.
+- Migration is fail-closed: it requires no prior Primary ownership row plus the exact playlist-ID-scoped Jellyfin dynamic-image cache path and PNG dimensions observed in production. Backdrops, playlist-directory images, other item IDs, other dimensions, unreadable files, persistent collections, and administrator-customized artwork remain protected.
+
 ## v1.7.13
 - Every ratings-JSON film successfully matched to a local Jellyfin movie by IMDb ID is now treated as watched and excluded once at the shared per-user recommendation-candidate boundary, regardless of rating score.
 - Matched entries with missing or invalid 0–5 scores are retained as zero-weight watched markers rather than discarded. Ratings remain available as taste anchors, while empty, malformed, or wholly unmatched imports continue preserving the previous valid set.

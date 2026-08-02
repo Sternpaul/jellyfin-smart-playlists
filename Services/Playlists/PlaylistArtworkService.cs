@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Reflection;
 using System.Security.Cryptography;
 using Jellyfin.Plugin.AIRecommender.Data;
@@ -273,6 +274,59 @@ public sealed class PlaylistArtworkService
     public static bool IsLegacyGeneratedArtworkHash(string hash) => LegacyGeneratedArtworkHashes.Contains(hash);
 
     public static bool IsCurrentStaticArtworkHash(string hash) => CurrentStaticArtworkHashes.Value.Contains(hash);
+
+    public static bool IsReplaceableLegacyJellyfinPrimaryCollage(
+        Guid playlistId,
+        ManagedArtworkImageType managedImageType,
+        bool hasExistingImage,
+        string? existingImagePath,
+        string? expectedGeneratedHash)
+    {
+        if (managedImageType != ManagedArtworkImageType.Primary
+            || !hasExistingImage
+            || playlistId == Guid.Empty
+            || !string.IsNullOrWhiteSpace(expectedGeneratedHash)
+            || string.IsNullOrWhiteSpace(existingImagePath)
+            || !File.Exists(existingImagePath))
+        {
+            return false;
+        }
+
+        var id = playlistId.ToString("N");
+        var expectedSuffix = Path.Combine("metadata", "library", id[..2], id, "poster.png")
+            .Replace(Path.DirectorySeparatorChar, '/');
+        string normalizedPath;
+        try
+        {
+            normalizedPath = Path.GetFullPath(existingImagePath)
+                .Replace(Path.DirectorySeparatorChar, '/')
+                .Replace(Path.AltDirectorySeparatorChar, '/');
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+
+        if (!normalizedPath.EndsWith('/' + expectedSuffix, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        try
+        {
+            Span<byte> header = stackalloc byte[24];
+            using var stream = File.OpenRead(existingImagePath);
+            if (stream.Read(header) != header.Length)
+                return false;
+
+            ReadOnlySpan<byte> pngSignature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+            return header[..8].SequenceEqual(pngSignature)
+                && BinaryPrimitives.ReadInt32BigEndian(header[16..20]) == 600
+                && BinaryPrimitives.ReadInt32BigEndian(header[20..24]) == 600;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
 
     private static HashSet<string> BuildCurrentStaticArtworkHashes()
     {
@@ -569,11 +623,23 @@ public sealed class PlaylistArtworkService
         var existing = playlist.GetImageInfo(imageType, 0);
         var hasExisting = playlist.HasImage(imageType, 0);
         var hasReadableHash = TryHashFile(existing?.Path, out var observedHash);
-        var authorized = ShouldWriteImage(
+        var legacyCollageMigrationAuthorized = IsReplaceableLegacyJellyfinPrimaryCollage(
+            playlist.Id,
+            managedImageType,
+            hasExisting,
+            existing?.Path,
+            prior?.GeneratedHash);
+        var authorized = legacyCollageMigrationAuthorized || ShouldWriteImage(
             hasExisting,
             existing?.Path,
             prior?.GeneratedHash,
             playlistCreatedByCurrentOperation);
+        if (legacyCollageMigrationAuthorized)
+        {
+            _logger.LogInformation(
+                "Migrating Jellyfin-generated legacy Primary collage for managed playlist {PlaylistId}.",
+                playlist.Id);
+        }
         var relinquishOwnership = hasExisting
             && prior != null
             && hasReadableHash
