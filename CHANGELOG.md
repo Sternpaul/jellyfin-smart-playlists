@@ -10,6 +10,7 @@ All notable changes to the Jellyfin AI Recommender plugin.
 - Acclaim now uses Jellyfin's community and critic ratings when available instead of the AI's guess.
 - The sibling penalty scales with how different each sibling is from the film you watched.
 - One user's refresh failure no longer stops the other users' playlists from refreshing; the task still reports the failure.
+- Fixed re-added movies (library re-added, backup restored, item re-identified) losing their AI classification, which forced a paid re-classification of the whole library.
 - Tag lists are parsed once per movie instead of on every comparison.
 - Settings page: new *Library Status* panel (classification progress, plugin and server version) with the actions next to it; the scoring, learning and freshness knobs moved into a collapsed *Advanced tuning* section.
 - Releases are checked against the real Jellyfin 12.0 and newest 12.x server binaries before publishing (`tools/AbiCheck`).
