@@ -1738,9 +1738,11 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     // Add members only after contextual Primary/Backdrop images exist.
                     // Jellyfin's queued metadata refresh therefore preserves them rather
                     // than generating its default four-poster collage.
+                    // Jellyfin 12 added the insert position; null appends.
                     await _playlistManager.AddItemToPlaylistAsync(
                         createdPlaylistId,
                         itemIds,
+                        position: null,
                         userId);
                 }
                 catch (Exception original)

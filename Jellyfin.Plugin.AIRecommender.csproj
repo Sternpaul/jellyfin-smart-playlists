@@ -1,12 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Version>1.7.15.0</Version>
-    <AssemblyVersion>1.7.15.0</AssemblyVersion>
-    <FileVersion>1.7.15.0</FileVersion>
+    <Version>2.0.0.0</Version>
+    <AssemblyVersion>2.0.0.0</AssemblyVersion>
+    <FileVersion>2.0.0.0</FileVersion>
     <Authors>Sternpaul</Authors>
     <RepositoryUrl>https://github.com/Sternpaul/jellyfin-smart-playlists</RepositoryUrl>
     <Description>AI-powered smart playlists and recommendations for Jellyfin.</Description>
@@ -23,14 +23,17 @@
          it ships Jellyfin's own system assemblies + native runtimes inside the plugin,
          which crashes PluginManager.LoadAssemblies (Bad IL format on e_sqlite3.dll /
          native binaries) and can cause assembly-binding conflicts. -->
-    <PackageReference Include="Jellyfin.Model" Version="10.11.11" PrivateAssets="all" IncludeAssets="compile" />
-    <PackageReference Include="Jellyfin.Controller" Version="10.11.11" PrivateAssets="all" IncludeAssets="compile" />
-    <!-- Jellyfin 10.11.11 provides SkiaSharp 3.116.1 and its native library.
+    <!-- Compile against the OLDEST supported host (Jellyfin 12.0) so the binary only
+         references APIs every 12.x server has. Jellyfin 10.11 lives on legacy/10.11. -->
+    <PackageReference Include="Jellyfin.Model" Version="12.0.0" PrivateAssets="all" IncludeAssets="compile" />
+    <PackageReference Include="Jellyfin.Controller" Version="12.0.0" PrivateAssets="all" IncludeAssets="compile" />
+    <!-- Jellyfin 12.x provides SkiaSharp 3.119.4 and its native library.
          Compile against that exact host assembly but never copy it into the plugin. -->
-    <PackageReference Include="SkiaSharp" Version="3.116.1" PrivateAssets="all" IncludeAssets="compile" />
-    
-    <!-- SQLite for our local AI metadata cache -->
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.0" />
+    <PackageReference Include="SkiaSharp" Version="3.119.4" PrivateAssets="all" IncludeAssets="compile" />
+
+    <!-- SQLite for our local AI metadata cache. Jellyfin 12.0 ships EF Core 10.0.11;
+         the release ZIP contains only our DLL, so this must not exceed the host's version. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.11" PrivateAssets="all" IncludeAssets="compile" />
   </ItemGroup>
 
   <ItemGroup>
