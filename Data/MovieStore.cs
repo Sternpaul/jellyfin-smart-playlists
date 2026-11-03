@@ -355,6 +355,24 @@ namespace Jellyfin.Plugin.AIRecommender.Data
             return new AiDbContext(_dbPath);
         }
 
+        /// <summary>The stored row for a movie by IMDb id (the stable identity) or item id.</summary>
+        public async Task<MovieMetadata?> FindMovieAsync(Guid itemId, string? imdbId, CancellationToken cancellationToken = default)
+        {
+            using var db = GetContext();
+            if (!string.IsNullOrWhiteSpace(imdbId))
+            {
+                var normalizedImdb = imdbId.Trim().ToLower();
+                var byImdb = await db.Movies.AsNoTracking()
+                    .Where(m => m.ImdbId != null && m.ImdbId.ToLower() == normalizedImdb)
+                    .OrderByDescending(m => m.LastUpdated)
+                    .FirstOrDefaultAsync(cancellationToken);
+                if (byImdb != null) return byImdb;
+            }
+            var key = itemId.ToString().ToLowerInvariant();
+            return await db.Movies.AsNoTracking()
+                .FirstOrDefaultAsync(m => m.ItemId.ToString().ToLower() == key, cancellationToken);
+        }
+
         public async Task<List<MovieMetadata>> GetAllMoviesAsync(CancellationToken cancellationToken = default)
         {
             using var db = GetContext();

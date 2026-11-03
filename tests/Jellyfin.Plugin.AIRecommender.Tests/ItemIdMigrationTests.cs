@@ -163,4 +163,30 @@ public sealed class ItemIdMigrationTests : IDisposable
         Assert.NotNull(await verify.Movies.FindAsync(oldId));
         Assert.Null(await verify.Movies.FindAsync(newId));
     }
+
+    [Fact]
+    public async Task Re_added_movie_found_by_imdb_keeps_its_classification()
+    {
+        var store = CreateStore();
+        var originalId = Guid.NewGuid();
+        await store.SaveMoviesAsync(new[] { Movie(originalId, "tt2543164") });
+
+        // Jellyfin raised "item added" with a new id: the indexer reuses the stored row.
+        var newId = Guid.NewGuid();
+        var found = await store.FindMovieAsync(newId, "TT2543164");
+        Assert.NotNull(found);
+        Assert.True(found!.IsClassified);
+        found.ItemId = newId;
+        found.Title = "Arrival (2016)";
+        await store.SaveMoviesAsync(new[] { found });
+
+        var all = await store.GetAllMoviesAsync();
+        var row = Assert.Single(all);
+        Assert.Equal(newId, row.ItemId);
+        Assert.Equal("Arrival (2016)", row.Title);
+        Assert.True(row.IsClassified);
+        Assert.Equal("[\"science fiction\"]", row.Subcategories);
+        Assert.Null(await store.FindMovieAsync(Guid.NewGuid(), "tt0000001"));
+        Assert.NotNull(await store.FindMovieAsync(newId, null));
+    }
 }

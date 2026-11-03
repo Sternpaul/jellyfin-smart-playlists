@@ -254,12 +254,27 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             if (e.Item is Movie movie)
             {
                 _logger.LogInformation("New movie detected: {Title}. Indexing for AI...", movie.Name);
-                var metadata = new MovieMetadata { ItemId = movie.Id, DateAdded = DateTime.UtcNow, IsClassified = false };
-                UpdateMetadataFromJellyfinItem(movie, metadata);
-
-                // Fire and forget save
-                Task.Run(() => _movieStore.SaveMoviesAsync(new[] { metadata }));
-                ScheduleClassify();
+                Task.Run(async () =>
+                {
+                    try
+                    {
+                        // Jellyfin also raises "added" for movies it already had under another
+                        // item id (library re-added, backup restored, item re-identified). Saving
+                        // a blank row would match the existing one by IMDb id and overwrite its
+                        // AI classification, forcing a paid re-classification. Reuse the row.
+                        movie.ProviderIds.TryGetValue(MetadataProvider.Imdb.ToString(), out var imdbId);
+                        var metadata = await _movieStore.FindMovieAsync(movie.Id, imdbId)
+                            ?? new MovieMetadata { DateAdded = DateTime.UtcNow, IsClassified = false };
+                        metadata.ItemId = movie.Id;
+                        UpdateMetadataFromJellyfinItem(movie, metadata);
+                        await _movieStore.SaveMoviesAsync(new[] { metadata });
+                        if (!metadata.IsClassified) ScheduleClassify();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to index added movie {Title}.", movie.Name);
+                    }
+                });
             }
         }
 
