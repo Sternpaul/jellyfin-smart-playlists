@@ -8,6 +8,11 @@
 # - Push main whenever you want (it's just source code)
 # - No race conditions between developer pushes and workflow pushes
 # - The workflow is the sole writer of gh-pages
+#
+# Jellyfin versions: main builds 2.x for Jellyfin 12 (targetAbi 12.0.0.0). The
+# legacy/10.11 branch carries its own copy of this workflow and builds 1.7.x for
+# Jellyfin 10.11. Both write into the same manifest; Jellyfin installs the newest
+# entry whose targetAbi the server satisfies.
 # ============================================================================
 name: Build and Release
 
@@ -30,10 +35,10 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Setup .NET 9.0
+    - name: Setup .NET 10.0
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '9.0.x'
+        dotnet-version: '10.0.x'
 
     - name: Verify tag matches project version
       run: |
@@ -48,6 +53,8 @@ jobs:
         actual = ET.parse('Jellyfin.Plugin.AIRecommender.csproj').getroot().findtext('.//Version')
         if actual != expected:
             raise SystemExit(f"tag {tag} requires project version {expected}, found {actual}")
+        if int(parts[0]) < 2:
+            raise SystemExit(f"{tag} is a Jellyfin 10.11 version; tag 1.x releases on the legacy/10.11 branch")
         print(f"verified tag/project version: {expected}")
         PY
 
@@ -60,11 +67,37 @@ jobs:
     - name: Run Tests
       run: dotnet test Jellyfin.Plugin.AIRecommender.sln --configuration Release --no-restore --logger "console;verbosity=minimal"
 
+    # A plugin binds to exact host method signatures, so a Jellyfin API change
+    # compiles fine here and then fails on the server with MissingMethodException.
+    # Check the built DLL against the real assemblies of the oldest supported
+    # server and the newest release.
+    - name: Check binary compatibility with Jellyfin servers
+      run: |
+        set -euo pipefail
+        dotnet build tools/AbiCheck --configuration Release
+        check() {
+          local tag="$1" dir="$RUNNER_TEMP/jellyfin-$1"
+          mkdir -p "$dir"
+          docker pull -q "jellyfin/jellyfin:$tag"
+          local cid
+          cid=$(docker create "jellyfin/jellyfin:$tag")
+          docker cp "$cid:/jellyfin/." "$dir/"
+          docker rm "$cid" >/dev/null
+          echo "== jellyfin/jellyfin:$tag"
+          dotnet tools/AbiCheck/bin/Release/net10.0/AbiCheck.dll bin/Release/net10.0/Jellyfin.Plugin.AIRecommender.dll "$dir"
+        }
+        # Oldest and newest 12.x must pass: that is the range targetAbi 12.0.0.0 promises.
+        check 12.0
+        check 12
+        # A newer major (13+) is advisory: it means a new plugin line is needed,
+        # not that this 12.x release is broken.
+        check latest || echo "::warning::Not compatible with jellyfin/jellyfin:latest; a newer Jellyfin major needs its own plugin build."
+
     - name: Package Plugin
       run: |
         python3 - <<'PY'
         import pathlib, zipfile
-        root = pathlib.Path('bin/Release/net9.0')
+        root = pathlib.Path('bin/Release/net10.0')
         dll = root / 'Jellyfin.Plugin.AIRecommender.dll'
         archive = root / 'Jellyfin.Plugin.AIRecommender.zip'
         with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED) as package:
@@ -117,7 +150,7 @@ jobs:
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
       with:
-        files: bin/Release/net9.0/Jellyfin.Plugin.AIRecommender.zip
+        files: bin/Release/net10.0/Jellyfin.Plugin.AIRecommender.zip
         body_path: changelog_section.md
 
     - name: Update plugin manifest on gh-pages
@@ -135,7 +168,7 @@ jobs:
           *)     ver_no_prefix="${ver_no_prefix}.0.0.0" ;;
         esac
         export ver_no_prefix
-        zip_path="bin/Release/net9.0/Jellyfin.Plugin.AIRecommender.zip"
+        zip_path="bin/Release/net10.0/Jellyfin.Plugin.AIRecommender.zip"
         export checksum=$(md5sum "$zip_path" | awk '{print $1}')
         export timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
         export source_url="https://github.com/${{ github.repository }}/releases/download/${version}/Jellyfin.Plugin.AIRecommender.zip"
@@ -188,7 +221,7 @@ jobs:
         new_entry = {
             "version": os.environ["ver_no_prefix"],
             "changelog": os.environ["changelog"],
-            "targetAbi": "10.11.0.0",
+            "targetAbi": "12.0.0.0",
             "sourceUrl": os.environ["source_url"],
             "checksum": os.environ["checksum"],
             "timestamp": os.environ["timestamp"],
@@ -212,7 +245,7 @@ jobs:
         guid = '3D3D8BE7-67AB-4F65-9F31-3EAE8764BBA3'
         plugin = next(p for p in manifest if p.get('guid') == guid)
         entry = next(v for v in plugin.get('versions', []) if v.get('version') == os.environ['ver_no_prefix'])
-        assert entry['targetAbi'] == '10.11.0.0'
+        assert entry['targetAbi'] == '12.0.0.0'
         assert entry['sourceUrl'] == os.environ['source_url']
         assert entry['checksum'] == os.environ['checksum']
         assert re.fullmatch(r'[0-9a-f]{32}', entry['checksum'])
@@ -249,7 +282,7 @@ jobs:
             time.sleep(5)
         if not entry:
             raise SystemExit(f'public manifest did not publish {expected_version} within 120 seconds')
-        assert entry['targetAbi'] == '10.11.0.0'
+        assert entry['targetAbi'] == '12.0.0.0'
         assert entry.get('changelog', '').strip() and not entry['changelog'].startswith('Release v')
         expected_source = f'https://github.com/{os.environ["GITHUB_REPOSITORY"]}/releases/download/{version}/Jellyfin.Plugin.AIRecommender.zip'
         assert entry['sourceUrl'] == expected_source

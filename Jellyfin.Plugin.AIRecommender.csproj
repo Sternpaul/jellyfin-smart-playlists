@@ -42,6 +42,7 @@
 
   <ItemGroup>
     <Compile Remove="tests/**/*.cs" />
+    <Compile Remove="tools/**/*.cs" />
     <EmbeddedResource Include="Configuration/configPage.html" />
     <EmbeddedResource Include="Assets/Playlists/*.png" />
   </ItemGroup>
