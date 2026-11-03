@@ -9,8 +9,10 @@ using Jellyfin.Plugin.AIRecommender.Data.Models;
 using Jellyfin.Plugin.AIRecommender.Configuration;
 using Jellyfin.Plugin.AIRecommender.Services;
 using Jellyfin.Plugin.AIRecommender.Services.AI;
+using Jellyfin.Plugin.AIRecommender.Services.Classification;
 using Jellyfin.Plugin.AIRecommender.Services.Collections;
 using MediaBrowser.Common.Api;
+using MediaBrowser.Controller;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Tasks;
 using Microsoft.AspNetCore.Authorization;
@@ -33,6 +35,7 @@ namespace Jellyfin.Plugin.AIRecommender.Api
         private readonly IUserManager _userManager;
         private readonly MovieStore _movieStore;
         private readonly ITaskManager _taskManager;
+        private readonly IServerApplicationHost _serverApplicationHost;
         private readonly ILogger<AIRecommenderController> _logger;
 
         public AIRecommenderController(
@@ -43,6 +46,7 @@ namespace Jellyfin.Plugin.AIRecommender.Api
             IUserManager userManager,
             MovieStore movieStore,
             ITaskManager taskManager,
+            IServerApplicationHost serverApplicationHost,
             ILogger<AIRecommenderController> logger)
         {
             _aiProviderFactory = aiProviderFactory;
@@ -52,6 +56,7 @@ namespace Jellyfin.Plugin.AIRecommender.Api
             _userManager = userManager;
             _movieStore = movieStore;
             _taskManager = taskManager;
+            _serverApplicationHost = serverApplicationHost;
             _logger = logger;
         }
 
@@ -126,6 +131,21 @@ namespace Jellyfin.Plugin.AIRecommender.Api
             }
         }
         
+        [HttpGet("Status")]
+        public async Task<ActionResult> GetStatus(CancellationToken cancellationToken)
+        {
+            var (total, classified, outdated) = await _movieStore.GetClassificationStatsAsync(cancellationToken);
+            return Ok(new
+            {
+                PluginVersion = Plugin.Instance?.Version.ToString(),
+                ServerVersion = _serverApplicationHost.ApplicationVersionString,
+                VocabularyVersion = ClassificationVocabulary.Version,
+                TotalMovies = total,
+                ClassifiedMovies = classified,
+                OutdatedMovies = outdated,
+            });
+        }
+
         [HttpPost("ClassifyLibrary")]
         public ActionResult ClassifyLibrary()
         {

@@ -2,6 +2,18 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v2.0.0
+**Requires Jellyfin 12.** Jellyfin 10.11 servers keep receiving the 1.7.x line from the `legacy/10.11` branch; the plugin repository serves each server the right build.
+- Fixed *Refresh Playlists* failing every run on Jellyfin 12 with `Method not found`: Jellyfin 12.0 changed `IPlaylistManager.AddItemToPlaylistAsync`. Built against Jellyfin 12.0 and .NET 10.
+- Movies are now classified into a fixed vocabulary of subcategories, moods, narrative styles, accessibility and intensity, so the same taste is no longer split across spelling variants. One shared prompt replaces four copies; OpenAI and Google enforce the vocabulary through their JSON schemas.
+- Existing tags are merged onto the vocabulary at startup without losing anything. A new opt-in setting re-classifies movies tagged by older versions.
+- Acclaim now uses Jellyfin's community and critic ratings when available instead of the AI's guess.
+- The sibling penalty scales with how different each sibling is from the film you watched.
+- One user's refresh failure no longer stops the other users' playlists from refreshing; the task still reports the failure.
+- Tag lists are parsed once per movie instead of on every comparison.
+- Settings page: new *Library Status* panel (classification progress, plugin and server version) with the actions next to it; the scoring, learning and freshness knobs moved into a collapsed *Advanced tuning* section.
+- Releases are checked against the real Jellyfin 12.0 and newest 12.x server binaries before publishing (`tools/AbiCheck`).
+
 ## v1.7.15
 - Replaced generated playlist descriptions with concise, viewer-facing explanations of why the current selection belongs: each sentence combines the playlist's recommendation purpose with the dominant subcategories, themes, and mood from its exact current members.
 - Removed item counts, refresh timestamps, rotation notices, manual Played-flag semantics, and other operational details already visible in Jellyfin or irrelevant to viewers. Persistent collections now show their administrator-authored description directly, with a short understandable fallback when none is provided.

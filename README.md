@@ -10,9 +10,20 @@ A Jellyfin plugin that solves "what should I watch" for massive libraries. It **
 
 ---
 
+## Jellyfin version compatibility
+
+| Jellyfin server | Plugin version | Source branch |
+|---|---|---|
+| **12.x** | **2.x** | `main` |
+| 10.11.x | 1.7.x | `legacy/10.11` |
+
+Both lines are published in the same plugin repository, and Jellyfin installs the newest build your server supports. A plugin is compiled against Jellyfin's exact method signatures, so a new Jellyfin major can break it even when nothing visible changed: Jellyfin 12.0 added a parameter to the playlist API, and 1.7.x fails every *Refresh Playlists* run there with `Method not found`. Every release is now checked against the real Jellyfin 12.0 and newest 12.x server binaries before it is published (`tools/AbiCheck`).
+
+---
+
 ## How it works (the short version)
 
-1. **AI classifies every movie once** — reads the plot and assigns real subcategories, moods, themes, narrative style, and intensity. This is the foundation; everything else builds on it.
+1. **AI classifies every movie once** — reads the plot and assigns subcategories, moods, narrative style and intensity from a **fixed vocabulary** (81 subcategories such as *Heist*, *Neo-Noir*, *Folk Horror*; 28 moods), plus free-text themes. Because every movie uses the same names, "Psychological Thriller" and "psychological thrillers" can't split one taste in two. This is the foundation; everything else builds on it.
 2. **TMDB keywords sharpen it** — curated, objective tags (e.g. `serial killer`, `neo-noir`) are pulled per movie and used as a precision signal in taste-matching and similarity.
 3. **It learns from what you watch** — picks, rejections, and ratings shape per-user taste profiles and a small "affinity" nudge per movie.
 4. **Imported ratings are the dominant signal** — point a user at a ratings JSON export and each valid rating contributes a non-negative boost up to the configured `RatingWeight`. **No ratings URL → zero ratings weight**; recommendations fall back to taste + learning.
@@ -35,7 +46,7 @@ A movie appears in **at most one** discovery playlist (For You / Hidden Gems / D
 
 ### Learning loop (the punishment mechanic)
 When you **watch a movie from one of your playlists**, the plugin learns from that one action. Administrator-assigned persistent collections are deliberately excluded from this learning loop:
-- **Sibling penalty** — the other movies in that playlist get a rejection penalty and a temporary ban.
+- **Sibling penalty** — the other movies in that playlist get a rejection penalty and a temporary ban. The penalty scales with how *different* each sibling is from the film you picked: an unrelated film gets the full penalty, a near-identical one only 20%.
 - **Similar-movie reward** — the watched movie's nearest neighbours get a small affinity boost.
 - **Time decay** — penalties/rewards fade exponentially (default 28-day half-life).
 - Only actual Jellyfin playback stops strictly above 50% create recency, taste, or learning signals. Exactly 50%, short playback, unknown/reset positions, and manually toggling Played do not count.
@@ -57,9 +68,9 @@ When you **watch a movie from one of your playlists**, the plugin learns from th
 ### Method 2 — Manual (sideload the DLL)
 Download the latest ZIP from [GitHub Releases](https://github.com/Sternpaul/jellyfin-smart-playlists/releases), extract its single `Jellyfin.Plugin.AIRecommender.dll` into a dedicated folder under `/config/data/plugins/`, and restart Jellyfin. Do not copy build dependencies; Jellyfin supplies them.
 
-> Identity is the fixed GUID `3D3D8BE7-67AB-4F65-9F31-3EAE8764BBA3`. `targetAbi` is `10.11.0.0` (the minimum 10.11 ABI — pinning to the exact server build makes Jellyfin silently drop the plugin).
+> Identity is the fixed GUID `3D3D8BE7-67AB-4F65-9F31-3EAE8764BBA3`. `targetAbi` is `12.0.0.0` for 2.x (the minimum 12.x ABI — pinning to the exact server build makes Jellyfin silently drop the plugin) and `10.11.0.0` for the legacy 1.7.x line.
 
-Prerequisites: Jellyfin **10.11.x**; an API key from [Google AI Studio](https://aistudio.google.com/), [OpenRouter](https://openrouter.ai/), [OpenAI](https://platform.openai.com/), or [Anthropic](https://console.anthropic.com/).
+Prerequisites: Jellyfin **12.x** (Jellyfin 10.11 servers get the 1.7.x line automatically); an API key from [Google AI Studio](https://aistudio.google.com/), [OpenRouter](https://openrouter.ai/), [OpenAI](https://platform.openai.com/), or [Anthropic](https://console.anthropic.com/).
 
 > **Docker / NAS users:** The SQLite database lives in the plugin configurations directory. Current releases automatically use DELETE journal mode and checkpoint legacy WAL data at startup, so bind-mounted storage needs no manual SQLite workaround. After upgrading from a much older release, restart Jellyfin and run **Index & Classify Library** followed by **Refresh Playlists**.
 
@@ -102,7 +113,9 @@ The full settings tables, technical internals, REST API, cost breakdown, and roa
 ## ✨ Features in depth
 
 ### AI Movie Classification
-Sends each movie's plot to your AI and returns subcategories, moods, themes, narrative style, accessibility, and intensity. Playlist generation itself makes no AI calls; only new or explicitly reclassified movies incur later classification requests.
+Sends each movie's title, year and plot to your AI and returns subcategories, moods, themes, narrative style, accessibility, and intensity. The prompt lists the allowed values, OpenAI and Google enforce them with a JSON schema, and every answer is mapped onto the canonical names (`Heist Thriller` → `Heist`, `black comedy` → `Dark Comedy`); anything outside the vocabulary is dropped. Playlist generation itself makes no AI calls; only new or explicitly reclassified movies incur later classification requests.
+
+**Upgrading from 1.x:** older free-form tags are merged onto the vocabulary automatically at startup wherever they match, and tags that don't match are kept, so nothing disappears. To re-tag those movies properly, tick **Re-classify movies tagged by an older plugin version** under *Library Status* and run **Classify Library**. It costs about one AI request per 20 movies, and movies stay in playlists with their old tags until they are re-tagged.
 
 ### Smart Playlists
 Dynamic, per-user, auto-updating. See the table above. **From Your Watchlist** preserves matched source order before bounded rotation, while **More Like Your Favorites** uses 4★+ imported ratings as weighted similarity anchors and recommends only unwatched, unrated local films.
@@ -114,7 +127,7 @@ The config page shows, live per user: top taste weights plus bounded samples (up
 AI reads each plot and assigns meaningful subcategories (Heist, Neo-Noir, Folk Horror, …) instead of TMDB's flat genres.
 
 ### Similarity Engine
-Movies are compared via AI metadata: Subcategory 30% · Mood 20% · Theme 15% · Director/Cast 10% · Narrative style 10% · Era 5% · critical-acclaim proximity 5% · Intensity 5%, plus configurable TMDB keyword overlap; the total is capped at 1.0. This powers *Because You Watched* and exploration slots.
+Movies are compared via AI metadata: Subcategory 30% · Mood 20% · Theme 15% · Director/Cast 10% · Narrative style 10% · Era 5% · critical-acclaim proximity 5% · Intensity 5%, plus configurable TMDB keyword overlap; the total is capped at 1.0. "Acclaim" everywhere (Hidden Gems, Wild Card, similarity, the acclaim nudge) uses Jellyfin's own community and critic ratings when the movie has them, and falls back to the AI's estimate only when it doesn't. This powers *Because You Watched* and exploration slots.
 
 ### TMDB Keywords (v1.5.14, precision signal)
 Curated, objective tags from TMDB (e.g. `serial killer`, `neo-noir`, `self-fulfilling prophecy`) are fetched per movie (resolving the TMDB id from the IMDb id already stored; cached in `tmdb_keywords_cache.json`) and added as a configurable overlap term in **For You** taste-matching (`KeywordWeight`, default 0.10) and the **Because You Watched** similarity engine. Keywords are more reliable than the LLM's subjective "themes" and need no re-classification — they're pulled at refresh time. Set a TMDB v3 API key in the config to enable; leave it blank to disable.
@@ -244,6 +257,7 @@ All endpoints require an authenticated Jellyfin administrator (`RequiresElevatio
 | Method | Endpoint | Description |
 |---|---|---|
 | POST | `/AIRecommender/Chat` | Natural-language recommendations |
+| GET | `/AIRecommender/Status` | Library classification counts, plugin and server version |
 | POST | `/AIRecommender/ClassifyLibrary` | Start the index/classification task |
 | POST | `/AIRecommender/RefreshPlaylists` | Start the all-user playlist refresh task |
 | POST | `/AIRecommender/Playlists/Refresh?userId=` | Refresh one user's recommendations and assigned collections |
@@ -266,14 +280,20 @@ All endpoints require an authenticated Jellyfin administrator (`RequiresElevatio
 Initial classification cost depends on provider, model, and library size; later classification calls are needed only for new or explicitly reclassified movies. Playlist refresh and local scoring make no AI calls, although refresh may fetch configured ratings/watchlist JSON and TMDB metadata. AI Chat calls the configured provider and therefore has a per-use provider cost.
 
 ## Build from source
-Requires .NET 9.0 SDK:
+Requires .NET 10.0 SDK:
 ```bash
 git clone https://github.com/Sternpaul/jellyfin-smart-playlists.git
 cd jellyfin-smart-playlists
 dotnet test Jellyfin.Plugin.AIRecommender.sln --configuration Release
 dotnet build Jellyfin.Plugin.AIRecommender.csproj --configuration Release
 ```
-Root `dotnet test` discovers and runs the xUnit suite through `Jellyfin.Plugin.AIRecommender.sln`. The DLL lands in `bin/Release/net9.0/`. The SQLite DB lives in the Jellyfin config dir (`/config/data/plugins/configurations/airecommender.db`) — persists across updates.
+Root `dotnet test` discovers and runs the xUnit suite through `Jellyfin.Plugin.AIRecommender.sln`. The DLL lands in `bin/Release/net10.0/`.
+
+To check a build against a Jellyfin server install (for example the `/jellyfin` folder copied out of the `jellyfin/jellyfin` Docker image):
+
+```bash
+dotnet run --project tools/AbiCheck -- bin/Release/net10.0/Jellyfin.Plugin.AIRecommender.dll /path/to/jellyfin
+``` The SQLite DB lives in the Jellyfin config dir (`/config/data/plugins/configurations/airecommender.db`) — persists across updates.
 
 Releases are tag-only and immutable. The release workflow requires the tag and project version to match, runs the full test suite, requires a version-specific changelog, packages only the plugin DLL, publishes the manifest to `gh-pages`, and verifies the public ABI, source URL, changelog, MD5 checksum, and ZIP contents before succeeding.
 
