@@ -8,6 +8,8 @@ A Jellyfin plugin that solves "what should I watch" for massive libraries. It **
 
 **Bring your own AI provider** — Google AI, OpenRouter, OpenAI, Anthropic. Works on **all Jellyfin clients** (FireTV, Android TV, iOS, web) — no client changes.
 
+> **Legacy branch — Jellyfin 10.11 only.** This branch receives fixes for Jellyfin 10.11 as 1.7.x releases. For Jellyfin 12 use the `main` branch (2.x). Installing from the plugin repository picks the right build for your server automatically.
+
 ---
 
 ## How it works (the short version)

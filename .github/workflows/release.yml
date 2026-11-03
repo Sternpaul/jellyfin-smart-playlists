@@ -8,6 +8,11 @@
 # - Push main whenever you want (it's just source code)
 # - No race conditions between developer pushes and workflow pushes
 # - The workflow is the sole writer of gh-pages
+#
+# LEGACY BRANCH: this is legacy/10.11. It builds 1.7.x for Jellyfin 10.11
+# (targetAbi 10.11.0.0). Jellyfin 12 builds (2.x) are released from main. Both
+# write into the same manifest; Jellyfin installs the newest entry whose
+# targetAbi the server satisfies, so 10.11 servers keep getting these.
 # ============================================================================
 name: Build and Release
 
@@ -48,6 +53,8 @@ jobs:
         actual = ET.parse('Jellyfin.Plugin.AIRecommender.csproj').getroot().findtext('.//Version')
         if actual != expected:
             raise SystemExit(f"tag {tag} requires project version {expected}, found {actual}")
+        if int(parts[0]) != 1:
+            raise SystemExit(f"{tag} is not a 1.x version; legacy/10.11 only releases 1.x for Jellyfin 10.11")
         print(f"verified tag/project version: {expected}")
         PY
 
