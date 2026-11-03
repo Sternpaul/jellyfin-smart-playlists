@@ -149,4 +149,35 @@ public sealed class ManagedPlaylistRegistryTests : IDisposable
             "One",
             ManagedPlaylistKind.RotatingRecommendation));
     }
+
+    [Fact]
+    public async Task Upsert_reclaims_a_playlist_id_still_held_by_a_stale_registration()
+    {
+        // Jellyfin path-derived ids: a new "For You" can reuse a deleted playlist's id.
+        var store = CreateStore();
+        var deletedUser = Guid.NewGuid();
+        var currentUser = Guid.NewGuid();
+        var playlistId = Guid.NewGuid();
+        await store.UpsertManagedPlaylistAsync(deletedUser, "for-you", playlistId, "For You", ManagedPlaylistKind.RotatingRecommendation);
+        using (var db = new AiDbContext(DatabasePath))
+        {
+            db.ManagedPlaylistArtwork.Add(new ManagedPlaylistArtwork
+            {
+                PlaylistId = playlistId,
+                ImageType = ManagedArtworkImageType.Primary,
+                GeneratedHash = new string('a', 64),
+                RenderedTitle = "For You",
+                UpdatedAt = DateTime.UtcNow,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        await store.UpsertManagedPlaylistAsync(currentUser, "for-you", playlistId, "For You", ManagedPlaylistKind.RotatingRecommendation);
+
+        using var verify = new AiDbContext(DatabasePath);
+        var row = Assert.Single(await verify.ManagedPlaylists.ToListAsync());
+        Assert.Equal(currentUser, row.UserId);
+        Assert.Equal(playlistId, row.PlaylistId);
+        Assert.Empty(await verify.ManagedPlaylistArtwork.ToListAsync());
+    }
 }

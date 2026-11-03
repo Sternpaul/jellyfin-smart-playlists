@@ -886,6 +886,28 @@ namespace Jellyfin.Plugin.AIRecommender.Data
             using var db = GetContext();
             var existing = await db.ManagedPlaylists.FindAsync(new object[] { userId, logicalKey }, cancellationToken);
             var now = DateTime.UtcNow;
+
+            // Jellyfin derives a playlist's id from its folder path, so a playlist created
+            // now can reuse the id of a deleted one. Any OTHER registration still holding
+            // this id is therefore stale (a deleted user, a playlist removed outside the
+            // plugin): one Jellyfin item cannot be two playlists. Release it, and its
+            // artwork-ownership rows, instead of failing the refresh on the unique index.
+            var stale = await db.ManagedPlaylists
+                .Where(p => p.PlaylistId == playlistId && !(p.UserId == userId && p.LogicalKey == logicalKey))
+                .ToListAsync(cancellationToken);
+            if (stale.Count > 0)
+            {
+                foreach (var row in stale)
+                    _logger.LogWarning(
+                        "Playlist {PlaylistId} was still registered as '{OldKey}' for user {OldUserId}; that registration is stale and now belongs to '{Key}' for user {UserId}.",
+                        playlistId, row.LogicalKey, row.UserId, logicalKey, userId);
+                db.ManagedPlaylists.RemoveRange(stale);
+                if (existing?.PlaylistId != playlistId)
+                    db.ManagedPlaylistArtwork.RemoveRange(await db.ManagedPlaylistArtwork
+                        .Where(artwork => artwork.PlaylistId == playlistId)
+                        .ToListAsync(cancellationToken));
+            }
+
             if (existing == null)
             {
                 db.ManagedPlaylists.Add(new ManagedPlaylist
