@@ -18,6 +18,9 @@ namespace Jellyfin.Plugin.AIRecommender.Configuration
         public string ClassificationModel { get; set; } = "nvidia/nemotron-3-super-120b-a12b:free";
         public string ChatModel { get; set; } = "nvidia/nemotron-3-super-120b-a12b:free";
         public string CustomEndpoint { get; set; } = string.Empty;
+        // v2.0: when on, Index & Classify also re-tags movies classified under an older
+        // tag vocabulary (one AI call per 20 movies). Off by default to avoid surprise cost.
+        public bool ReclassifyOutdatedMovies { get; set; } = false;
 
         // Playlist Settings
         public int PlaylistRefreshHours { get; set; } = 12;

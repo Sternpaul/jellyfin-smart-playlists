@@ -112,12 +112,22 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     .ToHashSet());
             var changed = new List<MovieAffinity>();
 
+            var allMovies = await _movieStore.GetAllMoviesAsync(cancellationToken);
+            var moviesById = allMovies.GroupBy(m => m.ItemId).ToDictionary(g => g.Key, g => g.First());
+            moviesById.TryGetValue(watchedMovieId, out var watchedMovie);
+
             // 2. PUNISH siblings: every OTHER movie in a source playlist gets a penalty
             //    (lower affinity) and a temporary ban via PenaltyUntil (cooling period).
+            //    v2.0: the penalty scales with how DIFFERENT the sibling is from the pick.
+            //    Choosing one heist film over a near-identical one is not a rejection of
+            //    heist films; passing over an unrelated film is a stronger signal.
             foreach (var siblingId in sourcePlaylistMovies.Where(id => id != watchedMovieId))
             {
+                var similarity = watchedMovie != null && moviesById.TryGetValue(siblingId, out var sibling)
+                    ? _similarityEngine.CalculateSimilarity(watchedMovie, sibling)
+                    : 0.0;
                 var row = GetOrCreateAffinity(affinities, userId, siblingId);
-                row.Affinity = Clamp(row.Affinity + _config.PunishmentPenalty, -1.0, 1.0);
+                row.Affinity = Clamp(row.Affinity + SiblingPenalty(_config.PunishmentPenalty, similarity), -1.0, 1.0);
                 row.PenaltyUntil = penaltyUntilIso;
                 row.LastUpdated = now.ToString("o");
                 changed.Add(row);
@@ -126,8 +136,6 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             // 3. REWARD similar movies: the watched movie's nearest neighbours get a small
             //    boost (and any active penalty is pulled forward / reduced) — implements the
             //    "watch a related movie -> penalty reduced" behaviour from the README.
-            var allMovies = await _movieStore.GetAllMoviesAsync(cancellationToken);
-            var watchedMovie = allMovies.FirstOrDefault(m => m.ItemId == watchedMovieId);
             if (watchedMovie != null)
             {
                 var neighbours = allMovies
@@ -160,6 +168,11 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             // 4. Rebuild the user's playlists (refresh READS the new affinities).
             await RefreshUserPlaylistsCoreAsync(userId, cancellationToken);
         }
+
+        // Similarity is 0..1 (see SimilarityEngine); identical films keep 20% of the
+        // configured penalty so repeatedly skipped lookalikes still sink slowly.
+        internal static double SiblingPenalty(double configuredPenalty, double similarity)
+            => configuredPenalty * (1.0 - 0.8 * Math.Clamp(similarity, 0.0, 1.0));
 
         // Returns the ItemIds of all OTHER movies sharing an owner-scoped playlist,
         // excluding exact persistent collection registrations so curated membership
@@ -543,7 +556,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     Movie = m,
                     Score = (hasTaste ? ScoreMovieAgainstProfile(m, profile) : 0.0)
                             + CalculateReviewNudge(m)
-                            + (hasTaste ? 0.0 : m.CriticalAcclaimScore / 10.0)
+                            + (hasTaste ? 0.0 : m.Acclaim / 10.0)
                             + Clamp(GetEffectiveAffinity(userId, affinities, m.ItemId) * _config.AffinityRankWeight, -_config.AffinityRankWeight, _config.AffinityRankWeight)
                             + GetNewMovieBoostByFit(m, profile, now)
                             + GetNoveltyBonus(userId, affinities, m.ItemId, now)
@@ -619,13 +632,8 @@ namespace Jellyfin.Plugin.AIRecommender.Services
 
         private static string? PrimarySubcategory(MovieMetadata m)
         {
-            if (string.IsNullOrWhiteSpace(m.Subcategories)) return null;
-            try
-            {
-                var subs = JsonSerializer.Deserialize<List<string>>(m.Subcategories);
-                return subs != null && subs.Count > 0 ? subs[0] : null;
-            }
-            catch { return null; }
+            var subs = m.SubcategorySet.Items;
+            return subs.Count > 0 ? subs[0] : null;
         }
 
         private async Task GenerateBecauseYouWatchedPlaylistAsync(Guid userId, List<MovieMetadata> unwatched, IReadOnlyDictionary<string, IReadOnlyList<Guid>> previousPlaylists, CancellationToken cancellationToken)
@@ -731,7 +739,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             var fameScale = Math.Log(1 + 100); // popularity of ~100 → full penalty
             var rankedGems = unwatched
                 .Where(m => !claimed.Contains(m.ItemId))
-                .Where(m => m.CriticalAcclaimScore >= 7)
+                .Where(m => m.Acclaim >= 7)
                 .Where(m => !SharesAnySubcategory(m, familiarSubs)) // unfamiliar = hidden
                 .Select(m => new
                 {
@@ -739,7 +747,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     FamePenalty = (_config.FamePenaltyWeight > 0 && m.Popularity > 0)
                         ? _config.FamePenaltyWeight * Math.Min(1.0, Math.Log(1 + m.Popularity) / fameScale)
                         : 0.0,
-                    Score = m.CriticalAcclaimScore / 10.0
+                    Score = m.Acclaim / 10.0
                             + Clamp(GetEffectiveAffinity(userId, affinities, m.ItemId) * _config.AffinityRankWeight, -_config.AffinityRankWeight, _config.AffinityRankWeight)
                             + GetNewMovieBoost(m, now)
                             + GetSoftPenalty(affinities, m.ItemId, now)
@@ -777,14 +785,8 @@ namespace Jellyfin.Plugin.AIRecommender.Services
 
         private static bool SharesAnySubcategory(MovieMetadata m, HashSet<string> subs)
         {
-            if (subs.Count == 0 || string.IsNullOrWhiteSpace(m.Subcategories)) return false;
-            try
-            {
-                var movieSubs = JsonSerializer.Deserialize<List<string>>(m.Subcategories)?
-                    .Select(s => s.ToLowerInvariant()).ToHashSet() ?? new HashSet<string>();
-                return movieSubs.Overlaps(subs.Select(s => s.ToLowerInvariant()));
-            }
-            catch { return false; }
+            if (subs.Count == 0) return false;
+            return subs.Any(m.SubcategorySet.Contains);
         }
 
         private async Task GenerateRecentlyAddedPlaylistAsync(Guid userId, List<MovieMetadata> unwatched, IReadOnlyDictionary<string, IReadOnlyList<Guid>> previousPlaylists, CancellationToken cancellationToken)
@@ -853,7 +855,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     // always exist (CreateOrUpdateJellyfinPlaylistAsync skips empties).
                     rankedDiscovered = unwatched
                         .Where(m => !claimed.Contains(m.ItemId) && m.IsClassified)
-                        .OrderByDescending(m => m.CriticalAcclaimScore)
+                        .OrderByDescending(m => m.Acclaim)
                         .ThenBy(m => m.ItemId)
                         .Select(m => m.ItemId)
                         .ToList();
@@ -899,7 +901,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 {
                     M = m,
                     Score = (leastSet.Any() && SharesAnySubcategory(m, leastSet) ? 0.5 : 0.0)
-                            + m.CriticalAcclaimScore / 10.0
+                            + m.Acclaim / 10.0
                             + Clamp(GetEffectiveAffinity(userId, affinities, m.ItemId) * _config.AffinityRankWeight, -_config.AffinityRankWeight, _config.AffinityRankWeight)
                             + GetNewMovieBoost(m, now)
                 })
@@ -920,12 +922,12 @@ namespace Jellyfin.Plugin.AIRecommender.Services
 
             var rankedWild = unwatched
                 .Where(m => !claimed.Contains(m.ItemId))
-                .Where(m => m.CriticalAcclaimScore >= 7)
+                .Where(m => m.Acclaim >= 7)
                 .Where(m => leastFamiliar == null || (m.Subcategories ?? "").Contains(leastFamiliar, StringComparison.OrdinalIgnoreCase))
                 .Select(m => new
                 {
                     M = m,
-                    Score = m.CriticalAcclaimScore / 10.0
+                    Score = m.Acclaim / 10.0
                             + Clamp(GetEffectiveAffinity(userId, affinities, m.ItemId) * _config.AffinityRankWeight, -_config.AffinityRankWeight, _config.AffinityRankWeight)
                             + GetNewMovieBoost(m, now)
                             + GetSoftPenalty(affinities, m.ItemId, now)
@@ -940,8 +942,8 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 // Fallback: relax to any high-acclaim unwatched film (no subcat match) so
                 // Wild Card always exists when the strict pool is exhausted/claimed.
                 rankedWild = unwatched
-                    .Where(m => !claimed.Contains(m.ItemId) && m.IsClassified && m.CriticalAcclaimScore >= 7)
-                    .OrderByDescending(m => m.CriticalAcclaimScore)
+                    .Where(m => !claimed.Contains(m.ItemId) && m.IsClassified && m.Acclaim >= 7)
+                    .OrderByDescending(m => m.Acclaim)
                     .ThenBy(m => m.ItemId)
                     .Select(m => m.ItemId)
                     .ToList();
@@ -1052,46 +1054,8 @@ namespace Jellyfin.Plugin.AIRecommender.Services
         {
             // Taste-matched scoring: how well this movie's tags align with the
             // user's learned preferences (weighted subcategory + mood affinity).
-            double subScore = 0.0;
-            if (!string.IsNullOrWhiteSpace(movie.Subcategories) && profile.SubcategoryPreferences.Any())
-            {
-                try
-                {
-                    var subs = JsonSerializer.Deserialize<List<string>>(movie.Subcategories);
-                    if (subs != null && subs.Count > 0)
-                    {
-                        double matched = 0.0;
-                        foreach (var s in subs)
-                        {
-                            if (profile.SubcategoryPreferences.TryGetValue(s, out double w))
-                                matched += w;
-                        }
-                        // Average affinity across the movie's subcategories, capped at 1.0
-                        subScore = Math.Min(1.0, matched / subs.Count);
-                    }
-                }
-                catch { /* ignore parse errors */ }
-            }
-
-            double moodScore = 0.0;
-            if (!string.IsNullOrWhiteSpace(movie.Moods) && profile.MoodPreferences.Any())
-            {
-                try
-                {
-                    var moods = JsonSerializer.Deserialize<List<string>>(movie.Moods);
-                    if (moods != null && moods.Count > 0)
-                    {
-                        double matched = 0.0;
-                        foreach (var m in moods)
-                        {
-                            if (profile.MoodPreferences.TryGetValue(m, out double w))
-                                matched += w;
-                        }
-                        moodScore = Math.Min(1.0, matched / moods.Count);
-                    }
-                }
-                catch { /* ignore parse errors */ }
-            }
+            double subScore = AverageAffinity(movie.SubcategorySet, profile.SubcategoryPreferences);
+            double moodScore = AverageAffinity(movie.MoodSet, profile.MoodPreferences);
 
             // Director affinity: a small, configurable nudge if this movie shares a
             // director the user watches a lot (learned from watch history).
@@ -1109,21 +1073,12 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             // Subcategories are the strongest taste signal; moods refine it; director is a small bonus.
             // v1.5.14: keyword overlap (objective TMDB tags) is added as a configurable nudge.
             double keywordScore = 0.0;
-            if (_config.KeywordWeight > 0 && !string.IsNullOrWhiteSpace(movie.Keywords) && profile.KeywordPreferences.Any())
+            if (_config.KeywordWeight > 0 && movie.KeywordSet.Count > 0 && profile.KeywordPreferences.Count > 0)
             {
-                try
-                {
-                    var movieKw = JsonSerializer.Deserialize<List<string>>(movie.Keywords)?
-                        .Select(k => k.ToLowerInvariant()).ToHashSet() ?? new HashSet<string>();
-                    var prefKw = profile.KeywordPreferences.Keys.Select(k => k.ToLowerInvariant()).ToHashSet();
-                    if (movieKw.Count > 0 && prefKw.Count > 0)
-                    {
-                        double inter = movieKw.Intersect(prefKw).Count();
-                        double uni = movieKw.Union(prefKw).Count();
-                        if (uni > 0) keywordScore = Math.Min(1.0, inter / uni);
-                    }
-                }
-                catch { /* ignore parse errors */ }
+                // KeywordPreferences is case-insensitive, matching TagSet semantics.
+                int inter = movie.KeywordSet.Items.Count(profile.KeywordPreferences.ContainsKey);
+                int union = movie.KeywordSet.Count + profile.KeywordPreferences.Count - inter;
+                if (union > 0) keywordScore = Math.Min(1.0, (double)inter / union);
             }
 
             return 0.7 * subScore + 0.3 * moodScore
@@ -1131,12 +1086,23 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                    + Clamp(keywordScore * _config.KeywordWeight, 0.0, _config.KeywordWeight);
         }
         
+        // Average learned affinity across the movie's tags, capped at 1.0.
+        private static double AverageAffinity(TagSet tags, Dictionary<string, double> preferences)
+        {
+            if (tags.Count == 0 || preferences.Count == 0) return 0.0;
+            double matched = 0.0;
+            foreach (var tag in tags.Items)
+                if (preferences.TryGetValue(tag, out double w))
+                    matched += w;
+            return Math.Min(1.0, matched / tags.Count);
+        }
+
         private double CalculateReviewNudge(MovieMetadata movie)
         {
             if (_config.ReviewNudgingWeight <= 0) return 0.0;
             
             // Normalize acclaim score (1-10) to 0.0-1.0
-            double normalizedAcclaim = movie.CriticalAcclaimScore / 10.0;
+            double normalizedAcclaim = movie.Acclaim / 10.0;
             
             // Max weight is a percentage (e.g., 3 means 0.03)
             double maxWeight = _config.ReviewNudgingWeight / 100.0;

@@ -166,6 +166,9 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             metadata.Title = jellyfinMovie.Name;
             metadata.ReleaseYear = jellyfinMovie.ProductionYear;
             metadata.Plot = jellyfinMovie.Overview;
+            // Real ratings beat the AI's acclaim guess wherever Jellyfin has them.
+            metadata.CommunityRating = jellyfinMovie.CommunityRating;
+            metadata.CriticRating = jellyfinMovie.CriticRating;
             
             // Try to extract IMDB ID
             jellyfinMovie.ProviderIds.TryGetValue(MetadataProvider.Imdb.ToString(), out var imdbId);

@@ -57,7 +57,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services.AI
 
         public async Task<string> ClassifyMoviesAsync(List<MovieMetadata> movies, CancellationToken cancellationToken = default)
         {
-            var prompt = BuildClassificationPrompt(movies);
+            var prompt = ClassificationPrompt.Build(movies);
             var chain = BuildFallbackChain(Config.ClassificationModel);
             return await CallApiWithFallbackAsync(chain, prompt, true, cancellationToken);
         }
@@ -214,37 +214,6 @@ namespace Jellyfin.Plugin.AIRecommender.Services.AI
             }
             // Fallback: exponential backoff, 5s..60s.
             return (int)Math.Max(5, Math.Min(60, Math.Pow(2, attempt) * 5));
-        }
-
-        private string BuildClassificationPrompt(List<MovieMetadata> movies)
-        {
-            var moviesJson = JsonSerializer.Serialize(movies.Select(m => new { m.ItemId, m.Title, m.ReleaseYear, m.Plot }));
-            return $@"Convert the following movies into a JSON object containing a 'movies' array.
-
-Example Input:
-[{{ ""ItemId"": ""00000000-0000-0000-0000-000000000000"", ""Title"": ""The Matrix"", ""ReleaseYear"": 1999, ""Plot"": ""A hacker learns the truth."" }}]
-
-Example Output:
-{{
-  ""movies"": [
-    {{
-      ""ItemId"": ""00000000-0000-0000-0000-000000000000"",
-      ""Subcategories"": [""Sci-Fi"", ""Action""],
-      ""Moods"": [""cerebral"", ""tense""],
-      ""Themes"": [""simulation"", ""rebellion""],
-      ""NarrativeStyle"": ""hero-journey"",
-      ""Accessibility"": ""mainstream"",
-      ""Intensity"": ""high"",
-      ""CriticalAcclaimScore"": 9
-    }}
-  ]
-}}
-
-Now do it for the following movies. Output ONLY the JSON object. Do not include markdown formatting.
-Input:
-{moviesJson}
-
-Output:";
         }
     }
 }

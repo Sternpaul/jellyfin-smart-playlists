@@ -52,39 +52,11 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                     decay = Math.Exp(-ageDays / Math.Max(1.0, halfLifeDays));
                 }
 
-                if (!string.IsNullOrWhiteSpace(movie.Subcategories))
-                {
-                    try
-                    {
-                        var subs = System.Text.Json.JsonSerializer.Deserialize<List<string>>(movie.Subcategories);
-                        if (subs != null)
-                        {
-                            foreach (var s in subs)
-                            {
-                                if (subcatWeights.ContainsKey(s)) subcatWeights[s] += decay;
-                                else subcatWeights[s] = decay;
-                            }
-                        }
-                    }
-                    catch { /* Ignore parse errors */ }
-                }
+                foreach (var sub in movie.SubcategorySet.Items)
+                    subcatWeights[sub] = subcatWeights.GetValueOrDefault(sub) + decay;
 
-                if (!string.IsNullOrWhiteSpace(movie.Moods))
-                {
-                    try
-                    {
-                        var moods = System.Text.Json.JsonSerializer.Deserialize<List<string>>(movie.Moods);
-                        if (moods != null)
-                        {
-                            foreach (var m in moods)
-                            {
-                                if (moodWeights.ContainsKey(m)) moodWeights[m] += decay;
-                                else moodWeights[m] = decay;
-                            }
-                        }
-                    }
-                    catch { /* Ignore parse errors */ }
-                }
+                foreach (var mood in movie.MoodSet.Items)
+                    moodWeights[mood] = moodWeights.GetValueOrDefault(mood) + decay;
 
                 // Director affinity: a movie's director(s) earn decay-weighted credit.
                 if (!string.IsNullOrWhiteSpace(movie.Director))
@@ -99,24 +71,8 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 }
 
                 // v1.5.14: keyword affinity — TMDB tags earn decay-weighted credit.
-                if (!string.IsNullOrWhiteSpace(movie.Keywords))
-                {
-                    try
-                    {
-                        var kws = System.Text.Json.JsonSerializer.Deserialize<List<string>>(movie.Keywords);
-                        if (kws != null)
-                        {
-                            foreach (var k in kws)
-                            {
-                                var key = k.Trim();
-                                if (key.Length == 0) continue;
-                                if (keywordWeights.ContainsKey(key)) keywordWeights[key] += decay;
-                                else keywordWeights[key] = decay;
-                            }
-                        }
-                    }
-                    catch { /* ignore parse errors */ }
-                }
+                foreach (var keyword in movie.KeywordSet.Items)
+                    keywordWeights[keyword] = keywordWeights.GetValueOrDefault(keyword) + decay;
             }
 
             // Normalize so the strongest signal maps to 1.0 (keeps ScoreMovieAgainstProfile unchanged).

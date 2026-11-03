@@ -37,6 +37,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Jellyfin.Plugin.AIRecommender.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Remove="tests/**/*.cs" />
     <EmbeddedResource Include="Configuration/configPage.html" />
     <EmbeddedResource Include="Assets/Playlists/*.png" />

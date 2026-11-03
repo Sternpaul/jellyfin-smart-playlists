@@ -2,9 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.AIRecommender.Data.Models;
+using Jellyfin.Plugin.AIRecommender.Services.Classification;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -195,6 +197,7 @@ namespace Jellyfin.Plugin.AIRecommender.Data
             db.Database.ExecuteSqlRaw(
                 "CREATE INDEX IF NOT EXISTS IX_UserCollectionSubscriptions_CollectionDefinitionId ON UserCollectionSubscriptions (CollectionDefinitionId)");
             MigrateAddMovieKeywordColumns(db);
+            MigrateAddMovieV2Columns(db);
             MigrateAddUserWatchlistColumns(db);
             // v1.5.28: one-time repair for databases created before the
             // PRIMARY KEY (ItemId) constraint existed. CREATE TABLE IF NOT EXISTS
@@ -206,6 +209,61 @@ namespace Jellyfin.Plugin.AIRecommender.Data
             // index so duplicates can never accumulate again.
             DedupMovies(db);
             EnsureUniqueMovieIndex(db);
+            NormalizeLegacyClassifications(db);
+        }
+
+        // v2.0: Jellyfin ratings and the vocabulary version the tags were produced under.
+        private static void MigrateAddMovieV2Columns(AiDbContext db)
+        {
+            foreach (var ddl in new[]
+            {
+                "ALTER TABLE Movies ADD COLUMN CommunityRating REAL NULL",
+                "ALTER TABLE Movies ADD COLUMN CriticRating REAL NULL",
+                "ALTER TABLE Movies ADD COLUMN VocabularyVersion INTEGER NOT NULL DEFAULT 0",
+            })
+            {
+                try { db.Database.ExecuteSqlRaw(ddl); }
+                catch { /* column already exists — ignore */ }
+            }
+        }
+
+        // v2.0: fold free-form legacy tags onto the canonical vocabulary so "Sci-Fi
+        // Thrillers" and "Sci-Fi Thriller" stop splitting one taste in two. Unknown
+        // legacy tags are kept so no movie loses its classification; the opt-in
+        // "re-classify outdated" run replaces them. Only changed rows are written.
+        internal static int NormalizeLegacyClassifications(AiDbContext db)
+        {
+            var legacy = db.Movies
+                .Where(m => m.IsClassified && m.VocabularyVersion < ClassificationVocabulary.Version)
+                .ToList();
+            int changed = 0;
+            foreach (var movie in legacy)
+            {
+                bool dirty = false;
+                string Fold(string? json, Func<string?, string?> canonical)
+                {
+                    var folded = JsonSerializer.Serialize(
+                        ClassificationVocabulary.Canonicalize(TagSet.Parse(json).Items, canonical, keepUnknown: true));
+                    if (folded != (json ?? "[]")) dirty = true;
+                    return folded;
+                }
+                string? FoldOne(string? value, Func<string?, string?> canonical)
+                {
+                    var folded = canonical(value) ?? value;
+                    if (folded != value) dirty = true;
+                    return folded;
+                }
+
+                movie.Subcategories = Fold(movie.Subcategories, ClassificationVocabulary.CanonicalSubcategory);
+                movie.Moods = Fold(movie.Moods, ClassificationVocabulary.CanonicalMood);
+                movie.NarrativeStyle = FoldOne(movie.NarrativeStyle, ClassificationVocabulary.CanonicalNarrativeStyle);
+                movie.Accessibility = FoldOne(movie.Accessibility, ClassificationVocabulary.CanonicalAccessibility);
+                movie.Intensity = FoldOne(movie.Intensity, ClassificationVocabulary.CanonicalIntensity);
+                if (dirty) changed++;
+                else db.Entry(movie).State = EntityState.Unchanged;
+            }
+            if (changed > 0) db.SaveChanges();
+            return changed;
         }
 
         // v1.5.25: add the v1.5.17 ratings columns to the UserWatchlists table on
@@ -318,9 +376,32 @@ namespace Jellyfin.Plugin.AIRecommender.Data
         }
 
         public async Task<List<MovieMetadata>> GetUnclassifiedMoviesAsync(CancellationToken cancellationToken = default)
+            => await GetMoviesNeedingClassificationAsync(includeOutdated: false, cancellationToken);
+
+        /// <summary>
+        /// Unclassified movies, plus (when <paramref name="includeOutdated"/>) movies whose
+        /// tags predate the current vocabulary. Outdated rows stay classified, so they keep
+        /// appearing in playlists until their new tags are saved.
+        /// </summary>
+        public async Task<List<MovieMetadata>> GetMoviesNeedingClassificationAsync(bool includeOutdated, CancellationToken cancellationToken = default)
         {
             using var db = GetContext();
-            return await db.Movies.Where(m => !m.IsClassified || m.Subcategories == "[]" || string.IsNullOrEmpty(m.Subcategories)).ToListAsync(cancellationToken);
+            var version = ClassificationVocabulary.Version;
+            return await db.Movies
+                .Where(m => !m.IsClassified || m.Subcategories == "[]" || string.IsNullOrEmpty(m.Subcategories)
+                    || (includeOutdated && m.VocabularyVersion < version))
+                .OrderBy(m => m.IsClassified)
+                .ToListAsync(cancellationToken);
+        }
+
+        public async Task<(int Total, int Classified, int Outdated)> GetClassificationStatsAsync(CancellationToken cancellationToken = default)
+        {
+            using var db = GetContext();
+            var version = ClassificationVocabulary.Version;
+            var total = await db.Movies.CountAsync(cancellationToken);
+            var classified = await db.Movies.CountAsync(m => m.IsClassified, cancellationToken);
+            var outdated = await db.Movies.CountAsync(m => m.IsClassified && m.VocabularyVersion < version, cancellationToken);
+            return (total, classified, outdated);
         }
 
         public async Task SaveMoviesAsync(IEnumerable<MovieMetadata> movies, CancellationToken cancellationToken = default)

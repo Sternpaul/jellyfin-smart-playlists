@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.AIRecommender.Data;
 using Jellyfin.Plugin.AIRecommender.Data.Models;
 using Jellyfin.Plugin.AIRecommender.Services.AI;
+using Jellyfin.Plugin.AIRecommender.Services.Classification;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.AIRecommender.Services
@@ -31,9 +32,12 @@ namespace Jellyfin.Plugin.AIRecommender.Services
 
         public async Task ClassifyPendingMoviesAsync(CancellationToken cancellationToken = default)
         {
-            _logger.LogInformation("Checking for unclassified movies...");
+            // Re-tagging movies classified under an older vocabulary costs one AI call
+            // per batch, so it only happens when the admin opts in.
+            var includeOutdated = Plugin.Instance?.Configuration?.ReclassifyOutdatedMovies ?? false;
+            _logger.LogInformation("Checking for unclassified movies (including outdated tags: {IncludeOutdated})...", includeOutdated);
             
-            var unclassified = await _movieStore.GetUnclassifiedMoviesAsync(cancellationToken);
+            var unclassified = await _movieStore.GetMoviesNeedingClassificationAsync(includeOutdated, cancellationToken);
             if (!unclassified.Any())
             {
                 _logger.LogInformation("No movies require classification.");
@@ -55,7 +59,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                 try
                 {
                     var jsonResponse = await provider.ClassifyMoviesAsync(batch, cancellationToken);
-                    _logger.LogInformation("Raw AI response (first 2000 chars): {Response}", jsonResponse?.Length > 2000 ? jsonResponse.Substring(0, 2000) : jsonResponse);
+                    _logger.LogDebug("Raw AI response (first 2000 chars): {Response}", jsonResponse?.Length > 2000 ? jsonResponse.Substring(0, 2000) : jsonResponse);
                     if (!string.IsNullOrEmpty(jsonResponse))
                         ProcessClassificationResult(jsonResponse, batch);
                     
@@ -156,33 +160,15 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                         continue;
                     }
 
-                    var subcats = GetStringArray(element, "Subcategories");
-                    var moods = GetStringArray(element, "Moods");
-                    var themes = GetStringArray(element, "Themes");
-                    var narrativeStyle = GetStringProperty(element, "NarrativeStyle");
-                    var accessibility = GetStringProperty(element, "Accessibility");
-                    var intensity = GetStringProperty(element, "Intensity");
-                    var score = GetIntProperty(element, "CriticalAcclaimScore");
-
-                    // Only mark classified if the AI actually returned a non-empty
-                    // subcategories tag. Otherwise the movie would be flagged
-                    // IsClassified=true with empty tags and never be sent to the AI
-                    // again, even though it has no usable classification.
-                    var realSubcats = JsonSerializer.Deserialize<List<string>>(subcats) ?? new List<string>();
-                    bool gotReal = realSubcats.Count > 0;
-
-                    movie.Subcategories = subcats;
-                    movie.Moods = moods;
-                    movie.Themes = themes;
-                    if (!string.IsNullOrEmpty(narrativeStyle)) movie.NarrativeStyle = narrativeStyle;
-                    if (!string.IsNullOrEmpty(accessibility)) movie.Accessibility = accessibility;
-                    if (!string.IsNullOrEmpty(intensity)) movie.Intensity = intensity;
-                    if (score > 0) movie.CriticalAcclaimScore = score;
-
-                    // v1.5.27: a movie that came back with no subcategories stays
-                    // unclassified so the next run re-sends it to the AI.
-                    movie.IsClassified = gotReal;
-                    movie.LastUpdated = DateTime.UtcNow;
+                    ApplyClassification(
+                        movie,
+                        GetStringArray(element, "Subcategories"),
+                        GetStringArray(element, "Moods"),
+                        GetStringArray(element, "Themes"),
+                        GetStringProperty(element, "NarrativeStyle"),
+                        GetStringProperty(element, "Accessibility"),
+                        GetStringProperty(element, "Intensity"),
+                        GetIntProperty(element, "CriticalAcclaimScore"));
                     index++;
                 }
             }
@@ -201,23 +187,21 @@ namespace Jellyfin.Plugin.AIRecommender.Services
                         var movie = batch.FirstOrDefault(m => m.Title.StartsWith(title, StringComparison.OrdinalIgnoreCase) || m.Title.Contains(title, StringComparison.OrdinalIgnoreCase));
                         if (movie != null)
                         {
-                            var fbSubcats = match.Groups["subcategories"].Value
+                            static List<string> SplitList(string value) => value
                                 .Split(new[] { ',', '/' }, StringSplitOptions.RemoveEmptyEntries)
                                 .Select(s => s.Trim())
                                 .Where(s => s.Length > 0)
                                 .ToList();
-                            movie.Subcategories = JsonSerializer.Serialize(fbSubcats);
-                            movie.Moods = JsonSerializer.Serialize(match.Groups["moods"].Value.Split(new[] { ',', '/' }, StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()));
-                            movie.Themes = JsonSerializer.Serialize(match.Groups["themes"].Value.Split(new[] { ',', '/' }, StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()));
-                            movie.NarrativeStyle = match.Groups["style"].Value.Trim();
-                            movie.Accessibility = match.Groups["acc"].Value.Trim();
-                            movie.Intensity = match.Groups["int"].Value.Trim();
-                            if (int.TryParse(match.Groups["score"].Value, out int scoreVal)) movie.CriticalAcclaimScore = scoreVal;
-                            
-                            // Same rule as the JSON path: only count it as classified
-                            // if the AI actually supplied a non-empty subcategory list.
-                            movie.IsClassified = fbSubcats.Count > 0;
-                            movie.LastUpdated = DateTime.UtcNow;
+                            int.TryParse(match.Groups["score"].Value, out int scoreVal);
+                            ApplyClassification(
+                                movie,
+                                SplitList(match.Groups["subcategories"].Value),
+                                SplitList(match.Groups["moods"].Value),
+                                SplitList(match.Groups["themes"].Value),
+                                match.Groups["style"].Value.Trim(),
+                                match.Groups["acc"].Value.Trim(),
+                                match.Groups["int"].Value.Trim(),
+                                scoreVal);
                             successCount++;
                         }
                     }
@@ -251,30 +235,72 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             return false;
         }
 
-        private string GetStringArray(JsonElement element, string propertyName)
+        /// <summary>
+        /// Stores one AI result on the movie, mapped onto the canonical vocabulary.
+        /// Tags outside the vocabulary are dropped; if the model ignored the vocabulary
+        /// entirely its raw subcategories are kept rather than losing the movie, and the
+        /// row stays on the legacy version so an opt-in re-classify can fix it later.
+        /// </summary>
+        internal void ApplyClassification(
+            MovieMetadata movie,
+            IReadOnlyList<string> rawSubcategories,
+            IReadOnlyList<string> rawMoods,
+            IReadOnlyList<string> rawThemes,
+            string? narrativeStyle,
+            string? accessibility,
+            string? intensity,
+            int score)
+        {
+            var subcategories = ClassificationVocabulary.Canonicalize(rawSubcategories, ClassificationVocabulary.CanonicalSubcategory, keepUnknown: false);
+            var onVocabulary = subcategories.Count > 0;
+            if (!onVocabulary)
+            {
+                subcategories = ClassificationVocabulary.Canonicalize(rawSubcategories, ClassificationVocabulary.CanonicalSubcategory, keepUnknown: true);
+                if (subcategories.Count > 0)
+                    _logger.LogWarning(
+                        "AI returned no known subcategories for '{Title}' ({Raw}); keeping them as legacy tags.",
+                        movie.Title,
+                        string.Join(", ", rawSubcategories));
+            }
+
+            movie.Subcategories = JsonSerializer.Serialize(subcategories.Take(3));
+            movie.Moods = JsonSerializer.Serialize(
+                ClassificationVocabulary.Canonicalize(rawMoods, ClassificationVocabulary.CanonicalMood, keepUnknown: false).Take(4));
+            movie.Themes = JsonSerializer.Serialize(ClassificationVocabulary.NormalizeThemes(rawThemes));
+            movie.NarrativeStyle = ClassificationVocabulary.CanonicalNarrativeStyle(narrativeStyle) ?? movie.NarrativeStyle;
+            movie.Accessibility = ClassificationVocabulary.CanonicalAccessibility(accessibility) ?? movie.Accessibility;
+            movie.Intensity = ClassificationVocabulary.CanonicalIntensity(intensity) ?? movie.Intensity;
+            if (score is >= 1 and <= 10) movie.CriticalAcclaimScore = score;
+
+            // v1.5.27: a movie that came back with no subcategories stays
+            // unclassified so the next run re-sends it to the AI.
+            movie.IsClassified = subcategories.Count > 0;
+            movie.VocabularyVersion = onVocabulary ? ClassificationVocabulary.Version : 0;
+            movie.LastUpdated = DateTime.UtcNow;
+        }
+
+        private static List<string> GetStringArray(JsonElement element, string propertyName)
         {
             if (TryGetPropertyIgnoreCase(element, propertyName, out var prop))
             {
                 if (prop.ValueKind == JsonValueKind.Array)
                 {
-                    var values = prop.EnumerateArray()
+                    return prop.EnumerateArray()
                         .Select(x => x.ValueKind == JsonValueKind.String ? x.GetString() : x.ToString())
                         .Where(x => !string.IsNullOrWhiteSpace(x))
+                        .Select(x => x!)
                         .ToList();
-                        
-                    return JsonSerializer.Serialize(values);
                 }
                 else if (prop.ValueKind == JsonValueKind.String)
                 {
                     var val = prop.GetString();
                     if (!string.IsNullOrWhiteSpace(val))
                     {
-                        var parts = val.Split(new[] { ',', '/' }, StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()).ToList();
-                        return JsonSerializer.Serialize(parts);
+                        return val.Split(new[] { ',', '/' }, StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()).ToList();
                     }
                 }
             }
-            return "[]";
+            return new List<string>();
         }
 
         private string? GetStringProperty(JsonElement element, string propertyName)

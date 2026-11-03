@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.Json;
 using Jellyfin.Plugin.AIRecommender.Data.Models;
 
 namespace Jellyfin.Plugin.AIRecommender.Services
@@ -16,13 +15,13 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             double score = 0.0;
 
             // 1. Subcategory overlap (30%)
-            score += CalculateJaccardSimilarity(source.Subcategories, target.Subcategories) * 0.30;
+            score += source.SubcategorySet.Jaccard(target.SubcategorySet) * 0.30;
 
             // 2. Mood overlap (20%)
-            score += CalculateJaccardSimilarity(source.Moods, target.Moods) * 0.20;
+            score += source.MoodSet.Jaccard(target.MoodSet) * 0.20;
 
             // 3. Theme overlap (15%)
-            score += CalculateJaccardSimilarity(source.Themes, target.Themes) * 0.15;
+            score += source.ThemeSet.Jaccard(target.ThemeSet) * 0.15;
 
             // 4. Director/Cast overlap (10%)
             score += CalculateCrewSimilarity(source, target) * 0.10;
@@ -35,7 +34,7 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             score += CalculateEraProximity(source.ReleaseYear, target.ReleaseYear) * 0.05;
 
             // 7. Rating/Acclaim proximity (5%)
-            score += CalculateAcclaimProximity(source.CriticalAcclaimScore, target.CriticalAcclaimScore) * 0.05;
+            score += CalculateAcclaimProximity(source.Acclaim, target.Acclaim) * 0.05;
 
             // 8. Intensity match (5%)
             if (string.Equals(source.Intensity, target.Intensity, StringComparison.OrdinalIgnoreCase))
@@ -43,35 +42,13 @@ namespace Jellyfin.Plugin.AIRecommender.Services
 
             // 9. v1.5.14: TMDB keyword overlap — objective precision signal.
             if (KeywordWeight > 0)
-                score += CalculateJaccardSimilarity(source.Keywords, target.Keywords) * KeywordWeight;
+                score += source.KeywordSet.Jaccard(target.KeywordSet) * KeywordWeight;
 
             return Math.Min(1.0, score); // Range: 0.0 to 1.0
         }
 
         // Keyword weight for similarity (set by PlaylistEngine per config; default 0 = off).
         public double KeywordWeight { get; set; } = 0.0;
-
-        private double CalculateJaccardSimilarity(string? jsonA, string? jsonB)
-        {
-            if (string.IsNullOrWhiteSpace(jsonA) || string.IsNullOrWhiteSpace(jsonB)) return 0.0;
-
-            try
-            {
-                var setA = JsonSerializer.Deserialize<List<string>>(jsonA)?.Select(s => s.ToLowerInvariant()).ToHashSet() ?? new HashSet<string>();
-                var setB = JsonSerializer.Deserialize<List<string>>(jsonB)?.Select(s => s.ToLowerInvariant()).ToHashSet() ?? new HashSet<string>();
-
-                if (setA.Count == 0 && setB.Count == 0) return 0.0;
-
-                var intersection = setA.Intersect(setB).Count();
-                var union = setA.Union(setB).Count();
-
-                return (double)intersection / union;
-            }
-            catch
-            {
-                return 0.0;
-            }
-        }
 
         private double CalculateCrewSimilarity(MovieMetadata a, MovieMetadata b)
         {
@@ -105,11 +82,11 @@ namespace Jellyfin.Plugin.AIRecommender.Services
             return 0.0;
         }
 
-        private double CalculateAcclaimProximity(int scoreA, int scoreB)
+        private double CalculateAcclaimProximity(double scoreA, double scoreB)
         {
-            if (scoreA == 0 || scoreB == 0) return 0.0;
+            if (scoreA <= 0 || scoreB <= 0) return 0.0;
             
-            int diff = Math.Abs(scoreA - scoreB);
+            double diff = Math.Abs(scoreA - scoreB);
             
             if (diff <= 1) return 1.0;
             if (diff <= 3) return 0.5;
