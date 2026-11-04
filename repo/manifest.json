@@ -8,6 +8,14 @@
     "category": "AI Recommender",
     "versions": [
       {
+        "version": "2.0.1.0",
+        "changelog": "- Fixed 2.0.0 failing to start on upgraded databases with `DbUpdateConcurrencyException` in `NormalizeLegacyClassifications`. Jellyfin then marked the plugin *Malfunctioned* and every task and settings call failed. Startup stored movie ids in lowercase while EF matches them in uppercase, so the legacy-tag merge updated zero rows. Ids are now stored the way EF matches them, and the merge can no longer block startup.\n- The same id mismatch made playlist descriptions come up empty and could make the index task treat untouched movies as removed. Both are fixed.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/Sternpaul/jellyfin-smart-playlists/releases/download/v2.0.1/Jellyfin.Plugin.AIRecommender.zip",
+        "checksum": "4a750463e94720cfca27d9ba234db1ea",
+        "timestamp": "2026-11-04T13:50:41Z"
+      },
+      {
         "version": "2.0.0.0",
         "changelog": "**Requires Jellyfin 12.** Jellyfin 10.11 servers keep receiving the 1.7.x line from the `legacy/10.11` branch; the plugin repository serves each server the right build.\n- Fixed *Refresh Playlists* failing every run on Jellyfin 12 with `Method not found`: Jellyfin 12.0 changed `IPlaylistManager.AddItemToPlaylistAsync`. Built against Jellyfin 12.0 and .NET 10.\n- Movies are now classified into a fixed vocabulary of subcategories, moods, narrative styles, accessibility and intensity, so the same taste is no longer split across spelling variants. One shared prompt replaces four copies; OpenAI and Google enforce the vocabulary through their JSON schemas.\n- Existing tags are merged onto the vocabulary at startup without losing anything. A new opt-in setting re-classifies movies tagged by older versions.\n- Acclaim now uses Jellyfin's community and critic ratings when available instead of the AI's guess.\n- The sibling penalty scales with how different each sibling is from the film you watched.\n- One user's refresh failure no longer stops the other users' playlists from refreshing; the task still reports the failure.\n- Fixed re-added movies (library re-added, backup restored, item re-identified) losing their AI classification, which forced a paid re-classification of the whole library.\n- Fixed refreshes failing with `UNIQUE constraint failed: ManagedPlaylists.PlaylistId` when Jellyfin reused the id of a deleted playlist that a stale registration still held.\n- Tag lists are parsed once per movie instead of on every comparison.\n- Settings page: new *Library Status* panel (classification progress, plugin and server version) with the actions next to it; the scoring, learning and freshness knobs moved into a collapsed *Advanced tuning* section.\n- Releases are checked against the real Jellyfin 12.0 and newest 12.x server binaries before publishing (`tools/AbiCheck`).",
         "targetAbi": "12.0.0.0",
