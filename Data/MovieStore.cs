@@ -209,7 +209,16 @@ namespace Jellyfin.Plugin.AIRecommender.Data
             // index so duplicates can never accumulate again.
             DedupMovies(db);
             EnsureUniqueMovieIndex(db);
-            NormalizeLegacyClassifications(db);
+            // Tidying old tags must never stop the store from starting.
+            try
+            {
+                var folded = NormalizeLegacyClassifications(db);
+                if (folded > 0) _logger.LogInformation("Folded {Count} legacy classifications onto the v2 vocabulary", folded);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Folding legacy classifications failed (non-fatal); tags stay as they were.");
+            }
         }
 
         // v2.0: Jellyfin ratings and the vocabulary version the tags were produced under.
@@ -230,10 +239,12 @@ namespace Jellyfin.Plugin.AIRecommender.Data
         // v2.0: fold free-form legacy tags onto the canonical vocabulary so "Sci-Fi
         // Thrillers" and "Sci-Fi Thriller" stop splitting one taste in two. Unknown
         // legacy tags are kept so no movie loses its classification; the opt-in
-        // "re-classify outdated" run replaces them. Only changed rows are written.
+        // "re-classify outdated" run replaces them. Only changed rows are written,
+        // by raw SQL on LOWER(ItemId): DedupMovies stores ids lowercase, but EF's
+        // tracked update keys on the uppercase form and would match nothing.
         internal static int NormalizeLegacyClassifications(AiDbContext db)
         {
-            var legacy = db.Movies
+            var legacy = db.Movies.AsNoTracking()
                 .Where(m => m.IsClassified && m.VocabularyVersion < ClassificationVocabulary.Version)
                 .ToList();
             int changed = 0;
@@ -259,10 +270,13 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                 movie.NarrativeStyle = FoldOne(movie.NarrativeStyle, ClassificationVocabulary.CanonicalNarrativeStyle);
                 movie.Accessibility = FoldOne(movie.Accessibility, ClassificationVocabulary.CanonicalAccessibility);
                 movie.Intensity = FoldOne(movie.Intensity, ClassificationVocabulary.CanonicalIntensity);
-                if (dirty) changed++;
-                else db.Entry(movie).State = EntityState.Unchanged;
+                if (!dirty) continue;
+                var key = movie.ItemId.ToString().ToLowerInvariant();
+                changed += db.Database.ExecuteSql($@"UPDATE Movies SET
+                    Subcategories = {movie.Subcategories}, Moods = {movie.Moods}, NarrativeStyle = {movie.NarrativeStyle},
+                    Accessibility = {movie.Accessibility}, Intensity = {movie.Intensity}
+                    WHERE LOWER(ItemId) = {key}");
             }
-            if (changed > 0) db.SaveChanges();
             return changed;
         }
 
@@ -305,7 +319,7 @@ namespace Jellyfin.Plugin.AIRecommender.Data
         // Finally normalize ItemId casing in Movies + every table that joins on ItemId,
         // so the same GUID in different casings can't split into two rows or miss joins.
         // Runs once at startup; safe to repeat (no-ops when already clean).
-        private static void DedupMovies(AiDbContext db)
+        internal static void DedupMovies(AiDbContext db)
         {
             try
             {
@@ -325,10 +339,15 @@ namespace Jellyfin.Plugin.AIRecommender.Data
                         WHERE ImdbId IS NULL OR ImdbId = ''
                         GROUP BY coalesce(Title,'') || '|' || coalesce(ReleaseYear,'')
                       )");
-                db.Database.ExecuteSqlRaw("UPDATE Movies SET ItemId = LOWER(ItemId)");
+                // v2.0.1: Guid-typed columns go to UPPER, the form EF writes and compares
+                // Guids in. Lowercasing them made every EF-side id comparison miss: the
+                // v2.0 tag fold threw at startup, GetMoviesByIdsAsync found nothing and
+                // DeleteMoviesNotInAsync saw every untouched row as an orphan. String-typed
+                // ids are written lowercase by the code, so those stay LOWER.
+                db.Database.ExecuteSqlRaw("UPDATE Movies SET ItemId = UPPER(ItemId)");
+                db.Database.ExecuteSqlRaw("UPDATE UserRatings SET ItemId = UPPER(ItemId)");
                 db.Database.ExecuteSqlRaw("UPDATE Affinities SET ItemId = LOWER(ItemId)");
                 db.Database.ExecuteSqlRaw("UPDATE SurfaceHistory SET ItemId = LOWER(ItemId)");
-                db.Database.ExecuteSqlRaw("UPDATE UserRatings SET ItemId = LOWER(ItemId)");
             }
             catch { /* best-effort; ignore if schema/engine quirk */ }
         }

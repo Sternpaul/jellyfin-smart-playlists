@@ -2,6 +2,10 @@
 
 All notable changes to the Jellyfin AI Recommender plugin.
 
+## v2.0.1
+- Fixed 2.0.0 failing to start on upgraded databases with `DbUpdateConcurrencyException` in `NormalizeLegacyClassifications`. Jellyfin then marked the plugin *Malfunctioned* and every task and settings call failed. Startup stored movie ids in lowercase while EF matches them in uppercase, so the legacy-tag merge updated zero rows. Ids are now stored the way EF matches them, and the merge can no longer block startup.
+- The same id mismatch made playlist descriptions come up empty and could make the index task treat untouched movies as removed. Both are fixed.
+
 ## v2.0.0
 **Requires Jellyfin 12.** Jellyfin 10.11 servers keep receiving the 1.7.x line from the `legacy/10.11` branch; the plugin repository serves each server the right build.
 - Fixed *Refresh Playlists* failing every run on Jellyfin 12 with `Method not found`: Jellyfin 12.0 changed `IPlaylistManager.AddItemToPlaylistAsync`. Built against Jellyfin 12.0 and .NET 10.

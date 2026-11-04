@@ -189,4 +189,25 @@ public sealed class ItemIdMigrationTests : IDisposable
         Assert.Null(await store.FindMovieAsync(Guid.NewGuid(), "tt0000001"));
         Assert.NotNull(await store.FindMovieAsync(newId, null));
     }
+
+    [Fact]
+    public async Task Lowercase_stored_ids_are_found_and_not_pruned()
+    {
+        // 2.0.0 and older lowercased ids at startup; EF compares Guids in uppercase form.
+        var id = Guid.NewGuid();
+        using (var db = new AiDbContext(DatabasePath))
+        {
+            db.Movies.Add(Movie(id, "tt0816692", "Interstellar"));
+            await db.SaveChangesAsync();
+            // State a 2.0.0 startup left behind.
+            await db.Database.ExecuteSqlRawAsync("UPDATE Movies SET ItemId = LOWER(ItemId)");
+        }
+        using (var db = new AiDbContext(DatabasePath))
+            MovieStore.DedupMovies(db);
+        var store = CreateStore();
+
+        Assert.Single(await store.GetMoviesByIdsAsync(new[] { id }));
+        Assert.Equal(0, await store.DeleteMoviesNotInAsync(new HashSet<Guid> { id }));
+        Assert.Single(await store.GetAllMoviesAsync());
+    }
 }

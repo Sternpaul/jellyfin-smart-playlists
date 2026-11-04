@@ -4,6 +4,7 @@ using Jellyfin.Plugin.AIRecommender.Data.Models;
 using Jellyfin.Plugin.AIRecommender.Services;
 using Jellyfin.Plugin.AIRecommender.Services.AI;
 using Jellyfin.Plugin.AIRecommender.Services.Classification;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -126,18 +127,21 @@ public sealed class ClassificationVocabularyTests
                     Subcategories = "[\"Sci-Fi\"]", DateAdded = DateTime.UtcNow, LastUpdated = DateTime.UtcNow,
                 });
                 db.SaveChanges();
+                // 2.0.0 lowercased stored ids at startup, while EF keys its updates on
+                // the uppercase form. The fold must find the row in either casing.
+                db.Database.ExecuteSqlRaw("UPDATE Movies SET ItemId = LOWER(ItemId)");
             }
 
             using (var db = new AiDbContext(path))
                 Assert.Equal(1, MovieStore.NormalizeLegacyClassifications(db));
             using (var db = new AiDbContext(path))
             {
-                var legacy = db.Movies.Single(m => m.ItemId == legacyId);
+                var legacy = db.Movies.AsEnumerable().Single(m => m.ItemId == legacyId);
                 Assert.Equal(new[] { "Psychological Thriller", "Sci-Fi" }, legacy.SubcategorySet.Items);
                 Assert.Equal(new[] { "suspenseful" }, legacy.MoodSet.Items);
                 Assert.Equal("nonlinear", legacy.NarrativeStyle);
                 Assert.Equal(0, legacy.VocabularyVersion);
-                Assert.Equal("[\"Sci-Fi\"]", db.Movies.Single(m => m.ItemId == currentId).Subcategories);
+                Assert.Equal("[\"Sci-Fi\"]", db.Movies.AsEnumerable().Single(m => m.ItemId == currentId).Subcategories);
                 // Second run is a no-op.
                 Assert.Equal(0, MovieStore.NormalizeLegacyClassifications(db));
             }
